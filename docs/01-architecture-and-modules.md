@@ -126,7 +126,7 @@ memctl/
     05-validation-and-delivery.md
     06-development-loop.md   # 开发过程与完成条件
     STATUS.md               # 当前任务、证据、阻塞与下一步
-    validation/             # 按需：平台或阶段验收报告
+    validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配
   internal/
     cli/          # 子命令和参数到应用请求的映射
