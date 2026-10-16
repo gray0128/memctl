@@ -82,7 +82,9 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 `DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的 Agent 状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 
-`AdapterStatus.status` 为 `unsupported | not_installed | configured | verified | needs_attention`。写入配置只得到 `configured`；只有宿主实测成功才是 `verified`。
+`AdapterStatus.status` 为 `unsupported | not_installed | configured | verified | needs_attention`。写入配置只得到 `configured`；只有宿主实测成功才是 `verified`。`AdapterStatus.capabilities` 为该 adapter 的受管能力，取值 `hooks`（命令 Hook 配置）、`config`（宿主功能开关配置）、`plugin`（需随宿主加载的插件文件），按注册顺序去重；它只描述本工具能维护的对象，不表示宿主已实测可用。
+
+`AdapterInstallPlan.artifacts[].currentRevision` 是预览时读取的配置内容修订，安装请求以它作为配置基线。`AdapterInstallResult` 是 `POST /api/v1/adapters/{agent}/install` 的响应：`dryRun`, `status`: `AdapterStatus`, `plan`: `AdapterInstallPlan`, `applied`: `[{path, action, backupPath?}]`, `manual`: `[{path, action, note?}]`, `skipped`: `[path]`, `recovery?`: `{recovered, restored, removed, skipped}`, `pendingRecovery`；`status` 是本次请求结束后的状态，`plan` 是被应用或将应用的预览。
 
 ## 3. 应用与基础设施接口
 
@@ -142,11 +144,13 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `POST /api/v1/dream:preview` | `{runner: "claude" 或 "codex", baseRevision}` | 202、`{proposalId}` |
 | `GET /api/v1/dream/{proposalId}` | 无 | `DreamProposal` |
 | `POST /api/v1/dream:apply` | `{proposalId, patchHash}` | `MutationResult` |
-| `GET /api/v1/adapters` | 无 | `{adapters}` |
-| `POST /api/v1/adapters/{agent}/install` | `{dryRun?, expectedConfigRevisions?}` | 安装计划或 `AdapterStatus`；实际安装要求配置基线 |
+| `GET /api/v1/adapters` | 无 | `{adapters: AdapterStatus[]}`；只探测与预览，不写文件 |
+| `POST /api/v1/adapters/{agent}/install` | `{dryRun?, expectedConfigRevisions?}` | `AdapterInstallResult`；`dryRun` 只返回计划，实际安装要求每个已存在目标文件的配置基线 |
 | `GET /api/v1/events` | Token 请求头 | SSE，客户端使用 fetch 流读取 |
 
 `resolvedFiles` 为 `{path, action: "put" | "delete", rawContent?}[]`，覆盖当前阶段全部冲突文件，且不能包含阶段外路径。不支持的冲突类型返回 `UNSUPPORTED`。`baseRevision` 在初次恢复时绑定原工作树，在后续阶段由新的冲突快照重新提供，不能复用旧阶段请求。
+
+`expectedConfigRevisions` 为 `{<绝对配置路径>: <fileRevision>}`。`dryRun: true` 只返回计划，不执行中断恢复。实际安装先恢复未完成的安装现场，再按最新配置重算计划，对每个 `currentRevision` 非空的目标文件要求 `expectedConfigRevisions` 提供同一修订（缺失返回 `PRECONDITION_REQUIRED`，不一致返回 `REVISION_MISMATCH`），随后按 [Agent 配置安装](./03-workflows-and-dataflows.md#7-agent-配置安装) 写入。本次请求确实恢复了中断现场时，预览基线已被恢复动作取代，该请求不再校验 `expectedConfigRevisions`，而以恢复后的内容重算计划并直接写入，恢复结果在 `recovery` 字段返回。未注册的 `agent` 返回 `UNSUPPORTED`；`--readonly` 下该路由返回 `READ_ONLY`。
 
 ### 4.3 错误与部分成功
 

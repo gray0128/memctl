@@ -16,6 +16,17 @@ const (
 	KindCopy = "copy"
 )
 
+// Artifact capabilities reported as AdapterStatus.capabilities. See
+// docs/02-domain-models-and-contracts.md section 2.3.
+const (
+	// CapabilityHooks is command hook configuration.
+	CapabilityHooks = "hooks"
+	// CapabilityConfig is a host feature switch.
+	CapabilityConfig = "config"
+	// CapabilityPlugin is a file the host loads as a plugin.
+	CapabilityPlugin = "plugin"
+)
+
 // AdapterSpec describes one supported host. Every path is a template expanded
 // against $HOME at detection time so the registry itself stays environment
 // independent and testable.
@@ -47,6 +58,9 @@ type ArtifactSpec struct {
 	PathTemplate string
 	// Kind is KindMerge or KindCopy.
 	Kind string
+	// Capability is the AdapterStatus capability this artifact provides:
+	// CapabilityHooks, CapabilityConfig or CapabilityPlugin.
+	Capability string
 	// ContainerPath is the JSON member path that holds the event map, for
 	// example ["hooks"]. An empty path means the event names are top-level
 	// keys of the file.
@@ -65,6 +79,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate:  "$HOME/.claude/settings.json",
 			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},
 			Asset:         "claude-code/hooks.json",
 		}},
@@ -76,12 +91,14 @@ var registry = []AdapterSpec{
 			{
 				PathTemplate:  "$HOME/.codex/hooks.json",
 				Kind:          KindMerge,
+				Capability:    CapabilityHooks,
 				ContainerPath: []string{"hooks"},
 				Asset:         "codex/hooks.json",
 			},
 			{
 				PathTemplate: "$HOME/.codex/config.toml",
 				Kind:         KindMerge,
+				Capability:   CapabilityConfig,
 				Asset:        "codex/features.toml",
 			},
 		},
@@ -92,6 +109,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate:  "$HOME/.grok/hooks.json",
 			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},
 			Asset:         "grok/hooks.json",
 		}},
@@ -102,6 +120,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate:  "$HOME/.gemini/settings.json",
 			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},
 			Asset:         "antigravity/hooks.json",
 		}},
@@ -112,6 +131,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate:  "$HOME/.commandcode/settings.json",
 			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},
 			Asset:         "commandcode/hooks.json",
 		}},
@@ -122,6 +142,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate: "$HOME/.config/opencode/plugins/agent-memory.ts",
 			Kind:         KindCopy,
+			Capability:   CapabilityPlugin,
 			Asset:        "opencode/agent-memory.ts",
 		}},
 	},
@@ -135,6 +156,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate: "$HOME/.pi/agent/hook/hooks.yaml",
 			Kind:         KindMerge,
+			Capability:   CapabilityHooks,
 			Asset:        "pi/hooks.yaml",
 		}},
 	},
@@ -151,6 +173,7 @@ var registry = []AdapterSpec{
 		Artifacts: []ArtifactSpec{{
 			PathTemplate: "$HOME/.dsh/hooks.json",
 			Kind:         KindMerge,
+			Capability:   CapabilityHooks,
 			Asset:        "dsh/hooks.json",
 		}},
 	},
@@ -171,4 +194,31 @@ func Lookup(agent string) (AdapterSpec, bool) {
 		}
 	}
 	return AdapterSpec{}, false
+}
+
+// Capabilities returns the distinct managed capabilities of one adapter in
+// registration order. It returns an empty slice for an unknown adapter so the
+// JSON response is always a list.
+func Capabilities(agent string) []string {
+	spec, ok := Lookup(agent)
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(spec.Artifacts))
+	for _, artifact := range spec.Artifacts {
+		if artifact.Capability == "" {
+			continue
+		}
+		found := false
+		for _, existing := range out {
+			if existing == artifact.Capability {
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, artifact.Capability)
+		}
+	}
+	return out
 }

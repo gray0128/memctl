@@ -102,6 +102,10 @@ func (a *App) notifyMutation(result MutationResult) {
 // RepoPath returns the configured repository path.
 func (a *App) RepoPath() string { return a.cfg.RepoPath }
 
+// StateDir returns the configured runtime state root. The HTTP server derives
+// the default adapter install environment from it.
+func (a *App) StateDir() string { return a.cfg.StateDir }
+
 // Init creates or connects a memory repository at the configured path. With
 // no URL it creates or reuses a local-only repository without touching files,
 // config or remotes. With a URL it requires --confirm-private and follows the

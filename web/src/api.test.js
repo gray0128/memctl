@@ -129,4 +129,32 @@ describe('createApi', () => {
     expect(calls[3].init.method).toBe('POST')
     expect(JSON.parse(calls[3].init.body)).toEqual({ baseRevision: 'sha256:rev' })
   })
+
+  it('sends the adapter preview and install requests', async () => {
+    const calls = []
+    const fetchImpl = async (path, init) => {
+      calls.push({ path, init })
+      return { ok: true, status: 200, json: async () => ({ adapters: [] }) }
+    }
+    const api = createApi({ token: 'secret', fetchImpl })
+
+    await api.adapters()
+    expect(calls[0].path).toBe('/api/v1/adapters')
+    expect(calls[0].init.method).toBeUndefined()
+    expect(calls[0].init.headers['X-Memctl-Token']).toBe('secret')
+
+    await api.installAdapter('claude-code', { dryRun: true })
+    expect(calls[1].path).toBe('/api/v1/adapters/claude-code/install')
+    expect(calls[1].init.method).toBe('POST')
+    expect(JSON.parse(calls[1].init.body)).toEqual({ dryRun: true })
+
+    await api.installAdapter('pi', {
+      dryRun: false,
+      expectedConfigRevisions: { '/home/u/.pi/agent/hook/hooks.yaml': 'sha256:old' },
+    })
+    expect(calls[2].path).toBe('/api/v1/adapters/pi/install')
+    expect(JSON.parse(calls[2].init.body).expectedConfigRevisions).toEqual({
+      '/home/u/.pi/agent/hook/hooks.yaml': 'sha256:old',
+    })
+  })
 })

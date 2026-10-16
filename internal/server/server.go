@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gray0128/memctl/internal/adapters"
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/watcher"
@@ -55,6 +56,11 @@ type Options struct {
 	// Events is the invalidation fan-out used by GET /api/v1/events. A nil
 	// value creates a bus with DefaultSSEQueue. Tests inject a smaller queue.
 	Events *watcher.Bus
+	// Adapters is the installer environment used by the adapter routes. A nil
+	// value uses adapters.DefaultEnv with the application state root, so the
+	// HTTP routes share the detector, lock and journal of the CLI install.
+	// Tests inject a synthetic host to avoid probing a real machine.
+	Adapters *adapters.Env
 	// SSEHeartbeat is the comment interval of the SSE stream. Zero uses
 	// DefaultSSEHeartbeat. Tests use a short interval.
 	SSEHeartbeat time.Duration
@@ -71,6 +77,7 @@ type Server struct {
 	allowedOrigins  map[string]struct{}
 	events          *watcher.Bus
 	sseHeartbeat    time.Duration
+	adapters        adapters.Env
 	mux             *http.ServeMux
 	// uiFS is the embedded compiled frontend; indexHTML already carries the
 	// session token and the read-only flag. uiErr records a build without the
@@ -112,6 +119,10 @@ func New(opts Options) (*Server, error) {
 	if sseHeartbeat <= 0 {
 		sseHeartbeat = DefaultSSEHeartbeat
 	}
+	adapterEnv := adapters.DefaultEnv(opts.App.StateDir())
+	if opts.Adapters != nil {
+		adapterEnv = *opts.Adapters
+	}
 
 	server := &Server{
 		app:             opts.App,
@@ -123,6 +134,7 @@ func New(opts Options) (*Server, error) {
 		allowedOrigins:  map[string]struct{}{},
 		events:          events,
 		sseHeartbeat:    sseHeartbeat,
+		adapters:        adapterEnv,
 	}
 	for _, name := range []string{"127.0.0.1", "localhost"} {
 		server.allowedHosts[net.JoinHostPort(name, port)] = struct{}{}
@@ -197,6 +209,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/audit/{hash}/diff", s.handleAuditDiff)
 	s.mux.HandleFunc("GET /api/v1/doctor", s.handleDoctor)
 	s.mux.HandleFunc("POST /api/v1/doctor:fix", s.handleDoctorFix)
+	s.mux.HandleFunc("GET /api/v1/adapters", s.handleAdapters)
+	s.mux.HandleFunc("POST /api/v1/adapters/{agent}/install", s.handleAdapterInstall)
 	s.mux.HandleFunc("POST /api/v1/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)
 	s.mux.HandleFunc("POST /api/v1/conflict:resolve", s.handleConflictResolve)

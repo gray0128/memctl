@@ -8,9 +8,11 @@ import { EntryBrowser } from './components/EntryBrowser.jsx'
 import { ConflictView } from './components/ConflictView.jsx'
 import { AuditView } from './components/AuditView.jsx'
 import { DiagnosticsView } from './components/DiagnosticsView.jsx'
+import { AdapterView } from './components/AdapterView.jsx'
 
-// The views of docs/04-ui-and-cli-specification.md section 4. The adapter view
-// arrives with stage C-3.
+// The views of docs/04-ui-and-cli-specification.md section 4. The 整理接入 view
+// currently carries the adapter panel; the Dreaming proposal panel arrives
+// with stage D-2.
 const VIEWS = [
   { id: 'overview', label: '概览' },
   { id: 'graph', label: '知识图谱' },
@@ -18,6 +20,7 @@ const VIEWS = [
   { id: 'conflict', label: '冲突解决' },
   { id: 'audit', label: '审计' },
   { id: 'diagnostics', label: '诊断' },
+  { id: 'adapters', label: '整理接入' },
 ]
 
 // App is the shell of the local Web UI. It loads the snapshot once, keeps it
@@ -119,6 +122,9 @@ export function App() {
       break
     case 'diagnostics':
       content = <DiagnosticsView api={api} refreshKey={refreshKey} />
+      break
+    case 'adapters':
+      content = <AdapterView api={api} refreshKey={refreshKey} />
       break
     default:
       content = <Overview api={api} refreshKey={refreshKey} snapshot={snapshot} error={error} />

@@ -88,6 +88,14 @@ export function createApi(options = {}) {
     doctorFix: (payload) => writeJSON('/api/v1/doctor:fix', 'POST', payload),
     sync: () => request('/api/v1/sync', { method: 'POST' }),
 
+    // Adapter detection and install. The install request carries the config
+    // revisions the preview returned so a file the user changed after the
+    // preview is never overwritten. See
+    // docs/02-domain-models-and-contracts.md section 4.2.
+    adapters: (signal) => request('/api/v1/adapters', { signal }),
+    installAdapter: (agent, payload) =>
+      writeJSON(`/api/v1/adapters/${encodeURIComponent(agent)}/install`, 'POST', payload),
+
     // Conflict resolution and audit revert. Both reuse the same state
     // machine and repository baseline as the CLI, see
     // docs/02-domain-models-and-contracts.md section 4.2. GET

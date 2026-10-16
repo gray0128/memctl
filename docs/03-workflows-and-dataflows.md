@@ -209,6 +209,8 @@ CLI 使用同一 `resolve` 接口，不由 Hook 指示 Agent 自行执行不受�
 
 JSON 与 JSONC 使用同一定点编辑器，YAML 与 TOML 分别按顶层块和表保留原有行列、注释与未管理键。无法可靠保留时（如目标容器类型不符、待插入区间含注释、TOML 已存在不同值）在计划中给出人工补丁，不写入该文件，也不用普通 JSON 序列化覆写整个文件。安装不会自动安装第三方插件、修改全局 Git 配置或绕过宿主信任确认。
 
+HTTP 接入复用同一探测、计划与安装实现，不重复实现合并与锁。`GET /api/v1/adapters` 只读列出 `AdapterStatus`；`POST /api/v1/adapters/{agent}/install` 在 `dryRun` 时只返回计划且不执行中断恢复，实际安装先恢复未完成现场，再重算计划并要求 `expectedConfigRevisions` 覆盖每个已存在目标文件的内容修订。基线不一致返回 `REVISION_MISMATCH` 并保持文件不变，缺少基线返回 `PRECONDITION_REQUIRED`；本次请求恢复过中断现场时，预览基线已被恢复动作取代，该请求以恢复后的内容重算计划并直接写入。HTTP 层只做请求形状、基线到 `adapters.Plan`/`adapters.Apply` 的转换与错误映射。
+
 ## 8. 同步可观测性
 
 持久化最近一次同步阶段、原因码、开始/结束时间和提交 hash。日志不记录 Hook prompt、Token、含凭据的 URL 或完整记忆正文。详细 Diff 由用户显式打开审计接口读取。
