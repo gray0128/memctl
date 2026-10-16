@@ -60,7 +60,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 `OperationState.kind` 为 `mutation | rebase | revert`。`owner` 区分本工具创建的操作与外部操作；单凭 PID 或文件存在不能授权自动 abort。状态恢复时核对 Git 实际状态、原始 HEAD 和目标 HEAD。
 
-冲突三方取自失败时未合并索引的 stage 1、2、3，在 abort 之前采集。rebase 的 `onto` 是远端基线及已重放提交，`replayed` 是当前正在重放的本地提交，不使用容易颠倒的 ours/theirs 或“本地最终 HEAD”替代它们。删除用 `exists: false` 表示，不与空文件混淆。二进制、重命名等不支持的冲突返回类型和人工处理提示，不伪造文本三方。
+冲突三方取自失败时未合并索引的 stage 1、2、3，在 abort 之前采集。rebase 的 `onto` 是远端基线及已重放提交，`replayed` 是当前正在重放的本地提交，不使用容易颠倒的 ours/theirs 或「本地最终 HEAD」替代它们。删除用 `exists: false` 表示，不与空文件混淆。二进制、重命名等不支持的冲突返回类型和人工处理提示，不伪造文本三方。
 
 `phase` 为 `captured | resolving`。`expectedHead` 在 captured 阶段等于中止后恢复的原始 HEAD，在 resolving 阶段等于当前停止点的 HEAD；`baseRevision` 同样绑定该阶段实际工作树。`indexRevision` 对冲突时全部索引项的路径、stage、模式和 blob ID 做确定性摘要：captured 阶段用于重建后比对，resolving 阶段用于继续前比对，避免误用第一轮的基线。
 
@@ -165,7 +165,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 内部 Git 错误另区分 `NETWORK_UNAVAILABLE`、`AUTH_FAILED`、`NO_UPSTREAM`、`NON_FAST_FORWARD`、`CONTENT_CONFLICT`、`OPERATION_ACTIVE`、`TIMEOUT`、`GIT_FAILED`。通过退出结果与 Git 实际状态组合判断；未能证明是内容冲突时不生成冲突快照。
 
-文件修改已形成本地提交时，后台推送失败不令写接口返回“保存失败”；返回提交 hash 和 `pending/failed` 远端状态。写入中断且尚不能确认是否提交时返回事务 ID 和恢复指引，不宣称整次操作没有副作用。确认存在重复应用风险时先查询状态，再决定是否重试。
+文件修改已形成本地提交时，后台推送失败不令写接口返回「保存失败」；返回提交 hash 和 `pending/failed` 远端状态。写入中断且尚不能确认是否提交时返回事务 ID 和恢复指引，不宣称整次操作没有副作用。确认存在重复应用风险时先查询状态，再决定是否重试。
 
 ## 5. SSE 与缓存
 
