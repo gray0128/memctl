@@ -38,6 +38,9 @@ type InitResult struct {
 // App binds the process to one repository and one state root.
 type App struct {
 	cfg config.Config
+	// testFault injects interruption points in tests. It is always nil in
+	// production builds.
+	testFault func(stage string) error
 }
 
 // New builds the application service for the given configuration.
@@ -145,6 +148,20 @@ func (a *App) initExisting(ctx context.Context, repoPath string) (InitResult, er
 // requireRepo validates the documented repository identity: the configured
 // path is the Git working-tree root and contains the entry file.
 func (a *App) requireRepo(ctx context.Context) (string, error) {
+	repoPath, err := a.requireRepoRoot(ctx)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Lstat(filepath.Join(repoPath, vault.EntryPointName)); err != nil {
+		return "", memerr.New(memerr.NoRepo, "%s has no %s; run memctl init", repoPath, vault.EntryPointName)
+	}
+	return repoPath, nil
+}
+
+// requireRepoRoot validates that the configured path is a Git working-tree
+// root without requiring the entry file. Recovery uses it because an
+// interrupted transaction may have deleted the entry file.
+func (a *App) requireRepoRoot(ctx context.Context) (string, error) {
 	repoPath := config.Canonical(a.cfg.RepoPath)
 	info, err := os.Stat(repoPath)
 	if err != nil || !info.IsDir() {
@@ -156,9 +173,6 @@ func (a *App) requireRepo(ctx context.Context) (string, error) {
 	topLevel, err := git.TopLevel(ctx, repoPath)
 	if err != nil || config.Canonical(topLevel) != repoPath {
 		return "", memerr.New(memerr.NoRepo, "%s is not a Git working-tree root", repoPath)
-	}
-	if _, err := os.Lstat(filepath.Join(repoPath, vault.EntryPointName)); err != nil {
-		return "", memerr.New(memerr.NoRepo, "%s has no %s; run memctl init", repoPath, vault.EntryPointName)
 	}
 	return repoPath, nil
 }

@@ -48,8 +48,11 @@ type FileRead struct {
 	FileRevision string
 	Kind         Kind
 	SizeBytes    int64
-	Editable     bool
-	RawContent   string
+	// Mode is the filesystem permission bits, used to preserve the
+	// executable bit when the same file is rewritten.
+	Mode       fs.FileMode
+	Editable   bool
+	RawContent string
 }
 
 // Root is a repository-bound file accessor. Every path it accepts is
@@ -125,6 +128,7 @@ func (r *Root) ReadFile(rel string) (FileRead, error) {
 		FileRevision: FileRevision(mode, content),
 		Kind:         ClassifyKind(clean),
 		SizeBytes:    int64(len(content)),
+		Mode:         info.Mode().Perm(),
 		Editable:     true,
 		RawContent:   string(content),
 	}, nil

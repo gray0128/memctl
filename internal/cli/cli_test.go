@@ -50,14 +50,14 @@ func TestRunVersionAndHelp(t *testing.T) {
 			args:       []string{"--help"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-2):",
+			wantStdout: "Available Commands (Stage A-3):",
 		},
 		{
 			name:       "help flag short",
 			args:       []string{"-h"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-2):",
+			wantStdout: "Available Commands (Stage A-3):",
 		},
 	}
 
@@ -125,6 +125,41 @@ func TestRunUsageErrors(t *testing.T) {
 			wantStderr: `unknown flag "--raw"`,
 		},
 		{
+			name:       "write without path",
+			args:       []string{"write"},
+			wantStderr: "missing required <path> argument",
+		},
+		{
+			name:       "write without base",
+			args:       []string{"write", "A.md", "--stdin"},
+			wantStderr: "missing required --base revision",
+		},
+		{
+			name:       "write without stdin flag",
+			args:       []string{"write", "A.md", "--base", "absent"},
+			wantStderr: "missing required --stdin flag",
+		},
+		{
+			name:       "write base without value",
+			args:       []string{"write", "A.md", "--base"},
+			wantStderr: "--base requires a value",
+		},
+		{
+			name:       "recover without a mode",
+			args:       []string{"recover"},
+			wantStderr: "exactly one of --status or --rollback is required",
+		},
+		{
+			name:       "recover with both modes",
+			args:       []string{"recover", "--status", "--rollback"},
+			wantStderr: "exactly one of --status or --rollback is required",
+		},
+		{
+			name:       "sync unknown flag",
+			args:       []string{"sync", "--force"},
+			wantStderr: `unknown argument "--force"`,
+		},
+		{
 			name:       "init with confirmation but no URL",
 			args:       []string{"init", "--confirm-private"},
 			wantStderr: "--confirm-private requires a remote URL",
@@ -160,8 +195,8 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
-		"start", "context", "pull", "sync", "end",
-		"tag", "wrap", "write", "resolve", "recover",
+		"start", "context", "pull", "end",
+		"tag", "wrap", "resolve",
 		"ui", "doctor", "dream", "install",
 	}
 

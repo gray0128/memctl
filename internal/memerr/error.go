@@ -13,14 +13,20 @@ import (
 type Code string
 
 const (
-	InvalidArgument Code = "INVALID_ARGUMENT"
-	InvalidPath     Code = "INVALID_PATH"
-	NotFound        Code = "NOT_FOUND"
-	NoRepo          Code = "NO_REPO"
-	Unsupported     Code = "UNSUPPORTED"
-	LimitExceeded   Code = "LIMIT_EXCEEDED"
-	GitFailed       Code = "GIT_FAILED"
-	IOFailed        Code = "IO_FAILED"
+	InvalidArgument      Code = "INVALID_ARGUMENT"
+	InvalidPath          Code = "INVALID_PATH"
+	NotFound             Code = "NOT_FOUND"
+	NoRepo               Code = "NO_REPO"
+	Unsupported          Code = "UNSUPPORTED"
+	LimitExceeded        Code = "LIMIT_EXCEEDED"
+	GitFailed            Code = "GIT_FAILED"
+	IOFailed             Code = "IO_FAILED"
+	RevisionMismatch     Code = "REVISION_MISMATCH"
+	ExternalChanges      Code = "EXTERNAL_CHANGES"
+	OperationActive      Code = "OPERATION_ACTIVE"
+	RecoveryRequired     Code = "RECOVERY_REQUIRED"
+	Busy                 Code = "BUSY"
+	PreconditionRequired Code = "PRECONDITION_REQUIRED"
 )
 
 // Error carries a contract code together with a human-readable message.

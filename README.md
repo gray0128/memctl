@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口，以及阶段 A-2 的本地仓库初始化与安全读取（`init`、`read`）；尚未实现记忆格式解析、受管写入、Git 远端同步、Web UI 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析，以及阶段 A-3 的本地受管写入、显式 capture 与事务恢复（`init`、`read`、`write`、`sync --capture`、`recover`）；尚未实现 Git 远端同步、Hook、Web UI 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -34,13 +34,15 @@ memctl/
   Makefile              # 阶段 A 的 CLI 构建、测试与清理入口
   go.mod                # Go 模块定义（Go 1.27.1）
   cmd/memctl/           # CLI 进程入口与版本注入
-  internal/cli/         # 命令分发、init/read、version/help 与参数错误边界
+  internal/cli/         # 命令分发、init/read/write/sync --capture/recover 与参数错误边界
   internal/config/      # 仓库与状态路径解析、repoId
-  internal/git/         # Git 调用、环境清理与失败分类
-  internal/vault/       # 根相对路径边界、有界读取与文件修订
-  internal/app/         # 初始化与读取的应用服务入口
+  internal/git/         # Git 调用、状态检查、环境清理与失败分类
+  internal/lock/        # 仓库排他文件锁
+  internal/state/       # 事务恢复记录
+  internal/vault/       # 根相对路径边界、有界读取、格式解析与受管文件写入
+  internal/app/         # 初始化、读取、受管写入、capture 与事务恢复
   internal/memerr/      # 契约错误码
-  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2）
+  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3）
   docs/                 # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/         # 只读参考，不作为新实现或发布入口
 ```
@@ -67,9 +69,16 @@ export AGENT_MEMORY_DIR=/tmp/memory-demo
 ./bin/memctl init
 ./bin/memctl read MEMORY.md
 ./bin/memctl read MEMORY.md --json
+
+# 受管写入：以 read --json 返回的 fileRevision 为基线；旧基线返回 REVISION_MISMATCH
+printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --base <fileRevision> --stdin
+
+# 显式接收串行外部编辑，查看或回滚未完成事务
+./bin/memctl sync --capture
+./bin/memctl recover --status
 ```
 
-当前 `version`、`help`、`init`（仅本地）与 `read` 可用。`init` 携带远端 URL 会明确拒绝；其余规划子命令仍返回未实现错误（退出码 `1`）。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
+当前 `version`、`help`、`init`（仅本地）、`read`、`write`、`sync --capture` 与 `recover` 可用。`init` 携带远端 URL、`sync` 未带 `--capture` 时明确拒绝（退出码 `1`）；其余规划子命令仍返回未实现错误（退出码 `1`）。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
 
 ## 上游与参考
 

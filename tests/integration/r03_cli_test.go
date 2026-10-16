@@ -113,15 +113,15 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 	}
 
 	// Commands that are still unimplemented must not return placeholder success.
-	code, stdout, stderr = runIsolated("write")
+	code, stdout, stderr = runIsolated("resolve")
 	if code != 1 {
-		t.Fatalf("unimplemented write exit code = %d, want 1 (stderr=%q)", code, stderr)
+		t.Fatalf("unimplemented resolve exit code = %d, want 1 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented write stdout = %q, want empty", stdout)
+		t.Fatalf("unimplemented resolve stdout = %q, want empty", stdout)
 	}
 	if !strings.Contains(stderr, "UNSUPPORTED") {
-		t.Fatalf("unimplemented write stderr missing UNSUPPORTED: %q", stderr)
+		t.Fatalf("unimplemented resolve stderr missing UNSUPPORTED: %q", stderr)
 	}
 
 	for _, p := range []string{isolatedHome, isolatedMem, isolatedState} {
