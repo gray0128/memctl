@@ -112,7 +112,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 已有文件的 PUT、条目 PATCH/DELETE 使用 `If-Match: "<fileRevision>"`；新建文件使用 `If-None-Match: *`。条目创建使用 Body 中的 `expectedRevision`，目标不存在时为 `absent`。跨文件移动使用 `baseRevision`，同一请求的所有前置条件都通过才修改。
 
-本次设计的默认资源限额为：Hook stdin 1 MiB、单文件文本 2 MiB、单次 JSON 请求 8 MiB、一次变更最多 100 个文件、一次文本变更总量 8 MiB、审计单页默认 50 条且最多 200 条。它们是实现与测试的初始边界，不是实测性能结论；超限明确拒绝，不静默截断后保存。大型文件仍可由 Git 同步。
+本次设计的默认资源限额为：Hook stdin 1 MiB、单文件文本 2 MiB、单次 JSON 请求 8 MiB、一次变更最多 100 个文件、一次文本变更总量 8 MiB、审计单页默认 50 条且最多 200 条、单次提交 Diff 响应 4 MiB。它们是实现与测试的初始边界，不是实测性能结论；超限明确拒绝，不静默截断后保存。大型文件仍可由 Git 同步。
 
 ### 4.2 路由
 
@@ -132,7 +132,8 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `GET /api/v1/conflict` | 无 | `ConflictState`，无冲突时 204 |
 | `POST /api/v1/conflict:resolve` | `{conflictId, baseRevision, resolvedFiles}` | 状态及可能出现的新冲突；不保证一轮完成 |
 | `POST /api/v1/conflict:abort` | `{conflictId}` | 中止本工具拥有的解决过程，返回恢复后状态 |
-| `GET /api/v1/audit` | `limit, agent, before?` | `{commits, nextCursor?}` |
+| `GET /api/v1/audit` | `limit, agent, before?` | `{commits, nextCursor?}`；只返回提交元数据与文件清单，不含 Diff |
+| `GET /api/v1/audit/{hash}/diff` | 无 | `{hash, files}`，`files` 为 `FileDiff[]`；只读预览该提交的文本改动，二进制文件为 `binary: true` 且 `patch` 为空 |
 | `POST /api/v1/audit/{hash}/revert` | `{baseRevision}` | `MutationResult` |
 | `GET /api/v1/doctor` | 无 | `DoctorReport` |
 | `POST /api/v1/doctor:fix` | `{issueCodes, baseRevision}` | `{report, result}`；仅应用确定性修复 |

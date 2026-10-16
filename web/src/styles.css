@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'diff2html/bundles/css/diff2html.min.css';
 
 :root {
   color-scheme: light dark;

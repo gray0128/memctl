@@ -11,6 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "cytoscape": "^3.34.4",
+    "diff2html": "^3.4.56",
     "preact": "^10.29.8"
   },
   "devDependencies": {

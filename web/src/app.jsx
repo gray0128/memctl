@@ -3,17 +3,32 @@ import { createApi } from './api.js'
 import { createEventStream } from './sse.js'
 import { TopBar } from './components/TopBar.jsx'
 import { Overview } from './components/Overview.jsx'
+import { KnowledgeGraph } from './components/KnowledgeGraph.jsx'
+import { EntryBrowser } from './components/EntryBrowser.jsx'
+import { AuditView } from './components/AuditView.jsx'
+import { DiagnosticsView } from './components/DiagnosticsView.jsx'
+
+// The five read-only views of docs/04-ui-and-cli-specification.md section 4.
+// The conflict-resolution and adapter views arrive with stages C-2 and C-3.
+const VIEWS = [
+  { id: 'overview', label: '概览' },
+  { id: 'graph', label: '知识图谱' },
+  { id: 'entries', label: '条目' },
+  { id: 'audit', label: '审计' },
+  { id: 'diagnostics', label: '诊断' },
+]
 
 // App is the read-only shell of the local Web UI. It loads the snapshot once,
 // keeps it fresh through the SSE invalidation stream and renders the shared
-// status bar described in docs/04-ui-and-cli-specification.md section 4. The
-// knowledge graph, entry browser, audit and diagnosis views are added in the
-// next B-3 subtask.
+// status bar plus the selected view. Every invalidation also bumps refreshKey
+// so views that fetch their own endpoint re-read it.
 export function App() {
   const api = useMemo(() => createApi(), [])
   const [snapshot, setSnapshot] = useState(null)
   const [error, setError] = useState(null)
   const [connection, setConnection] = useState('connecting')
+  const [view, setView] = useState('overview')
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -27,6 +42,7 @@ export function App() {
       } catch (err) {
         if (!cancelled) setError(err)
       }
+      if (!cancelled) setRefreshKey((current) => current + 1)
     }
 
     const stream = createEventStream({
@@ -43,6 +59,24 @@ export function App() {
     }
   }, [api])
 
+  let content
+  switch (view) {
+    case 'graph':
+      content = <KnowledgeGraph snapshot={snapshot} />
+      break
+    case 'entries':
+      content = <EntryBrowser api={api} refreshKey={refreshKey} />
+      break
+    case 'audit':
+      content = <AuditView api={api} refreshKey={refreshKey} />
+      break
+    case 'diagnostics':
+      content = <DiagnosticsView api={api} refreshKey={refreshKey} />
+      break
+    default:
+      content = <Overview snapshot={snapshot} error={error} />
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <TopBar
@@ -51,9 +85,26 @@ export function App() {
         readOnly={api.readOnly}
         error={error}
       />
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <Overview snapshot={snapshot} error={error} />
-      </main>
+      <nav className="border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto">
+          {VIEWS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={view === item.id ? 'page' : undefined}
+              onClick={() => setView(item.id)}
+              className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
+                view === item.id
+                  ? 'border-indigo-600 font-medium text-indigo-700 dark:text-indigo-300'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+      <main className="mx-auto max-w-5xl px-6 py-8">{content}</main>
     </div>
   )
 }

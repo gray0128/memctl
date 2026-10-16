@@ -99,6 +99,16 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, page)
 }
 
+// handleAuditDiff returns the per-file diff preview of one commit.
+func (s *Server) handleAuditDiff(w http.ResponseWriter, r *http.Request) {
+	diff, err := s.app.AuditDiff(r.Context(), r.PathValue("hash"))
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	writeJSON(w, diff)
+}
+
 // handleDoctor returns the read-only diagnosis report.
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	report, err := s.app.Doctor(r.Context())

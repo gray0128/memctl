@@ -6,6 +6,8 @@
 // logged or stored in localStorage. See
 // docs/04-ui-and-cli-specification.md section 5.
 
+import { buildQuery } from './queries.js'
+
 function metaContent(name) {
   if (typeof document === 'undefined') return ''
   const element = document.querySelector(`meta[name="${name}"]`)
@@ -50,5 +52,10 @@ export function createApi(options = {}) {
     token,
     readOnly,
     snapshot: (signal) => request('/api/v1/snapshot', { signal }),
+    entries: (params, signal) => request(`/api/v1/entries${buildQuery(params)}`, { signal }),
+    audit: (params, signal) => request(`/api/v1/audit${buildQuery(params)}`, { signal }),
+    auditDiff: (hash, signal) =>
+      request(`/api/v1/audit/${encodeURIComponent(hash)}/diff`, { signal }),
+    doctor: (signal) => request('/api/v1/doctor', { signal }),
   }
 }

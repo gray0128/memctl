@@ -190,6 +190,24 @@ type AuditPage struct {
 	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
+// FileDiffDTO is the FileDiff of docs/02-domain-models-and-contracts.md
+// section 2.3. A binary file keeps an empty Patch so the client never renders
+// fabricated text hunks.
+type FileDiffDTO struct {
+	Path      string `json:"path"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch"`
+	Binary    bool   `json:"binary"`
+}
+
+// AuditDiff is the response of GET /api/v1/audit/{hash}/diff. Hash is the
+// full commit id the abbreviated request resolved to.
+type AuditDiff struct {
+	Hash  string        `json:"hash"`
+	Files []FileDiffDTO `json:"files"`
+}
+
 // Snapshot scans the repository read-only and returns the documented snapshot.
 // It takes the repository lock without waiting and refuses to read a
 // transaction-intermediate tree; callers map an active state to BUSY.
@@ -298,6 +316,33 @@ func (a *App) Audit(ctx context.Context, query AuditQuery) (AuditPage, error) {
 		page.NextCursor = commits[len(commits)-1].Hash
 	}
 	return page, nil
+}
+
+// AuditDiff returns the read-only per-file diff of one commit. The request is
+// validated in Git before any output is produced; an unknown commit is a
+// NotFound instead of a Git failure.
+func (a *App) AuditDiff(ctx context.Context, hash string) (AuditDiff, error) {
+	session, err := a.beginRead(ctx)
+	if err != nil {
+		return AuditDiff{}, err
+	}
+	defer session.Close()
+
+	result, err := git.DiffCommit(session.ctx, session.repoPath, hash)
+	if err != nil {
+		return AuditDiff{}, err
+	}
+	files := make([]FileDiffDTO, 0, len(result.Files))
+	for _, file := range result.Files {
+		files = append(files, FileDiffDTO{
+			Path:      file.Path,
+			Additions: file.Additions,
+			Deletions: file.Deletions,
+			Patch:     file.Patch,
+			Binary:    file.Binary,
+		})
+	}
+	return AuditDiff{Hash: result.Hash, Files: files}, nil
 }
 
 // ConflictState returns the persisted conflict snapshot when one is awaiting

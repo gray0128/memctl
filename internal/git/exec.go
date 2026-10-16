@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -63,6 +64,49 @@ func runGit(ctx context.Context, dir string, opts Options, args ...string) (stri
 // runGitRaw behaves like runGit but preserves the exact stdout bytes, which
 // plumbing commands such as cat-file and ls-files -z require.
 func runGitRaw(ctx context.Context, dir string, opts Options, args ...string) (string, string, error) {
+	var stdout bytes.Buffer
+	stderr, err := runGitWith(ctx, dir, opts, &stdout, args...)
+	return stdout.String(), stderr, err
+}
+
+// runGitBounded behaves like runGitRaw but stops collecting stdout after
+// limit bytes. Git still runs to completion; overflow reports that the output
+// was larger so the caller can fail with a bounded error instead of buffering
+// unbounded data. It is used for read-only diff previews.
+func runGitBounded(ctx context.Context, dir string, opts Options, limit int, args ...string) (string, string, bool, error) {
+	stdout := &boundedBuffer{limit: limit}
+	stderr, err := runGitWith(ctx, dir, opts, stdout, args...)
+	return stdout.String(), stderr, stdout.overflow, err
+}
+
+// boundedBuffer collects at most limit bytes and records further writes as an
+// overflow without failing the writer, so Git is never killed by a full pipe.
+type boundedBuffer struct {
+	buffer   bytes.Buffer
+	limit    int
+	overflow bool
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	remaining := b.limit - b.buffer.Len()
+	if remaining <= 0 {
+		b.overflow = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		b.buffer.Write(p[:remaining])
+		b.overflow = true
+		return len(p), nil
+	}
+	b.buffer.Write(p)
+	return len(p), nil
+}
+
+func (b *boundedBuffer) String() string { return b.buffer.String() }
+
+// runGitWith starts one Git command with an explicit stdout sink and returns
+// the raw stderr. It terminates the process group when the context ends.
+func runGitWith(ctx context.Context, dir string, opts Options, stdout io.Writer, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = childEnv(opts)
@@ -77,12 +121,12 @@ func runGitRaw(ctx context.Context, dir string, opts Options, args ...string) (s
 
 	configureProcessGroup(cmd)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
+	cmd.Stdout = stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return "", "", newError(memerr.GitFailed, strings.Join(args, " "), err.Error(), err)
+		return "", newError(memerr.GitFailed, strings.Join(args, " "), err.Error(), err)
 	}
 
 	done := make(chan error, 1)
@@ -91,15 +135,13 @@ func runGitRaw(ctx context.Context, dir string, opts Options, args ...string) (s
 	select {
 	case err := <-done:
 		if err != nil {
-			return stdout.String(), stderr.String(),
-				newError(memerr.GitFailed, strings.Join(args, " "), stderr.String(), err)
+			return stderr.String(), newError(memerr.GitFailed, strings.Join(args, " "), stderr.String(), err)
 		}
-		return stdout.String(), stderr.String(), nil
+		return stderr.String(), nil
 	case <-ctx.Done():
 		killProcessGroup(cmd)
 		<-done
-		return stdout.String(), stderr.String(),
-			newError(memerr.Timeout, strings.Join(args, " "), stderr.String(), ctx.Err())
+		return stderr.String(), newError(memerr.Timeout, strings.Join(args, " "), stderr.String(), ctx.Err())
 	}
 }
 

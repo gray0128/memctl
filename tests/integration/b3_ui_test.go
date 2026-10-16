@@ -19,6 +19,9 @@ var (
 	uiTokenPattern  = regexp.MustCompile(`name="memctl-token" content="([^"]+)"`)
 	uiScriptPattern = regexp.MustCompile(`src="(/assets/[^"]+\.js)"`)
 	uiStylePattern  = regexp.MustCompile(`href="(/assets/[^"]+\.css)"`)
+	// Vite emits on-demand libraries as relative sibling chunk imports, for
+	// example import("./cytoscape.esm-Ab12Cd.js").
+	uiChunkPattern = regexp.MustCompile(`\./([A-Za-z0-9._-]+\.js)`)
 )
 
 func mustUIAssetPath(t *testing.T, pattern *regexp.Regexp, body string) string {
@@ -99,6 +102,48 @@ func TestB3EmbeddedUIAssetsCoverR01A02(t *testing.T) {
 	for _, missingPath := range []string{"/assets/missing.js", "/assets/"} {
 		missing := fixture.do(t, http.MethodGet, "http://127.0.0.1:18420"+missingPath, "", "127.0.0.1:18420", "")
 		mustStatus(t, missing.status, http.StatusNotFound)
+	}
+}
+
+// TestB3UIBundlesGraphAndDiffLibraries checks that the on-demand graph and diff
+// libraries ship inside the binary instead of a CDN: the main bundle imports
+// sibling chunks that the embedded asset route serves.
+func TestB3UIBundlesGraphAndDiffLibraries(t *testing.T) {
+	fixture := newB1Fixture(t, false)
+
+	index := fixture.do(t, http.MethodGet, "http://127.0.0.1:18420/", "", "127.0.0.1:18420", "")
+	mustStatus(t, index.status, http.StatusOK)
+	mainPath := mustUIAssetPath(t, uiScriptPattern, string(index.body))
+
+	main := fixture.do(t, http.MethodGet, "http://127.0.0.1:18420"+mainPath, "", "127.0.0.1:18420", "")
+	mustStatus(t, main.status, http.StatusOK)
+
+	names := map[string]bool{}
+	for _, match := range uiChunkPattern.FindAllStringSubmatch(string(main.body), -1) {
+		names[match[1]] = true
+	}
+	var sawCytoscape, sawDiff2Html bool
+	for name := range names {
+		if strings.Contains(name, "cytoscape") {
+			sawCytoscape = true
+		}
+		if strings.Contains(name, "diff2html") {
+			sawDiff2Html = true
+		}
+		chunk := fixture.do(t, http.MethodGet, "http://127.0.0.1:18420/assets/"+name, "", "127.0.0.1:18420", "")
+		mustStatus(t, chunk.status, http.StatusOK)
+		if len(chunk.body) == 0 {
+			t.Fatalf("embedded chunk %s is empty", name)
+		}
+		if strings.Contains(string(chunk.body), b1Token) {
+			t.Fatalf("embedded chunk %s leaks the session token", name)
+		}
+	}
+	if !sawCytoscape {
+		t.Fatalf("the bundle must embed the Cytoscape chunk, found %v", names)
+	}
+	if !sawDiff2Html {
+		t.Fatalf("the bundle must embed the Diff2Html chunk, found %v", names)
 	}
 }
 

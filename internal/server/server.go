@@ -189,6 +189,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/files/{path...}", s.handleFile)
 	s.mux.HandleFunc("GET /api/v1/entries", s.handleEntries)
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleAudit)
+	s.mux.HandleFunc("GET /api/v1/audit/{hash}/diff", s.handleAuditDiff)
 	s.mux.HandleFunc("GET /api/v1/doctor", s.handleDoctor)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleEvents)
