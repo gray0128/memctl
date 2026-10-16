@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { summarizeDiagnostics } from './diagnostics.js'
+import { autofixableCodes, summarizeDiagnostics } from './diagnostics.js'
 
 describe('summarizeDiagnostics', () => {
   it('groups issues by the documented severities and counts them', () => {
@@ -29,5 +29,24 @@ describe('summarizeDiagnostics', () => {
       counts: { error: 0, warning: 0, info: 0 },
       total: 0,
     })
+  })
+})
+
+describe('autofixableCodes', () => {
+  it('returns the distinct auto-fixable codes only', () => {
+    const report = {
+      issues: [
+        { code: 'ENTRY_MISSING', autoFixable: true },
+        { code: 'ENTRY_MISSING', autoFixable: true },
+        { code: 'MISSING_LINK', autoFixable: false },
+        { code: 'ORPHAN_FILE' },
+      ],
+    }
+    expect(autofixableCodes(report)).toEqual(['ENTRY_MISSING'])
+  })
+
+  it('returns an empty list when nothing is auto-fixable', () => {
+    expect(autofixableCodes({ issues: [{ code: 'MISSING_LINK', autoFixable: false }] })).toEqual([])
+    expect(autofixableCodes(null)).toEqual([])
   })
 })

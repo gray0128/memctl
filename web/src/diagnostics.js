@@ -20,3 +20,18 @@ export function summarizeDiagnostics(report) {
   }))
   return { counts, total: issues.length, groups }
 }
+
+// autofixableCodes returns the distinct issue codes the report marks as having
+// a deterministic repair. POST /api/v1/doctor:fix rejects any other code with
+// UNSUPPORTED, so the view only ever sends these. See
+// docs/02-domain-models-and-contracts.md section 2.3.
+export function autofixableCodes(report) {
+  const issues = (report && report.issues) || []
+  const codes = []
+  for (const issue of issues) {
+    if (issue && issue.autoFixable && issue.code && !codes.includes(issue.code)) {
+      codes.push(issue.code)
+    }
+  }
+  return codes
+}

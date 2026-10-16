@@ -32,4 +32,67 @@ describe('createApi', () => {
       message: 'a valid token is required',
     })
   })
+
+  it('sends the managed write requests with the documented preconditions', async () => {
+    const calls = []
+    const fetchImpl = async (path, init) => {
+      calls.push({ path, init })
+      return { ok: true, status: 200, json: async () => ({ commit: 'abc' }) }
+    }
+    const api = createApi({ token: 'secret', fetchImpl })
+
+    await api.putFile('notes/alpha beta.md', '# Alpha\n', 'sha256:old')
+    expect(calls[0].path).toBe('/api/v1/files/notes/alpha%20beta.md')
+    expect(calls[0].init.method).toBe('PUT')
+    expect(calls[0].init.headers['If-Match']).toBe('"sha256:old"')
+    expect(calls[0].init.headers['Content-Type']).toBe('application/json')
+    expect(JSON.parse(calls[0].init.body)).toEqual({ rawContent: '# Alpha\n' })
+
+    await api.putFile('new.md', '# New\n', 'absent')
+    expect(calls[1].init.headers['If-None-Match']).toBe('*')
+    expect(calls[1].init.headers['If-Match']).toBeUndefined()
+
+    await api.moveFile({ fromPath: 'a.md', toPath: 'b.md', baseRevision: 'sha256:rev' })
+    expect(calls[2].path).toBe('/api/v1/files:move')
+    expect(calls[2].init.method).toBe('POST')
+    expect(JSON.parse(calls[2].init.body)).toEqual({
+      fromPath: 'a.md',
+      toPath: 'b.md',
+      baseRevision: 'sha256:rev',
+    })
+
+    await api.createEntry({ filePath: 'a.md', factText: 'fact', expectedRevision: 'sha256:file' })
+    expect(calls[3].path).toBe('/api/v1/entries')
+    expect(calls[3].init.method).toBe('POST')
+
+    await api.patchEntry('entry-id', { filePath: 'a.md', factText: 'new' }, 'sha256:file')
+    expect(calls[4].path).toBe('/api/v1/entries/entry-id')
+    expect(calls[4].init.method).toBe('PATCH')
+    expect(calls[4].init.headers['If-Match']).toBe('"sha256:file"')
+
+    await api.deleteEntry('entry-id', 'a.md', 'sha256:file')
+    expect(calls[5].path).toBe('/api/v1/entries/entry-id?filePath=a.md')
+    expect(calls[5].init.method).toBe('DELETE')
+    expect(calls[5].init.headers['If-Match']).toBe('"sha256:file"')
+
+    await api.doctorFix({ issueCodes: ['ENTRY_MISSING'], baseRevision: 'sha256:repo' })
+    expect(calls[6].path).toBe('/api/v1/doctor:fix')
+    expect(calls[6].init.method).toBe('POST')
+
+    await api.sync()
+    expect(calls[7].path).toBe('/api/v1/sync')
+    expect(calls[7].init.method).toBe('POST')
+  })
+
+  it('reads one file through the path wildcard', async () => {
+    const calls = []
+    const fetchImpl = async (path, init) => {
+      calls.push({ path, init })
+      return { ok: true, status: 200, json: async () => ({ file: {}, rawContent: 'x' }) }
+    }
+    const api = createApi({ token: 'secret', fetchImpl })
+    await api.file('notes/alpha beta.md')
+    expect(calls[0].path).toBe('/api/v1/files/notes/alpha%20beta.md')
+    expect(calls[0].init.headers['X-Memctl-Token']).toBe('secret')
+  })
 })

@@ -41,11 +41,16 @@ function aheadBehind(sync) {
   return `领先 ${sync.aheadCount} · 落后 ${sync.behindCount}`
 }
 
-export function TopBar({ connection, snapshot, readOnly, error }) {
+export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy, syncMessage }) {
   const sync = snapshot ? snapshot.syncState : null
   const localState = snapshot ? sync.localState : error ? 'unavailable' : 'loading'
   const remoteState = snapshot ? sync.remoteState : error ? 'unavailable' : 'loading'
   const lastSync = snapshot && sync.lastSuccessAt ? sync.lastSuccessAt : '未知'
+  const SYNC_TONES = {
+    ok: 'text-emerald-700 dark:text-emerald-300',
+    warn: 'text-amber-700 dark:text-amber-300',
+    error: 'text-rose-700 dark:text-rose-300',
+  }
 
   return (
     <header className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
@@ -64,7 +69,20 @@ export function TopBar({ connection, snapshot, readOnly, error }) {
           <Field label="ahead/behind" value={aheadBehind(sync)} />
           <Field label="最后同步" value={lastSync} />
         </div>
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={readOnly || syncBusy}
+          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-slate-700"
+        >
+          {syncBusy ? '同步中…' : '立即同步'}
+        </button>
       </div>
+      {syncMessage && (
+        <p className={`mx-auto mt-3 max-w-5xl text-sm ${SYNC_TONES[syncMessage.tone] || SYNC_TONES.warn}`}>
+          {syncMessage.text}
+        </p>
+      )}
       {error && (
         <p className="mx-auto mt-3 max-w-5xl text-sm text-rose-700 dark:text-rose-300">
           无法读取快照：{error.message}

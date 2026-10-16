@@ -7,6 +7,7 @@
 // docs/04-ui-and-cli-specification.md section 5.
 
 import { buildQuery } from './queries.js'
+import { encodeFilePath, ifMatchHeader, putFileHeaders } from './writes.js'
 
 function metaContent(name) {
   if (typeof document === 'undefined') return ''
@@ -39,23 +40,52 @@ export function createApi(options = {}) {
     options.readOnly !== undefined ? options.readOnly : metaContent('memctl-readonly') === 'true'
 
   async function request(path, init = {}) {
-    const response = await fetchImpl(path, {
-      ...init,
-      headers: { Accept: 'application/json', ...(init.headers || {}), 'X-Memctl-Token': token },
-    })
+    const headers = { Accept: 'application/json', ...(init.headers || {}), 'X-Memctl-Token': token }
+    if (init.body !== undefined) headers['Content-Type'] = 'application/json'
+    const response = await fetchImpl(path, { ...init, headers })
     if (!response.ok) throw await toApiError(response)
     if (response.status === 204) return null
     return response.json()
+  }
+
+  function writeJSON(path, method, payload) {
+    return request(path, { method, body: JSON.stringify(payload) })
   }
 
   return {
     token,
     readOnly,
     snapshot: (signal) => request('/api/v1/snapshot', { signal }),
+    file: (path, signal) => request(`/api/v1/files/${encodeFilePath(path)}`, { signal }),
     entries: (params, signal) => request(`/api/v1/entries${buildQuery(params)}`, { signal }),
     audit: (params, signal) => request(`/api/v1/audit${buildQuery(params)}`, { signal }),
     auditDiff: (hash, signal) =>
       request(`/api/v1/audit/${encodeURIComponent(hash)}/diff`, { signal }),
     doctor: (signal) => request('/api/v1/doctor', { signal }),
+
+    // Managed writes. Every call reuses the file revision or repository
+    // baseRevision the caller holds, so the CLI and the UI share one version
+    // protocol and one repository lock.
+    putFile: (path, rawContent, fileRevision) =>
+      request(`/api/v1/files/${encodeFilePath(path)}`, {
+        method: 'PUT',
+        headers: putFileHeaders(fileRevision),
+        body: JSON.stringify({ rawContent }),
+      }),
+    moveFile: (payload) => writeJSON('/api/v1/files:move', 'POST', payload),
+    createEntry: (payload) => writeJSON('/api/v1/entries', 'POST', payload),
+    patchEntry: (id, payload, fileRevision) =>
+      request(`/api/v1/entries/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: ifMatchHeader(fileRevision),
+        body: JSON.stringify(payload),
+      }),
+    deleteEntry: (id, filePath, fileRevision) =>
+      request(`/api/v1/entries/${encodeURIComponent(id)}${buildQuery({ filePath })}`, {
+        method: 'DELETE',
+        headers: ifMatchHeader(fileRevision),
+      }),
+    doctorFix: (payload) => writeJSON('/api/v1/doctor:fix', 'POST', payload),
+    sync: () => request('/api/v1/sync', { method: 'POST' }),
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import { summarizeDiagnostics } from '../diagnostics.js'
+import { autofixableCodes, summarizeDiagnostics } from '../diagnostics.js'
 
 const SEVERITY_STYLES = {
   error: {
@@ -19,12 +19,15 @@ const SEVERITY_STYLES = {
   },
 }
 
-// DiagnosticsView renders the read-only DoctorReport: issue counts by
-// error/warning/info and the issue list. It intentionally shows no health
-// score, per docs/04-ui-and-cli-specification.md section 4.
+// DiagnosticsView renders the DoctorReport: issue counts by error/warning/info
+// and the issue list, plus the deterministic repair action of
+// POST /api/v1/doctor:fix. It intentionally shows no health score, per
+// docs/04-ui-and-cli-specification.md section 4.
 export function DiagnosticsView({ api, refreshKey }) {
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
+  const [fixing, setFixing] = useState(false)
+  const [fixMessage, setFixMessage] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +46,37 @@ export function DiagnosticsView({ api, refreshKey }) {
     }
   }, [api, refreshKey])
 
+  async function fix() {
+    if (!report) return
+    setFixing(true)
+    setFixMessage(null)
+    try {
+      const result = await api.doctorFix({
+        issueCodes: autofixableCodes(report),
+        baseRevision: report.revision,
+      })
+      if (result.result) {
+        const commit = result.result.commit
+        setFixMessage({
+          tone: 'ok',
+          text: `已提交确定性修复 ${commit ? commit.slice(0, 12) : result.result.transactionId}`,
+        })
+      } else {
+        setFixMessage({ tone: 'info', text: '当前没有可执行的确定性修复。' })
+      }
+    } catch (requestError) {
+      if (requestError.code === 'UNSUPPORTED') {
+        setFixMessage({ tone: 'warn', text: '存在没有确定性修复的诊断，需人工处理。' })
+      } else if (requestError.code === 'REVISION_MISMATCH') {
+        setFixMessage({ tone: 'warn', text: '诊断基线已过期，请刷新后重试。' })
+      } else {
+        setFixMessage({ tone: 'error', text: requestError.message })
+      }
+    } finally {
+      setFixing(false)
+    }
+  }
+
   if (error) {
     return <p className="text-sm text-rose-700 dark:text-rose-300">无法读取诊断：{error.message}</p>
   }
@@ -51,6 +85,13 @@ export function DiagnosticsView({ api, refreshKey }) {
   }
 
   const { counts, total, groups } = summarizeDiagnostics(report)
+  const fixable = autofixableCodes(report)
+  const OPEN_TONES = {
+    ok: 'text-emerald-700 dark:text-emerald-300',
+    info: 'text-slate-500 dark:text-slate-400',
+    warn: 'text-amber-700 dark:text-amber-300',
+    error: 'text-rose-700 dark:text-rose-300',
+  }
 
   return (
     <section className="space-y-4">
@@ -61,6 +102,23 @@ export function DiagnosticsView({ api, refreshKey }) {
           {report.checkedAt}
         </span>
       </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={fix}
+          disabled={fixing || fixable.length === 0 || api.readOnly}
+          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+        >
+          执行确定性修复
+        </button>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {fixable.length === 0
+            ? '没有标记为可自动修复的问题'
+            : `可自动修复：${fixable.join('、')}`}
+        </span>
+      </div>
+      {fixMessage && <p className={`text-sm ${OPEN_TONES[fixMessage.tone]}`}>{fixMessage.text}</p>}
 
       <div className="grid grid-cols-3 gap-4">
         {groups.map((group) => (

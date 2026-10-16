@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { buildGraphElements } from '../graph.js'
+import { SplitPanel } from './SplitPanel.jsx'
 
-// KnowledgeGraph renders the read-only MEMORY.md reachability graph from the
-// snapshot. Cytoscape draws the relations; the legend and counters cover dead
-// links and orphan files. Node styles use Cytoscape's attribute selectors so
-// the entry point, reachable files, orphan files and missing targets stay
-// distinguishable without a second data pass.
+// KnowledgeGraph renders the MEMORY.md reachability graph from the snapshot.
+// Cytoscape draws the relations; the legend and counters cover dead links and
+// orphan files. Node styles use Cytoscape's attribute selectors so the entry
+// point, reachable files, orphan files and missing targets stay distinguishable
+// without a second data pass. Selecting a file also opens the split action that
+// moves one of its entries into a new file.
 
 const STYLE = [
   {
@@ -53,7 +55,7 @@ function LegendItem({ color, shape, children }) {
   )
 }
 
-export function KnowledgeGraph({ snapshot }) {
+export function KnowledgeGraph({ api, snapshot, refreshKey }) {
   const container = useRef(null)
   const [selected, setSelected] = useState(null)
   const graph = snapshot ? snapshot.graph : null
@@ -123,12 +125,17 @@ export function KnowledgeGraph({ snapshot }) {
         </LegendItem>
       </div>
       {selected && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="font-medium break-all">{selected.label}</div>
-          <div className="mt-1 text-slate-500 dark:text-slate-400">
-            类型 {selected.kind} · 条目 {selected.entryCount}
-            {selected.orphan ? ' · 孤立文件' : ''}
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+          <div>
+            <div className="font-medium break-all">{selected.label}</div>
+            <div className="mt-1 text-slate-500 dark:text-slate-400">
+              类型 {selected.kind} · 条目 {selected.entryCount}
+              {selected.orphan ? ' · 孤立文件' : ''}
+            </div>
           </div>
+          {selected.kind !== 'missing' && (
+            <SplitPanel api={api} sourcePath={selected.id} refreshKey={refreshKey} />
+          )}
         </div>
       )}
     </section>
