@@ -197,7 +197,7 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
-		"ui", "dream", "install",
+		"dream", "install",
 	}
 
 	for _, sub := range planned {
@@ -215,6 +215,29 @@ func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "UNSUPPORTED") {
 				t.Fatalf("expected UNSUPPORTED reason in stderr for %q, got %q", sub, stderr.String())
+			}
+		})
+	}
+}
+
+// TestUIRejectsInvalidFlags verifies that `ui` reports a usage error before it
+// touches the repository or binds a port.
+func TestUIRejectsInvalidFlags(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, args := range [][]string{
+		{"ui", "--port"},
+		{"ui", "--port", "abc"},
+		{"ui", "--port", "70000"},
+		{"ui", "--unknown"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(args, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
+			if code != cli.ExitUsageError {
+				t.Fatalf("%v returned %d, want %d (stderr=%q)", args, code, cli.ExitUsageError, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("%v stdout = %q, want empty", args, stdout.String())
 			}
 		})
 	}

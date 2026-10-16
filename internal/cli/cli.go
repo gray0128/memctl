@@ -22,7 +22,6 @@ const (
 )
 
 var plannedSubcommands = map[string]string{
-	"ui":      "start the embedded local Web UI server (planned in Stage B)",
 	"dream":   "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
 	"install": "inspect, preview, or install agent adapter configurations (planned in Stage C)",
 }
@@ -48,9 +47,9 @@ Available Commands:
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
   doctor               Run read-only repository diagnostics (--json)
+  ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
 
 Planned Commands (not yet enabled):
-  ui                   Launch local Web UI (--port 18420 --no-open --readonly)
   install [agent...]   Manage host adapter configurations (--all --dry-run --status)
   dream                Preview, show, or apply memory organization proposals
 
@@ -128,6 +127,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	case "doctor":
 		return runDoctor(rest, stdout, stderr)
+
+	case "ui":
+		return runUI(rest, stdout, stderr)
 	}
 
 	if strings.HasPrefix(sub, "-") {

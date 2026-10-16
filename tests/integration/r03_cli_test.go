@@ -11,11 +11,13 @@ import (
 	"testing"
 )
 
-// TestR03BuildAndCLIEntry verifies scenario R03 from docs/05-validation-and-delivery.md:
-// - Clean build of ./cmd/memctl with the Go toolchain succeeds without frontend assets.
-// - `version` and `help` succeed with exit 0, without accessing HOME/memory/state or requiring git/node in PATH.
-// - Unknown commands and invalid flags fail with exit code 2 (usage error).
-// - Unimplemented subcommands do not return placeholder success (0).
+// TestR03BuildAndCLIEntry verifies scenario R03 from
+// docs/05-validation-and-delivery.md. The build uses the recorded toolchain:
+// internal/server embeds web/dist, so the frontend is built first via
+// `make ui` (see Makefile). `version` and `help` succeed with exit 0 without
+// accessing HOME/memory/state or requiring git/node in PATH; unknown commands
+// and invalid flags fail with exit code 2; unimplemented subcommands do not
+// return placeholder success.
 func TestR03BuildAndCLIEntry(t *testing.T) {
 	tmpDir := t.TempDir()
 	binName := "memctl"
@@ -113,15 +115,16 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 	}
 
 	// Commands that are still unimplemented must not return placeholder success.
-	code, stdout, stderr = runIsolated("ui")
+	// (`ui` is implemented since B-3 and is covered by the B-3 tests.)
+	code, stdout, stderr = runIsolated("install")
 	if code != 1 {
-		t.Fatalf("unimplemented ui exit code = %d, want 1 (stderr=%q)", code, stderr)
+		t.Fatalf("unimplemented install exit code = %d, want 1 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented ui stdout = %q, want empty", stdout)
+		t.Fatalf("unimplemented install stdout = %q, want empty", stdout)
 	}
 	if !strings.Contains(stderr, "UNSUPPORTED") {
-		t.Fatalf("unimplemented ui stderr missing UNSUPPORTED: %q", stderr)
+		t.Fatalf("unimplemented install stderr missing UNSUPPORTED: %q", stderr)
 	}
 
 	// doctor is implemented since A-6. With no repository it fails with a

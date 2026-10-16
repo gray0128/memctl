@@ -156,6 +156,7 @@ memctl/
   web/
     embed.go      # 前端内嵌入口
     src/          # 前端源码及组件测试
+    vite.config.js
     package.json
     package-lock.json
     dist/         # 构建产物，不提交

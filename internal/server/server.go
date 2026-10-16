@@ -10,6 +10,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -71,6 +72,12 @@ type Server struct {
 	events          *watcher.Bus
 	sseHeartbeat    time.Duration
 	mux             *http.ServeMux
+	// uiFS is the embedded compiled frontend; indexHTML already carries the
+	// session token and the read-only flag. uiErr records a build without the
+	// frontend so the API still works and `memctl ui` can fail fast.
+	uiFS      fs.FS
+	indexHTML []byte
+	uiErr     error
 }
 
 // New builds a Server and registers every route. It does not listen.
@@ -122,6 +129,7 @@ func New(opts Options) (*Server, error) {
 		server.allowedOrigins["http://"+net.JoinHostPort(name, port)] = struct{}{}
 	}
 	server.registerRoutes()
+	server.loadUI()
 	// A committed local write invalidates the client view immediately; the
 	// file watcher only covers external edits. See
 	// docs/02-domain-models-and-contracts.md section 5.
@@ -184,6 +192,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/doctor", s.handleDoctor)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleEvents)
+	// The current page and its compiled assets. `GET /{$}` matches only the
+	// exact root path so it does not shadow the API routes.
+	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /assets/", s.handleUIAsset)
 }
 
 // security applies the HTTP security rules to every request in the documented

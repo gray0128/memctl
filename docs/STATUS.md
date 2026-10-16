@@ -1,6 +1,6 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A 已完成任务的历史验收记录归档于 [阶段 A 归档](./validation/stage-a.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A 与阶段 B 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md) 与 [阶段 B 归档](./validation/stage-b.md)。
 
 ## 当前事实
 
@@ -21,8 +21,9 @@
 - 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --json` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
 - 已完成 `T022`：收口 [阶段 A 实现审查报告](./validation/stage-a-review.md) 记录的 `P1-1`–`P1-3`、`P2-1`–`P2-7`、`P3-1`–`P3-3` 共 13 项问题，只修复既有契约违背并补齐回归证据，未新增产品能力，详见 [T022 归档](./validation/stage-a.md#t022阶段-a-收口修复)。
 - 已完成 `T023`（`B-1`）：新增 `internal/server` 只读 HTTP 安全框架与 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 路由，补 `internal/app` 只读查询与 `internal/git.Log`；通过 `A01`–`A03` 与 `P01`–`P03` 的 HTTP 读取场景，详见 [T023 归档](./validation/stage-b.md#t023http-安全框架与只读-apib-1)。
-- 已完成 `T024`（`B-2`）：新增 `internal/watcher`（递归目录监听、150ms 防抖、有界扇出与溢出降级）、`internal/app` 写事务提交后主动失效通知与 `internal/server` 的 `GET /api/v1/events` SSE（Token 鉴权、`vault.updated`、`resync.required`、心跳与 `Server.Watch` 接线）；通过 `A05` 与 `A02` 的 SSE 鉴权场景，详见 [T024 完成记录](#t024文件监听与-sse-状态流b-2)。
-- 尚未实现前端工程与 Web UI、SSE 与文件监听、Dreaming 与正式安装流程；`--fix` 等确定性诊断修复属 `C-1`；`G05`/`G07` 沿用 A-3/A-4 场景；05 中其余产品验收场景仍待实现与验证。
+- 已完成 `T024`（`B-2`）：新增 `internal/watcher`（递归目录监听、150ms 防抖、有界扇出与溢出降级）、`internal/app` 写事务提交后主动失效通知与 `internal/server` 的 `GET /api/v1/events` SSE（Token 鉴权、`vault.updated`、`resync.required`、心跳与 `Server.Watch` 接线）；通过 `A05` 与 `A02` 的 SSE 鉴权场景，详见 [T024 归档](./validation/stage-b.md#t024文件监听与-sse-状态流b-2)。
+- 已完成 `T025`（`B-3` 子任务 1）：新增 `web/` 前端工程（Preact、Vite、Tailwind CSS）、`web/embed.go` 内嵌入口与 `Makefile` 的 `ui` 构建链路；`internal/server` 增加内嵌首页（注入 Session Token 与只读标识，本地 `self` CSP）与 `/assets/` 静态资源路由；新增 `memctl ui` 命令（`--port`、`--no-open`、`--readonly`），启动递归监听并在 SIGINT/SIGTERM 时取消请求上下文后关闭；前端实现 Meta Token 读取、JSON API 封装、基于 `fetch` 流的 SSE 解析与断线重连全量校正及顶栏状态；通过 `R01` 的 UI 资产场景、`A02` 的首页 Token 注入与 `A03` 的只读拦截，详见 [T025 完成记录](#t025内嵌前端工程与只读视图子任务-1b-3)。
+- 尚未实现 `B-3` 子任务 2 的只读业务视图（知识图谱、条目检索、审计 Diff、诊断展示）、Dreaming 与正式安装流程；`--fix` 等确定性诊断修复属 `C-1`；`G05`/`G07` 沿用 A-3/A-4 场景；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
 
@@ -51,21 +52,22 @@
 | T021 | 已完成 | 适配 Orca 1.4.227 重构 `scripts/next-round.sh`，改用 `orca terminal create` + `wait` + `send` 完全交接流并支持 `--terminal` + `--retry-request` 重放；消除接续阻塞；[归档证据](./validation/stage-a.md#t021修复跨会话接续入口以适配-orca-14227) |
 | T022 | 已完成 | 收口 [阶段 A 实现审查](./validation/stage-a-review.md) 的 `P1-1`–`P1-3`、`P2-1`–`P2-7` 与 `P3-1`–`P3-3`（13 项）；依赖阶段 A 全部实现；[归档证据](./validation/stage-a.md#t022阶段-a-收口修复) |
 | T023 | 已完成 | 对应 `B-1`：`internal/server` 路由与 HTTP 安全框架、Session Token 鉴权、Host/Origin 校验、安全响应头与只读拦截，以及 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 只读接口与分页限额；依赖阶段 A 全部完成；[归档证据](./validation/stage-b.md#t023http-安全框架与只读-apib-1) |
-| T024 | 已完成 | 对应 `B-2`：`internal/watcher` 递归目录监听与防抖、写事务完成后主动失效通知、`GET /api/v1/events` SSE 有界队列与心跳、`resync.required` 溢出降级与客户端解析校正；依赖 `B-1`；[完成记录](#t024文件监听与-sse-状态流b-2) |
+| T024 | 已完成 | 对应 `B-2`：`internal/watcher` 递归目录监听与防抖、写事务完成后主动失效通知、`GET /api/v1/events` SSE 有界队列与心跳、`resync.required` 溢出降级与客户端解析校正；依赖 `B-1`；[归档证据](./validation/stage-b.md#t024文件监听与-sse-状态流b-2) |
+| T025 | 已完成 | 对应 `B-3` 子任务 1：`web/` 前端工程与 `web/embed.go`、`Makefile` 的 `ui` 链路、`memctl ui` 命令（`--port`/`--no-open`/`--readonly`）、首页 Token 注入、SSE 客户端解析与重连校正及顶栏状态；依赖 `B-1`、`B-2`；[完成记录](#t025内嵌前端工程与只读视图子任务-1b-3) |
 
-任务 ID 不代表执行顺序。阶段 A 的全部任务（`A-1`–`A-6`）已完成；阶段 B 的 `B-1`、`B-2` 已完成并验收，`B-3` 为下一轮任务。后续按 `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
+任务 ID 不代表执行顺序。阶段 A 的全部任务（`A-1`–`A-6`）已完成；阶段 B 的 `B-1`、`B-2` 以及 `B-3` 子任务 1（`T025`）已完成并验收，`B-3` 子任务 2（只读业务视图）为下一轮登记任务。后续按 `B-3` 子任务 2 → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次推进；阶段 B 全部完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T024：文件监听与 SSE 状态流（B-2）
+## T025：内嵌前端工程与只读视图子任务 1（B-3）
 
-- 目标与范围：完成 `B-2`，前置为 `B-1`（`T023`）。新增 `internal/watcher`：基于 `fsnotify` 的递归目录监听、新建目录登记、rename/remove/原子替换处理、监听后端错误降级、150ms 防抖合并，以及 `Bus` 有界扇出（每个订阅者独立有界队列，溢出合并为一次 `resync.required`）；`internal/app` 新增 `MutationObserver` 插槽，本地写事务提交后主动发布失效提示；`internal/server` 注册 `GET /api/v1/events`，在安全中间件校验 `X-Memctl-Token` 后以 `text/event-stream` 推送 `vault.updated` 与 `resync.required`、发送评论心跳，并提供 `Server.Events` 与 `Server.Watch` 接线。`memctl ui` 命令、首页 meta Token 注入、内嵌前端与浏览器端 fetch 流解析/断线重连校正属 `B-3`；本轮以 Go 测试客户端验证跨块拆分、多行 `data` 与重连全量校正。`sync.status`、`sync.conflict`、`dream.updated` 的发布者属后续阶段，本轮不产生。
-- 契约：[SSE 与缓存](./02-domain-models-and-contracts.md#5-sse-与缓存)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)、[模块职责](./01-architecture-and-modules.md#4-模块职责)、[技术依赖](./01-architecture-and-modules.md#技术依赖)、[阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分)。
-- 验证日期与环境：2026-10-16，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
-- 命令与结果：`go vet ./...`、`go test ./... -count=1`、`make build` 全部通过；`internal/watcher` 与 `TestB2*` 用例另以 `-race` 复跑通过。测试使用临时 HOME、临时记忆仓库与临时环回端口，不访问网络或真实凭据。`A05` 由 `TestB2SSEDecoderHandlesSplitChunksAndMultilineDataCoversA05`（逐字节拆分与多行 `data` 合并）、`TestB2SSEStreamsCommittedWriteCoversA05`（受管写提交即推送 `vault.updated` 且携带新 `revision`）、`TestB2WatchStreamsExternalEditCoversA05`（外部直接编辑经 `Server.Watch` 到达开放流）、`TestB2SSEResyncAndReconnectCorrectionCoversA05`（断开期间提交后重连以 snapshot 全量校正，并收到 `resync.required`）、`TestB2SSEHeartbeatCoversA05`（评论心跳）覆盖；队列溢出降级由 `TestBusBoundedQueueSignalsResync` 直接验证；递归登记与 rename/remove/原子替换由 `TestWatcherRecursivelyRegistersNewDirectories`、`TestWatcherCoversRenameRemoveAndAtomicReplace` 覆盖，防抖合并由 `TestWatcherDebouncesBursts` 覆盖，`.git` 排除由 `TestWatcherExcludesGitInternal` 覆盖。`A02` 的 SSE 鉴权由 `TestB2SSEAuthCoversA02` 覆盖（缺失/错误 Token 为 401 `AUTH_REQUIRED`，`null` 与跨源 `Origin` 为 403 `ORIGIN_DENIED`）。
-- 未验证与遗留：`memctl ui` 命令、首页 meta Token 注入、内嵌前端与浏览器端 SSE 客户端解析/重连校正属 `B-3`；仅在 macOS arm64 实机运行，Windows/Linux 的 inotify 与 kqueue 后端行为未运行，交叉编译不替代；监听后端错误通道到 `resync.required` 的路径未构造可复现故障用例，当前由有界队列溢出用例覆盖降级语义；`snapshot` 在保护态仍返回 BUSY 且 `stale` 恒为 `false`（沿用 `B-1` 限制）。
-- 下一步：`B-2` 已完成，仍处阶段 B 且未触发停止条件，按 [开发循环规范](./06-development-loop.md#6-交接与中断) 接续 `B-3`（内嵌前端工程与只读视图）。
+- 目标与范围：完成 `B-3` 子任务 1，前置为 `B-1`（`T023`）与 `B-2`（`T024`）。新增 `web/` 前端工程（Preact、Vite、Tailwind CSS，Node.js 仅用于构建期）与 `web/embed.go` 内嵌入口；`Makefile` 增加 `ui` 目标，`test`、`build` 先构建前端再编译 Go。`internal/server` 增加 `GET /`（内嵌首页，注入 32 字节 Session Token 与只读标识，使用只允许本地 `self` 与 `frame-ancestors 'none'` 的 CSP）与 `GET /assets/`（内嵌脚本与样式，仅服务普通文件、不列目录）；新增 `memctl ui` 命令（`--port`、`--no-open`、`--readonly`），按真实监听地址校验 Host、启动 `internal/watcher` 并在 SIGINT/SIGTERM 时先取消请求基上下文再关闭，长连接 SSE 不阻塞退出。前端实现 Meta Token 读取与 JSON API 封装、基于 `fetch` 流的 SSE 解析（跨块拆分、多行 `data`、注释心跳）与每次连接/重连的全量校正，以及顶栏状态（仓库路径、本地/远端状态、最后同步、只读与连接状态）与快照概览。只读知识图谱、条目检索浏览、审计 Diff 预览与诊断展示属 `B-3` 子任务 2。
+- 契约：[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)、[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[SSE 与缓存](./02-domain-models-and-contracts.md#5-sse-与缓存)、[模块职责与目录规划](./01-architecture-and-modules.md#4-模块职责)、[技术依赖](./01-architecture-and-modules.md#技术依赖)、[阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分)。
+- 验证日期与环境：2026-10-16，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；执行者为主会话。
+- 命令与结果：`make ui`、`go vet ./...`、`go test ./... -count=1`、`make build` 全部通过；前端 `vitest run` 2 个文件 9 项通过（`createSSEParser` 的跨块、多行 `data`、CRLF、注释与分帧缓冲，`createEventStream` 的每次连接与重连全量校正、失败重试与停止，`createApi` 的 `X-Memctl-Token` 头与错误 envelope）。`R01` 的 UI 资产场景由 `TestB3EmbeddedUIAssetsCoverR01A02`（首页与 `/assets/` 均来自内嵌文件系统、页面无外部 CDN 引用、静态资源不含 Token、未知资源与目录请求返回 404）与 `TestB3UICommandEndToEndCoversR01A02A03`（仅把二进制复制到空 HOME 后运行 `memctl ui --no-open --readonly --port 0`，经真实环回端口加载页面与静态资源）覆盖。`A02` 的首页 Meta Token 注入由两个用例覆盖（页面注入的 Token 经 `X-Memctl-Token` 认证 `GET /api/v1/snapshot` 为 200，缺失 Token 为 401）。`A03` 由 `TestB3ReadOnlyUIRejectsWritesCoversA03` 与端到端用例覆盖（`--readonly` 下 POST 返回 403 `READ_ONLY`，页面路由写入被拒，Host 校验仍生效）。`A05` 的浏览器端解析与重连校正由 `web/src/sse.test.js` 覆盖，与 `B-2` 的服务端 SSE 用例衔接。`TestR03BuildAndCLIEntry` 更新为按记录工具链构建，并改用仍未实现的 `install` 校验未实现命令不返回占位成功。回归 `B-1`、`B-2` 与阶段 A 全量用例通过。
+- 未验证与遗留：`B-3` 子任务 2 的只读知识图谱（Cytoscape.js）、条目检索与过滤、审计 Diff 预览（Diff2Html）与诊断展示未实现；`internal/server` 通过 `web/embed.go` 内嵌 `web/dist`，`dist` 不提交，因此 `go vet`、`go test`、`go build` 前必须先执行 `make ui`；仅在 macOS arm64 实机运行，Windows/Linux 的浏览器打开与文件监听后端未运行；前端仅以 `vitest` 验证协议与解析逻辑，未开展浏览器视觉 UI/UX 验证；无图形环境时 `memctl ui` 的自动打开降级为打印 URL。
+- 下一步：`B-3` 子任务 1 已完成，仍处阶段 B 且未触发停止条件，按 [开发循环规范](./06-development-loop.md#6-交接与中断) 接续 `B-3` 子任务 2（只读业务视图）。
 
 ## 近期实施任务
 
-`T024`（`B-2`）已完成并通过验收，无进行中任务。按 [开发循环规范](./06-development-loop.md#6-交接与中断)，存在可执行任务且未触发停止条件，下一轮登记并启动 `B-3`（内嵌前端工程与只读视图）；本机已确认可用 Node v26.10.0 / npm 11.19.1，作为 `B-3` 前端构建基线，跨平台与跨版本支持另行验证。
+`T025`（`B-3` 子任务 1）已完成并通过验收，无进行中任务。按 [开发循环规范](./06-development-loop.md#6-交接与中断)，存在可执行任务且未触发停止条件，下一轮登记并启动 `B-3` 子任务 2（只读知识图谱、条目检索浏览、审计 Diff 预览与诊断展示）；前端构建基线为 Node v26.10.0 / npm 11.19.1，`dist` 不提交，Go 构建与测试前先执行 `make ui`，跨平台与跨版本支持另行验证。
