@@ -2,6 +2,17 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## T016：跨会话自动接续入口（Orca 宿主）
+
+- 目标与范围：为 [接续的执行机制](../06-development-loop.md#61-接续的执行机制) 建立可执行的宿主入口，把四要素交接与接续前置条件变成拒绝式检查。新增 `scripts/next-round.sh`，在 `06` 第 6 节补充 6.1 接续的执行机制，在 `AGENTS.md` 补充 Orca 宿主入口说明；不改变第 6 节的所有权模型与停止条件。
+- 契约：[接续的执行机制](../06-development-loop.md#61-接续的执行机制)、[目录结构与依赖](../01-architecture-and-modules.md#5-目录结构与依赖)（`scripts/` 定位）、[协作入口](../../AGENTS.md)。
+- 验证日期与环境：2026-10-16，macOS arm64，Git 2.54.0，Orca 1.4.226（runtime ready），bash 3.2；执行者为主会话（实现提交 `4ab1376`）。
+- 核验结果：通过。`bash -n` 通过；五类拒绝路径均返回退出码 `1`（缺少任一四要素小节、缺少提示词、`--effort` 缺少 `--model`、工作树不干净、提示词文件不存在），另核对参数缺值与未知参数两条；`--dry-run` 输出完整命令参数并正确透传 `--model`、`--effort`、`--focus`；全仓 11 份 Markdown 本地链接 117 条、带锚点 61 条全部有效。
+- 链路测试：`scripts/next-round.sh --prompt-file /tmp/next-round-test.md` 返回 `outcome.kind=terminal`、`outcome.handle=term_48db347d-…`、`prompt.outcome=handed-to-terminal`、`operationId=1792125071135-…`，退出码 `0`；`orca terminal read` 确认新会话收到完整交接提示词、按只读提示执行并自行结束，测试前后工作树均无改动。
+- 未运行：未执行 `--retry-launch` 重放路径（本机未复现启动回执丢失）；未在 Orca 运行时不可用时验证失败分支；未核对 `--model`、`--effort` 在新会话中的最终生效结果，只验证了命令行构造。
+- 遗留限制：入口只能启动新会话，不能强制旧会话停止开发；该限制已写入 [接续的执行机制](../06-development-loop.md#61-接续的执行机制)。
+- 下一步：剩余已登记待办为 `T008`（A-2 格式与链接解析）、`T007`（A-3 受管写入与恢复）、`T002`（凭据契约）、`T011`（引号统一），其后依次推进 `A-4` 至 `D-2`；本轮按 [接续的执行机制](../06-development-loop.md#61-接续的执行机制) 发起下一轮会话，优先推进 `T008`。
+
 ## T015：台账冷热分离与阶段归档
 
 - 目标与范围：在 [开发循环规范](../06-development-loop.md#1-最小记录结构) 建立 `STATUS.md` 热台账与 `docs/validation/` 按阶段冷归档的分离机制及单条记录精简规则，同步 [目录结构与依赖](../01-architecture-and-modules.md#5-目录结构与依赖) 说明，并将 `T001`–`T014` 完整历史验收记录原样移入本文件。
