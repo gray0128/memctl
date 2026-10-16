@@ -42,7 +42,7 @@ type RecoverStatus struct {
 // RecoverStatus reports unfinished transactions without changing the
 // repository.
 func (a *App) RecoverStatus(ctx context.Context) (RecoverStatus, error) {
-	session, err := a.beginLocked(ctx, false)
+	session, err := a.beginLocked(ctx, false, false)
 	if err != nil {
 		return RecoverStatus{}, err
 	}
@@ -69,7 +69,7 @@ func (a *App) RecoverStatus(ctx context.Context) (RecoverStatus, error) {
 // recognized instead of being rolled back; a path edited by hand or an
 // unexpected HEAD refuses automatic recovery and is reported for manual work.
 func (a *App) RecoverRollback(ctx context.Context) (RecoverStatus, error) {
-	session, err := a.beginLocked(ctx, false)
+	session, err := a.beginLocked(ctx, false, false)
 	if err != nil {
 		return RecoverStatus{}, err
 	}

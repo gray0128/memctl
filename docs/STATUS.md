@@ -14,7 +14,8 @@
 - 已完成 `T012`–`T013`：引入 `codegraph` 与 `zvec-grep` 代码检索工具并忽略 `/.codegraph/`、`/.zvec-grep/`、`/.commandcode/` 本地工具状态。
 - 已完成 `T016`：在 [开发循环规范](./06-development-loop.md#61-接续的执行机制) 第 6 节补充接续执行机制，并提供 Orca 宿主启动入口 `scripts/next-round.sh`，校验四要素交接与「已提交推送」前置条件后启动新会话。
 - 已完成 `T011`（文档引号用法统一）：按 `tech-doc-style-chinese` 默认基线将 `01`–`04` 与 `docs/README.md` 正文的弯引号统一为直角引号「」，并在 [方案索引](./README.md) 声明引号基线；未新增或改变产品契约，未修改源码与 `脚本化实现参考/`。
-- 尚未实现远端同步（A-4）、Hook（A-5）、前端工程或 Web UI；05 中其余产品验收场景仍待实现与验证。
+- 已完成阶段 A-4（`T017`）：新增 `internal/syncer` 与 `internal/git`、`internal/state`、`internal/app`、`internal/cli` 的远端相关实现，提供空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类（`AUTH_FAILED`/`NETWORK_UNAVAILABLE`/`NON_FAST_FORWARD`/`TIMEOUT`/`NO_UPSTREAM`/`CONTENT_CONFLICT`）、非交互凭据抑制与 Git 进程组清理、CLI 多阶段 `resolve` 与不支持冲突类型拒绝；通过 `G02`–`G04`、`G06`、`C01`–`C04`、`L01` 前台 Git 子进程场景与 `G08.1`、`G08.3`–`G08.7`。
+- 尚未实现 Hook 与后台同步（A-5）、前端工程与 Web UI、诊断、Dreaming 与安装；`G05`/`G07` 未新增 A-4 专项用例，`G08.2`（后台派生凭据）属 A-5；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
 
@@ -36,26 +37,31 @@
 | T014 | 已完成 | 优化 `06` 开发循环、补齐 `05` 阶段 A–D 完整计划并同步 `AGENTS.md`；[归档证据](./validation/stage-a.md#t014优化开发循环与补齐完整开发计划) |
 | T015 | 已完成 | 建立台账冷热分离与按阶段归档规则，归档 `T001`–`T014` 历史记录；[归档证据](./validation/stage-a.md#t015台账冷热分离与阶段归档) |
 | T016 | 已完成 | 为 `06` 第 6 节的接续提供 Orca 宿主启动入口 `scripts/next-round.sh` 与四要素校验；[归档证据](./validation/stage-a.md#t016跨会话自动接续入口orca-宿主) |
-| T017 | 待开始 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；契约见 [阶段 A 实施顺序](./05-validation-and-delivery.md#阶段-a-的实施顺序) |
+| T017 | 已完成 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；证据见下文 |
+| T018 | 待开始 | 对应 A-5：Hook 与后台；依赖 A-4 与目标宿主协议；契约见 [阶段 A 实施顺序](./05-validation-and-delivery.md#阶段-a-的实施顺序) |
 
-任务 ID 不代表执行顺序。`T011`（引号统一）已完成；近期已登记任务为 `T017`（对应 `A-4` 前台远端同步）。后续阶段步骤按 `A-4` → `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系依次执行并登记。
+任务 ID 不代表执行顺序。`T017`（A-4 前台远端同步）已完成；近期已登记任务为 `T018`（对应 `A-5` Hook 与后台）。后续阶段步骤按 `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系依次执行并登记。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），两者范围不重叠。
 
-## T011：文档引号用法统一
+## T017：前台远端同步（A-4）
 
-- 目标与范围：在 `tech-doc-style-chinese` 默认规则下确定 `docs/` 与根 `README.md` 的引号基线，并把 `01`–`04` 与 `docs/README.md` 正文的弯引号改为直角引号「」，使全仓正文口径一致；只改引号与在 [方案索引](./README.md) 增加一行基线声明，不改事实、条件、机器可读内容与产品契约。
-- 契约：[方案索引](./README.md)（引号基线声明）、[协作入口](../AGENTS.md)（文档 Skill 要求）。
-- 验证日期与环境：2026-10-17，macOS arm64，Git 2.54.0；执行者为主会话。
-- 核验结果：通过。17 对中文正文弯引号全部改为「」；`AGENTS.md`、根 `README.md`、`05`、`06`、`STATUS.md` 与 `docs/validation/` 原有「」保持不变；02 与 `AGENTS.md` 中位于行内代码的 ASCII 引号（`If-Match: "<fileRevision>"`、`{runner: "claude" 或 "codex", baseRevision}`、`codegraph explore "<问题>"`）按要求保留。全仓 11 份 Markdown（不含 `脚本化实现参考/` 与 `.commandcode/`）本地链接 133 条、带锚点 80 条全部有效；`git diff --check` 无输出；改动文件无行尾空白。
-- 未运行：纯文档任务，不运行 Go 测试、构建、平台或宿主测试。
-- 遗留限制：`脚本化实现参考/` 按参考边界不修改，其正文不纳入本次统一。
-- 下一步：剩余已登记待办为 `T017`（对应 `A-4` 前台远端同步），其后按 `A-4` → `D-2` 推进；本轮验证通过并提交推送后按 [接续的执行机制](./06-development-loop.md#61-接续的执行机制) 创建下一轮会话。
+- 目标与范围：完成 A-4，前置为 A-3 与 `T002`。新增 `internal/syncer`、`internal/git/exec.go`、`internal/git/sync.go`、`internal/git/proc_unix.go`、`internal/git/proc_other.go`、`internal/state/conflict.go`、`internal/state/cache.go`、`internal/app/remote.go`、`internal/app/sync.go`、`internal/app/resolve.go` 与 `internal/cli/tty_*.go`；实现空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类、非交互凭据抑制与进程组清理、CLI 多阶段 `resolve` 及冲突类型拒绝；不实现后台派生（A-5）、Hook、UI 与安装。
+- 契约：[凭据与信任边界](./01-architecture-and-modules.md#34-凭据与信任边界)、[初始化与远端接入](./03-workflows-and-dataflows.md#1-初始化与远端接入)、[同步与后台任务](./03-workflows-and-dataflows.md#4-同步与后台任务)、[凭据环境继承与失败处理](./03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；远端集成测试使用临时 HOME、临时本地 bare 远端、受控 `GIT_SSH_COMMAND` 桩与本地 `git http-backend`，并设置 `GIT_CONFIG_NOSYSTEM=1` 与受限 `GIT_ALLOW_PROTOCOL`，不访问真实远端、网络或系统凭据库。
+- `G02`/`G03`：`TestA4PrivateRemoteRoundTripCoversG02` 验证空远端首推、第二设备克隆相同历史并建立 `origin/main` upstream、不产生独立根提交；`TestA4RemoteBoundaryAndErrors` 覆盖错误 URL 不当作空远端、SSH 认证失败分类为 `AUTH_FAILED`、无默认分支明确失败、取消 upstream 后按初始化协议重建。
+- `G04`/`G06`：`pre-push` 钩子在 fetch 后推进远端时 push 被拒返回 `NON_FAST_FORWARD` 且 `remoteState=pending`、本地提交保留；`TestA4ManualGitStatePausesSyncCoversG06` 在用户手工 merge 冲突下让 `sync --wait` 与受管 `write` 均返回 `OPERATION_ACTIVE`。
+- `C01`–`C04`：`TestA4ConflictTwoStagesCoversC01` 验证两个连续本地提交分别冲突时每阶段的三方快照与 `captured`→`resolving` 相位；`TestA4ConflictStaleCoversC02` 验证外部 HEAD 变化后旧结果返回 `CONFLICT_STALE` 且不覆盖新历史；`TestA4ConflictTypesCoversC03` 区分删除/修改、空文件与文本冲突并拒绝二进制与 rename 类型（`UNSUPPORTED`）；`TestA4ResolveAbortCoversC04` 验证跨进程读取持久化阶段并以 `--abort` 恢复原始 HEAD。
+- `G08`：`G08.1` 受控 SSH 桩成功同步并传递 `SSH_AUTH_SOCK`；`G08.3` 本地 HTTP + `git http-backend` 下非交互 `credential.helper` 认证成功且凭据不出现在输出；`G08.4` 无 TTY 时 `GIT_ASKPASS`/`SSH_ASKPASS` 未被调用；`G08.5` 挂起桩在总 deadline 到期后返回 `TIMEOUT`，进程组被终止且锁可重新获取；`G08.6` 主机密钥失败返回 `AUTH_FAILED` 且不写 `known_hosts`；`G08.7` 含凭据 URL 在诊断中被脱敏为 `://***@`。
+- `L01`（前台 Git 子进程）：`G08.5` 用例同时验证 deadline 到达后无遗留 Git 子进程且仓库锁可再次获取。
+- 未验证与遗留：`G08.2`（终端成功但后台凭据环境不同）依赖 A-5 后台派生，本轮未实现或验证，`G08` 作为复合项未整体标记通过；`G05`（签名与 hooks 拒绝）沿用 A-3 的缺失身份与 hook 拒绝场景，`G07` 沿用共享 `git.Inspect` 未合并索引检测，本轮未新增专项用例；真实 `SIGKILL` 父进程与宿主清理属 A-5 平台门槛；未覆盖 Windows/Linux。
+- 下一步：剩余已登记待办为 `T018`（对应 `A-5` Hook 与后台），其后按 `A-5` → `D-2` 推进；本轮按用户指示暂停接续。
 
 ## 近期实施任务
 
-### T017：前台远端同步（A-4）
+### T018：Hook 与后台（A-5）
 
-- 目标与依赖：实现 A-4，前置为 A-3 与已完成的 `T002` 凭据契约。交付已有远端与空远端接入、`sync --wait`、错误分类与 CLI 多阶段 `resolve`，不依赖后台派生。
-- 交付物：实现、对应测试、按 [阶段 A 实施顺序](./05-validation-and-delivery.md#阶段-a-的实施顺序) 的 A-4 验收与凭据契约落地验证。
-- 完成检查：`G02`–`G08`、`C01`–`C04` 与 `L01` 的前台 Git 子进程场景通过，且在 [阶段 A 归档](./validation/stage-a.md) 记录验证环境与证据。
+- 目标与依赖：实现 A-5，前置为 A-4 与明确的目标宿主协议。交付 `start`/`context`/`pull`/`sync`/`end`/`tag`/`wrap`、会话身份与去重、非交互后台同步及平台进程生命周期；安装器留待 C-3。
+- 交付物：实现、对应测试，以及按 [验收与交付](./05-validation-and-delivery.md#3-性能与适配记录) 的宿主与性能实测记录；覆盖 `H01`–`H06`、`G08.2`、`L01`、`L02`。
+- 完成检查：Hook 协议、会话身份、`--once` 去重、后台凭据快照与进程清理场景通过，并在 [阶段 A 归档](./validation/stage-a.md) 或阶段报告记录宿主版本、命令与结果。

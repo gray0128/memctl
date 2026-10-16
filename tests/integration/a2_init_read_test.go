@@ -60,6 +60,10 @@ func a2Env(home, repo string, withIdentity bool) []string {
 		"PATH=" + os.Getenv("PATH"),
 		"GIT_CONFIG_GLOBAL=" + filepath.Join(home, "gitconfig"),
 		"GIT_CONFIG_SYSTEM=" + filepath.Join(home, "absent-system-gitconfig"),
+		// Apple's Git reads its own system config (with credential.helper=
+		// osxkeychain) even when GIT_CONFIG_SYSTEM points elsewhere, so the
+		// tests must disable the system config to stay hermetic.
+		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_ALLOW_PROTOCOL=file",
 		"GIT_LITERAL_PATHSPECS=1",

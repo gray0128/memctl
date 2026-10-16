@@ -47,6 +47,32 @@ func TestRedactHidesCredentialURLs(t *testing.T) {
 	}
 }
 
+// TestSuppressPrompts covers the non-interactive credential environment: the
+// askpass fallbacks are removed, the agent socket is kept and Git is told not
+// to prompt.
+func TestSuppressPrompts(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"SSH_AUTH_SOCK=/tmp/agent.sock",
+		"GIT_ASKPASS=/tmp/askpass",
+		"SSH_ASKPASS=/tmp/ssh-askpass",
+		"GIT_TERMINAL_PROMPT=1",
+		"DISPLAY=:0",
+	}
+	kept := suppressPrompts(env)
+	joined := strings.Join(kept, "\n")
+	for _, dropped := range []string{"GIT_ASKPASS=", "SSH_ASKPASS=", "DISPLAY=", "GIT_TERMINAL_PROMPT=1"} {
+		if strings.Contains(joined, dropped) {
+			t.Fatalf("suppressPrompts kept %s: %v", dropped, kept)
+		}
+	}
+	for _, keptEntry := range []string{"SSH_AUTH_SOCK=/tmp/agent.sock", "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never"} {
+		if !strings.Contains(joined, keptEntry) {
+			t.Fatalf("suppressPrompts dropped %s: %v", keptEntry, kept)
+		}
+	}
+}
+
 // TestRunIgnoresInheritedRedirection proves the scrubbing with a real Git
 // invocation: an inherited GIT_DIR must not redirect the command.
 func TestRunIgnoresInheritedRedirection(t *testing.T) {

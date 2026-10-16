@@ -27,6 +27,18 @@ const (
 	RecoveryRequired     Code = "RECOVERY_REQUIRED"
 	Busy                 Code = "BUSY"
 	PreconditionRequired Code = "PRECONDITION_REQUIRED"
+
+	// Internal Git failure classes from
+	// docs/02-domain-models-and-contracts.md section 4.3. They select the
+	// remote state and stay stable in CLI and HTTP output.
+	AuthFailed         Code = "AUTH_FAILED"
+	NetworkUnavailable Code = "NETWORK_UNAVAILABLE"
+	NoUpstream         Code = "NO_UPSTREAM"
+	NonFastForward     Code = "NON_FAST_FORWARD"
+	ContentConflict    Code = "CONTENT_CONFLICT"
+	ConflictStale      Code = "CONFLICT_STALE"
+	Timeout            Code = "TIMEOUT"
+	RemoteNotApproved  Code = "REMOTE_NOT_APPROVED"
 )
 
 // Error carries a contract code together with a human-readable message.

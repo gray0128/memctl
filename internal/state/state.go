@@ -57,14 +57,17 @@ func (t Transaction) AffectedPaths() []string {
 	return paths
 }
 
-// Store reads and writes transaction records under <gitDir>/memctl.
+// Store reads and writes transaction records under <gitDir>/memctl and
+// operation, conflict and approval records under the same root.
 type Store struct {
-	dir string
+	base string
+	dir  string
 }
 
 // OpenStore binds a record store to a real Git directory.
 func OpenStore(gitDir string) *Store {
-	return &Store{dir: filepath.Join(gitDir, "memctl", "transactions")}
+	base := filepath.Join(gitDir, "memctl")
+	return &Store{base: base, dir: filepath.Join(base, "transactions")}
 }
 
 // NewTransactionID returns a random, non-reusable transaction identifier.

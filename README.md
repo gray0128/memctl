@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析，以及阶段 A-3 的本地受管写入、显式 capture 与事务恢复（`init`、`read`、`write`、`sync --capture`、`recover`）；尚未实现 Git 远端同步、Hook、Web UI 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复，以及阶段 A-4 的前台远端同步与冲突解决（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`resolve`、`recover`）；尚未实现 Hook 与后台同步、Web UI、诊断、Dreaming 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -34,15 +34,16 @@ memctl/
   Makefile              # 阶段 A 的 CLI 构建、测试与清理入口
   go.mod                # Go 模块定义（Go 1.27.1）
   cmd/memctl/           # CLI 进程入口与版本注入
-  internal/cli/         # 命令分发、init/read/write/sync --capture/recover 与参数错误边界
+  internal/cli/         # 命令分发、init/read/write/sync/resolve/recover、参数错误边界与终端检测
   internal/config/      # 仓库与状态路径解析、repoId
-  internal/git/         # Git 调用、状态检查、环境清理与失败分类
+  internal/git/         # Git 调用、状态检查、环境清理、失败分类与同步原语
+  internal/syncer/      # 前台同步编排、错误分类与冲突快照
   internal/lock/        # 仓库排他文件锁
-  internal/state/       # 事务恢复记录
+  internal/state/       # 事务恢复记录、冲突/操作记录、远端审批与同步摘要
   internal/vault/       # 根相对路径边界、有界读取、格式解析与受管文件写入
-  internal/app/         # 初始化、读取、受管写入、capture 与事务恢复
+  internal/app/         # 初始化、读取、受管写入、capture、远端同步与冲突解决
   internal/memerr/      # 契约错误码
-  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3）
+  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3、A-4）
   docs/                 # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/         # 只读参考，不作为新实现或发布入口
 ```
@@ -53,7 +54,7 @@ memctl/
 
 每次围绕一个可验证目标执行「文档契约 → 最小实现 → 验收证据 → 回写状态」。先从状态台账确认范围，再按方案索引读取相关契约；测试失败回到当前任务修复，影响结果的决策缺失则记录阻塞并确认。流程、状态转换和完成条件见 [开发循环规范](./docs/06-development-loop.md)。
 
-阶段 A-1 与 A-2 已验证的构建与测试命令（工具链基线 `Go 1.27.1`，不依赖本机记忆库、Git 远端或 Node.js）：
+阶段 A 已验证的构建与测试命令（工具链基线 `Go 1.27.1`，不依赖本机记忆库、Git 远端或 Node.js）：
 
 ```bash
 make build
@@ -62,7 +63,7 @@ make test
 ./bin/memctl help
 ```
 
-本地初始化与读取使用隔离路径验证；`init` 只创建本地仓库与首笔提交，不配置远端：
+本地初始化与读取使用隔离路径验证；`init` 不带 URL 时只创建本地仓库与首笔提交，不配置远端：
 
 ```bash
 export AGENT_MEMORY_DIR=/tmp/memory-demo
@@ -76,9 +77,18 @@ printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --ba
 # 显式接收串行外部编辑，查看或回滚未完成事务
 ./bin/memctl sync --capture
 ./bin/memctl recover --status
+
+# 连接已确认私有性和所有权的远端；空远端完成首推，已有历史则克隆并建立 upstream
+./bin/memctl init git@github.com:<you>/memory.git --confirm-private
+
+# 前台完整同步；冲突时进入多阶段解决（--json 查看、--apply 提交本阶段结果、--abort 中止）
+./bin/memctl sync --wait
+./bin/memctl resolve --json
+./bin/memctl resolve --apply ./resolution.json --conflict <conflictId>
+./bin/memctl resolve --abort --conflict <conflictId>
 ```
 
-当前 `version`、`help`、`init`（仅本地）、`read`、`write`、`sync --capture` 与 `recover` 可用。`init` 携带远端 URL、`sync` 未带 `--capture` 时明确拒绝（退出码 `1`）；其余规划子命令仍返回未实现错误（退出码 `1`）。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
+当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`resolve` 与 `recover` 可用。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。`sync` 不带 `--capture`/`--wait` 以及 Hook 类子命令仍返回未实现错误（退出码 `1`）；未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
 
 ## 上游与参考
 

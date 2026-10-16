@@ -27,7 +27,6 @@ var plannedSubcommands = map[string]string{
 	"end":     "trigger background sync at session end (planned in A-5)",
 	"tag":     "print canonical agent://<device>/<agent>/<sid> source tag (planned in A-5)",
 	"wrap":    "run a command wrapped with session identity and pre/post sync (planned in A-5)",
-	"resolve": "inspect, apply, or abort conflict resolution states (planned in A-4)",
 	"ui":      "start the embedded local Web UI server (planned in Stage B)",
 	"doctor":  "diagnose repository and state consistency (planned in A-6)",
 	"dream":   "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
@@ -37,24 +36,24 @@ var plannedSubcommands = map[string]string{
 const usageText = `Usage:
   memctl <subcommand> [flags] [-- command...]
 
-Available Commands (Stage A-3):
+Available Commands (Stage A-4):
   version              Print memctl version information
   help                 Show this help message
   init [remote-url]    Initialize a local memory repository (--confirm-private)
   read <path>          Read a memory file or structured revision (--json)
   write <path>         Write a memory file with a baseline check (--base REV --stdin)
+  sync --wait          Foreground remote synchronization
   sync --capture       Capture serial external edits and commit them
+  resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
 
 Planned Commands (not yet enabled):
-  sync --wait          Foreground remote synchronization (A-4)
   start                SessionStart hook synchronization and context output
   context              UserPromptSubmit hook synchronization and context output (--once)
   pull                 Silent hook synchronization (--once)
   end                  SessionEnd hook background synchronization
   tag                  Output canonical session source URI (--agent NAME --sid ID)
   wrap                 Wrap external command with pre/post sync (--agent NAME -- <cmd...>)
-  resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   doctor               Run repository diagnostics (--json --fix)
   ui                   Launch local Web UI (--port 18420 --no-open --readonly)
   install [agent...]   Manage host adapter configurations (--all --dry-run --status)
@@ -108,6 +107,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	case "sync":
 		return runSync(rest, stdout, stderr)
 
+	case "resolve":
+		return runResolve(rest, stdout, stderr)
+
 	case "recover":
 		return runRecover(rest, stdout, stderr)
 	}
@@ -128,9 +130,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	return ExitUsageError
 }
 
-// runInit implements `init [remote-url] --confirm-private`. Stage A-2 only
-// creates or reuses a local repository; a remote URL is rejected explicitly
-// instead of being silently ignored.
+// runInit implements `init [remote-url] --confirm-private`. Without a URL it
+// creates or reuses a local-only repository. With a URL it connects to an
+// empty remote, clones a remote with history, or attaches a remote to an
+// existing local repository.
 func runInit(args []string, stdout, stderr io.Writer) int {
 	remoteURL := ""
 	confirmPrivate := false
@@ -146,12 +149,10 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 			return usageError(stderr, "init", fmt.Sprintf("unexpected argument %q", arg))
 		}
 	}
-
-	if remoteURL != "" {
-		return fail(stderr, "init", memerr.New(memerr.Unsupported,
-			"remote connection is not implemented yet (stage A-4); run memctl init without a URL for a local-only repository"))
+	if remoteURL != "" && !confirmPrivate {
+		return usageError(stderr, "init", "connecting a remote requires --confirm-private to confirm the remote is private and owned by you")
 	}
-	if confirmPrivate {
+	if remoteURL == "" && confirmPrivate {
 		return usageError(stderr, "init", "--confirm-private requires a remote URL")
 	}
 
@@ -159,12 +160,29 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "init", err)
 	}
-	result, err := app.New(cfg).Init(context.Background())
+	result, err := app.New(cfg).Init(context.Background(), app.InitOptions{
+		RemoteURL:      remoteURL,
+		ConfirmPrivate: confirmPrivate,
+		Interactive:    hasTerminal(),
+	})
+	printInitResult(stdout, result)
 	if err != nil {
 		return fail(stderr, "init", err)
 	}
-	fmt.Fprintf(stdout, "memory repo: %s\nstate: %s\nhead: %s\n", result.RepoPath, result.State, result.Head)
 	return ExitOK
+}
+
+func printInitResult(stdout io.Writer, result app.InitResult) {
+	if result.RepoPath == "" {
+		return
+	}
+	fmt.Fprintf(stdout, "memory repo: %s\nstate: %s\n", result.RepoPath, result.State)
+	if result.Head != "" {
+		fmt.Fprintf(stdout, "head: %s\n", result.Head)
+	}
+	if result.RemoteState != "" {
+		fmt.Fprintf(stdout, "remote: %s\n", result.RemoteState)
+	}
 }
 
 // runRead implements `read <path> [--json]`.
@@ -297,10 +315,12 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return ExitOK
 }
 
-// runSync implements the stage A-3 subset of `sync`: explicit local capture
-// only. Remote and background synchronization arrive in A-4 and A-5.
+// runSync implements `sync --wait` for foreground remote synchronization and
+// `sync --capture` for explicit serial external edits. The automatic Hook path
+// and background derivation belong to A-5.
 func runSync(args []string, stdout, stderr io.Writer) int {
 	capture := false
+	wait := false
 	agent := ""
 	sid := ""
 
@@ -309,8 +329,10 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		switch {
 		case arg == "--capture":
 			capture = true
-		case arg == "--wait" || arg == "--stdin":
-			// Accepted by the target contract; the remote part is A-4.
+		case arg == "--wait":
+			wait = true
+		case arg == "--stdin":
+			// Accepted by the target contract; no prompt input is consumed.
 		case arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "sync", arg+" requires a value")
@@ -330,25 +352,246 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if !capture {
+	if !capture && !wait {
 		return fail(stderr, "sync", memerr.New(memerr.Unsupported,
-			"remote and background synchronization is not implemented yet (A-4/A-5); use `memctl sync --capture` for serial external edits"))
+			"automatic Hook synchronization and background derivation are implemented in A-5; use `memctl sync --wait` for foreground remote sync or `memctl sync --capture` for serial external edits"))
 	}
+
 	cfg, err := loadConfig()
 	if err != nil {
 		return fail(stderr, "sync", err)
 	}
-	result, err := app.New(cfg).Capture(context.Background(), agent, sid)
-	if err != nil {
-		return fail(stderr, "sync", err)
+	service := app.New(cfg)
+	ctx := context.Background()
+
+	if capture {
+		result, err := service.Capture(ctx, agent, sid)
+		if err != nil {
+			return fail(stderr, "sync", err)
+		}
+		if result.Commit == "" {
+			fmt.Fprintln(stdout, "nothing to capture")
+		} else {
+			fmt.Fprintf(stdout, "transaction: %s\ncommit: %s\nrevision: %s\nchanged: %s\nsync: %s\n",
+				result.TransactionID, result.Commit, result.Revision, strings.Join(result.ChangedFiles, ", "), result.SyncState)
+		}
 	}
-	if result.Commit == "" {
-		fmt.Fprintln(stdout, "nothing to capture")
+
+	if wait {
+		result, err := service.SyncWait(ctx, hasTerminal())
+		printSyncResult(stdout, result)
+		if err != nil {
+			return fail(stderr, "sync", err)
+		}
+	}
+	return ExitOK
+}
+
+func printSyncResult(stdout io.Writer, result app.SyncResult) {
+	if result.Branch != "" {
+		fmt.Fprintf(stdout, "branch: %s\n", result.Branch)
+	}
+	if result.Head != "" {
+		fmt.Fprintf(stdout, "head: %s\n", result.Head)
+	}
+	fmt.Fprintf(stdout, "remote: %s\nlocal: %s\n", result.RemoteState, result.LocalState)
+	if result.ReasonCode != "" {
+		fmt.Fprintf(stdout, "reason: %s\n", result.ReasonCode)
+	}
+	if result.ConflictID != "" {
+		fmt.Fprintf(stdout, "conflict: %s\n", result.ConflictID)
+	}
+	if result.HasRemote {
+		fmt.Fprintf(stdout, "ahead: %d\nbehind: %d\n", result.Ahead, result.Behind)
+	}
+}
+
+// resolvePayload is the `resolve --apply FILE` input shape.
+type resolvePayload struct {
+	BaseRevision  string `json:"baseRevision"`
+	ResolvedFiles []struct {
+		Path       string `json:"path"`
+		Action     string `json:"action"`
+		RawContent string `json:"rawContent"`
+	} `json:"resolvedFiles"`
+}
+
+// runResolve implements `resolve [--json]`, `resolve --apply FILE --conflict ID`
+// and `resolve --abort --conflict ID`. The view, apply and abort modes are
+// mutually exclusive.
+func runResolve(args []string, stdout, stderr io.Writer) int {
+	asJSON := false
+	applyFile := ""
+	abort := false
+	conflictID := ""
+
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--json":
+			asJSON = true
+		case arg == "--abort":
+			abort = true
+		case arg == "--apply" || arg == "--conflict":
+			if index+1 >= len(args) {
+				return usageError(stderr, "resolve", arg+" requires a value")
+			}
+			index++
+			if arg == "--apply" {
+				applyFile = args[index]
+			} else {
+				conflictID = args[index]
+			}
+		case strings.HasPrefix(arg, "--apply="):
+			applyFile = strings.TrimPrefix(arg, "--apply=")
+		case strings.HasPrefix(arg, "--conflict="):
+			conflictID = strings.TrimPrefix(arg, "--conflict=")
+		default:
+			return usageError(stderr, "resolve", fmt.Sprintf("unknown argument %q", arg))
+		}
+	}
+	if abort && applyFile != "" {
+		return usageError(stderr, "resolve", "--abort and --apply are mutually exclusive")
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail(stderr, "resolve", err)
+	}
+	service := app.New(cfg)
+	ctx := context.Background()
+
+	if abort {
+		if conflictID == "" {
+			return usageError(stderr, "resolve", "--abort requires --conflict ID")
+		}
+		result, err := service.ResolveAbort(ctx, conflictID)
+		if asJSON {
+			if encodeErr := encodeJSON(stdout, resolveOutcome(result)); encodeErr != nil {
+				return fail(stderr, "resolve", encodeErr)
+			}
+		} else {
+			printResolveResult(stdout, result)
+		}
+		if err != nil {
+			return fail(stderr, "resolve", err)
+		}
 		return ExitOK
 	}
-	fmt.Fprintf(stdout, "transaction: %s\ncommit: %s\nrevision: %s\nchanged: %s\nsync: %s\n",
-		result.TransactionID, result.Commit, result.Revision, strings.Join(result.ChangedFiles, ", "), result.SyncState)
+
+	if applyFile == "" {
+		view, err := service.ResolveStatus(ctx)
+		if err != nil {
+			return fail(stderr, "resolve", err)
+		}
+		if asJSON {
+			if err := encodeJSON(stdout, view); err != nil {
+				return fail(stderr, "resolve", err)
+			}
+		} else {
+			printConflict(stdout, view)
+		}
+		return ExitOK
+	}
+
+	payload, err := readResolvePayload(applyFile)
+	if err != nil {
+		return fail(stderr, "resolve", err)
+	}
+	resolved := make([]app.ResolvedFile, 0, len(payload.ResolvedFiles))
+	for _, file := range payload.ResolvedFiles {
+		resolved = append(resolved, app.ResolvedFile{
+			Path:       file.Path,
+			Action:     app.ChangeAction(file.Action),
+			RawContent: file.RawContent,
+		})
+	}
+	result, err := service.ResolveApply(ctx, hasTerminal(), conflictID, payload.BaseRevision, resolved)
+	if asJSON {
+		if encodeErr := encodeJSON(stdout, resolveOutcome(result)); encodeErr != nil {
+			return fail(stderr, "resolve", encodeErr)
+		}
+	} else {
+		printResolveResult(stdout, result)
+	}
+	if err != nil {
+		return fail(stderr, "resolve", err)
+	}
 	return ExitOK
+}
+
+func readResolvePayload(path string) (resolvePayload, error) {
+	if path == "-" {
+		return resolvePayload{}, memerr.New(memerr.InvalidArgument, "resolve --apply reads a file path, not stdin")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return resolvePayload{}, memerr.Wrap(memerr.IOFailed, err, "cannot read the resolve payload %s", path)
+	}
+	if len(data) > 8<<20 {
+		return resolvePayload{}, memerr.New(memerr.LimitExceeded, "the resolve payload exceeds the 8 MiB limit")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var payload resolvePayload
+	if err := decoder.Decode(&payload); err != nil {
+		return resolvePayload{}, memerr.Wrap(memerr.InvalidArgument, err, "the resolve payload is not valid JSON")
+	}
+	return payload, nil
+}
+
+// resolveOutcome is the JSON shape of a resolve step.
+type resolveOutcomePayload struct {
+	ConflictID  string            `json:"conflictId,omitempty"`
+	Head        string            `json:"head,omitempty"`
+	RemoteState string            `json:"remoteState"`
+	Conflict    *app.ConflictView `json:"conflict,omitempty"`
+}
+
+func resolveOutcome(result app.ResolveResult) resolveOutcomePayload {
+	return resolveOutcomePayload{
+		ConflictID:  result.ConflictID,
+		Head:        result.Head,
+		RemoteState: result.RemoteState,
+		Conflict:    result.Conflict,
+	}
+}
+
+func printResolveResult(stdout io.Writer, result app.ResolveResult) {
+	if result.Head != "" {
+		fmt.Fprintf(stdout, "head: %s\n", result.Head)
+	}
+	fmt.Fprintf(stdout, "remote: %s\n", result.RemoteState)
+	if result.ConflictID != "" {
+		fmt.Fprintf(stdout, "conflict: %s\n", result.ConflictID)
+	}
+}
+
+func printConflict(stdout io.Writer, view app.ConflictView) {
+	fmt.Fprintf(stdout, "conflict: %s\nphase: %s\nupstream: %s\nreplay: %s\n", view.ConflictID, view.Phase, view.UpstreamHead, view.ReplayCommit)
+	for _, file := range view.Files {
+		fmt.Fprintf(stdout, "file: %s (%s) base=%s onto=%s replayed=%s\n",
+			file.Path, file.Kind, sideState(file.Base), sideState(file.Onto), sideState(file.Replayed))
+	}
+}
+
+func sideState(side app.ConflictSideView) string {
+	if !side.Exists {
+		return "absent"
+	}
+	if side.Binary {
+		return "binary"
+	}
+	return "present"
+}
+
+func encodeJSON(stdout io.Writer, value any) error {
+	encoder := json.NewEncoder(stdout)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return memerr.Wrap(memerr.IOFailed, err, "cannot write JSON output")
+	}
+	return nil
 }
 
 // runRecover implements `recover --status | --rollback`.

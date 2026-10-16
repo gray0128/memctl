@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,14 +52,14 @@ func TestRunVersionAndHelp(t *testing.T) {
 			args:       []string{"--help"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-3):",
+			wantStdout: "Available Commands (Stage A-4):",
 		},
 		{
 			name:       "help flag short",
 			args:       []string{"-h"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-3):",
+			wantStdout: "Available Commands (Stage A-4):",
 		},
 	}
 
@@ -196,7 +198,7 @@ func TestRunUsageErrors(t *testing.T) {
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
 		"start", "context", "pull", "end",
-		"tag", "wrap", "resolve",
+		"tag", "wrap",
 		"ui", "doctor", "dream", "install",
 	}
 
@@ -220,21 +222,44 @@ func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	}
 }
 
-// TestInitRemoteURLIsRejectedLocally verifies that stage A-2 does not create a
-// repository, or touch any path, when a remote URL is requested before A-4.
-func TestInitRemoteURLIsRejectedLocally(t *testing.T) {
+// TestInitRemoteRequiresConfirmation verifies that connecting a remote needs
+// the explicit private-ownership confirmation.
+func TestInitRemoteRequiresConfirmation(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("AGENT_MEMORY_DIR", filepath.Join(t.TempDir(), "memory"))
 
 	var stdout, stderr bytes.Buffer
-	code := cli.Run([]string{"init", "git@example.com:user/memory.git", "--confirm-private"}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
-	if code != cli.ExitError {
-		t.Fatalf("init with remote URL returned %d, want %d (stderr=%q)", code, cli.ExitError, stderr.String())
+	code := cli.Run([]string{"init", "file:///nonexistent/memory.git"}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
+	if code != cli.ExitUsageError {
+		t.Fatalf("init without --confirm-private returned %d, want %d (stderr=%q)", code, cli.ExitUsageError, stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "UNSUPPORTED") {
-		t.Fatalf("expected UNSUPPORTED reason, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "--confirm-private") {
+		t.Fatalf("expected a --confirm-private hint, got %q", stderr.String())
+	}
+}
+
+// TestInitRemoteFailureIsNotReportedAsSuccess verifies that an unreachable
+// remote fails instead of being treated as an empty remote, and leaves no
+// initialized repository behind.
+func TestInitRemoteFailureIsNotReportedAsSuccess(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "memory")
+	t.Setenv("HOME", home)
+	t.Setenv("AGENT_MEMORY_DIR", repo)
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file")
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{"init", "file:///nonexistent/memory.git", "--confirm-private"}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
+	if code != cli.ExitError {
+		t.Fatalf("init with an unreachable remote returned %d, want %d (stdout=%q stderr=%q)", code, cli.ExitError, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "GIT_FAILED") && !strings.Contains(stderr.String(), "NETWORK_UNAVAILABLE") && !strings.Contains(stderr.String(), "AUTH_FAILED") {
+		t.Fatalf("expected a classified remote failure, got %q", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed remote init created a repository, stat err = %v", err)
 	}
 }

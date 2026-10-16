@@ -257,9 +257,11 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 		if err != nil {
 			return MutationResult{}, err
 		}
+		// A path deleted after the preflight is a legitimate capture input;
+		// `git add` stages the removal. Only present files count toward the
+		// content limit.
 		if !meta.Exists {
-			return MutationResult{}, memerr.New(memerr.ExternalChanges,
-				"path %q disappeared between the capture preflight and staging", rel)
+			continue
 		}
 		total += meta.Size
 		if total > MaxMutationBytes {
@@ -490,9 +492,17 @@ func (s *writeSession) restoreSelected(ctx context.Context, record state.Transac
 // beginWrite acquires the repository lock and refuses to start when Git is in
 // an intermediate state or an unfinished transaction still needs recovery.
 func (a *App) beginWrite(ctx context.Context) (*writeSession, error) {
-	session, err := a.beginLocked(ctx, true)
+	session, err := a.beginLocked(ctx, true, false)
 	if err != nil {
 		return nil, err
+	}
+	if conflict, ok, err := session.store.LoadConflict(); err != nil {
+		session.Close()
+		return nil, err
+	} else if ok {
+		session.Close()
+		return nil, memerr.New(memerr.OperationActive,
+			"conflict %s is awaiting resolution; run `memctl resolve`", conflict.ConflictID)
 	}
 	pending, err := session.store.Pending()
 	if err != nil {
@@ -510,8 +520,9 @@ func (a *App) beginWrite(ctx context.Context) (*writeSession, error) {
 // beginLocked validates the repository, takes the lock and refuses an active
 // Git operation. It deliberately allows unfinished transactions so recovery
 // can run. requireEntry is false for recovery, which must work when an
-// interrupted transaction deleted the entry file.
-func (a *App) beginLocked(ctx context.Context, requireEntry bool) (*writeSession, error) {
+// interrupted transaction deleted the entry file. allowGitState lets the
+// conflict resolver continue an operation memctl owns.
+func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState bool) (*writeSession, error) {
 	repoPath, err := a.requireRepoRoot(ctx)
 	if err != nil {
 		return nil, err
@@ -546,6 +557,9 @@ func (a *App) beginLocked(ctx context.Context, requireEntry bool) (*writeSession
 	if err != nil {
 		session.Close()
 		return nil, err
+	}
+	if allowGitState {
+		return session, nil
 	}
 	switch {
 	case repoState.IndexLocked:

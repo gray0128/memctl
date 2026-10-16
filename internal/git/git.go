@@ -4,7 +4,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -42,25 +41,10 @@ func Available() error {
 }
 
 // Run executes one Git command inside dir and returns its trimmed stdout.
+// It uses the caller's environment without prompting.
 func Run(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = scrubEnv(os.Environ())
-	cmd.Stdin = nil
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		detail := firstLine(stderr.String())
-		if detail == "" {
-			detail = firstLine(err.Error())
-		}
-		return strings.TrimSpace(stdout.String()), memerr.Wrap(memerr.GitFailed, err,
-			"git %s failed: %s", redact(strings.Join(args, " ")), detail)
-	}
-	return strings.TrimSpace(stdout.String()), nil
+	out, _, err := runGit(ctx, dir, Options{}, args...)
+	return out, err
 }
 
 // Init creates a new repository whose initial branch is main.
@@ -279,24 +263,8 @@ func RequireIdentity(ctx context.Context, dir string) error {
 }
 
 func runWithEnv(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(scrubEnv(os.Environ()), extra...)
-	cmd.Stdin = nil
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		detail := firstLine(stderr.String())
-		if detail == "" {
-			detail = firstLine(err.Error())
-		}
-		return strings.TrimSpace(stdout.String()), memerr.Wrap(memerr.GitFailed, err,
-			"git %s failed: %s", redact(strings.Join(args, " ")), detail)
-	}
-	return strings.TrimSpace(stdout.String()), nil
+	out, _, err := runGit(ctx, dir, Options{ExtraEnv: extra}, args...)
+	return out, err
 }
 
 func scrubEnv(env []string) []string {

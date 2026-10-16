@@ -113,15 +113,28 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 	}
 
 	// Commands that are still unimplemented must not return placeholder success.
-	code, stdout, stderr = runIsolated("resolve")
+	code, stdout, stderr = runIsolated("doctor")
 	if code != 1 {
-		t.Fatalf("unimplemented resolve exit code = %d, want 1 (stderr=%q)", code, stderr)
+		t.Fatalf("unimplemented doctor exit code = %d, want 1 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented resolve stdout = %q, want empty", stdout)
+		t.Fatalf("unimplemented doctor stdout = %q, want empty", stdout)
 	}
 	if !strings.Contains(stderr, "UNSUPPORTED") {
-		t.Fatalf("unimplemented resolve stderr missing UNSUPPORTED: %q", stderr)
+		t.Fatalf("unimplemented doctor stderr missing UNSUPPORTED: %q", stderr)
+	}
+
+	// resolve is implemented since A-4; with no repository it fails clearly and
+	// still creates no path.
+	code, stdout, stderr = runIsolated("resolve")
+	if code != 1 {
+		t.Fatalf("resolve without a repository exit code = %d, want 1 (stderr=%q)", code, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("resolve without a repository stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "NO_REPO") {
+		t.Fatalf("resolve without a repository stderr missing NO_REPO: %q", stderr)
 	}
 
 	for _, p := range []string{isolatedHome, isolatedMem, isolatedState} {
