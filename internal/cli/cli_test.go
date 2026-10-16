@@ -197,7 +197,7 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
-		"ui", "doctor", "dream", "install",
+		"ui", "dream", "install",
 	}
 
 	for _, sub := range planned {
@@ -217,6 +217,23 @@ func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 				t.Fatalf("expected UNSUPPORTED reason in stderr for %q, got %q", sub, stderr.String())
 			}
 		})
+	}
+}
+
+// TestDoctorRejectsUnsupportedFix verifies that the read-only doctor does not
+// pretend to apply the deterministic repairs that belong to stage C-1.
+func TestDoctorRejectsUnsupportedFix(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{"doctor", "--fix"}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
+	if code != cli.ExitError {
+		t.Fatalf("doctor --fix exit code = %d, want %d (stderr=%q)", code, cli.ExitError, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("doctor --fix stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "UNSUPPORTED") {
+		t.Fatalf("doctor --fix stderr = %q, want UNSUPPORTED", stderr.String())
 	}
 }
 

@@ -113,15 +113,30 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 	}
 
 	// Commands that are still unimplemented must not return placeholder success.
-	code, stdout, stderr = runIsolated("doctor")
+	code, stdout, stderr = runIsolated("ui")
 	if code != 1 {
-		t.Fatalf("unimplemented doctor exit code = %d, want 1 (stderr=%q)", code, stderr)
+		t.Fatalf("unimplemented ui exit code = %d, want 1 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented doctor stdout = %q, want empty", stdout)
+		t.Fatalf("unimplemented ui stdout = %q, want empty", stdout)
 	}
 	if !strings.Contains(stderr, "UNSUPPORTED") {
-		t.Fatalf("unimplemented doctor stderr missing UNSUPPORTED: %q", stderr)
+		t.Fatalf("unimplemented ui stderr missing UNSUPPORTED: %q", stderr)
+	}
+
+	// doctor is implemented since A-6. With no repository it fails with a
+	// targeted error and still creates no path. (R02 covers the existing-repo
+	// but missing-Git case; here AGENT_MEMORY_DIR does not exist, so the
+	// repository check reports NO_REPO first.)
+	code, stdout, stderr = runIsolated("doctor")
+	if code != 1 {
+		t.Fatalf("doctor without a repository exit code = %d, want 1 (stderr=%q)", code, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("doctor without a repository stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "NO_REPO") {
+		t.Fatalf("doctor without a repository stderr missing NO_REPO: %q", stderr)
 	}
 
 	// resolve is implemented since A-4; with no repository it fails clearly and

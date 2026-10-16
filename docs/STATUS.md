@@ -17,8 +17,9 @@
 - 已完成阶段 A-4（`T017`）：新增 `internal/syncer` 与 `internal/git`、`internal/state`、`internal/app`、`internal/cli` 的远端相关实现，提供空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类（`AUTH_FAILED`/`NETWORK_UNAVAILABLE`/`NON_FAST_FORWARD`/`TIMEOUT`/`NO_UPSTREAM`/`CONTENT_CONFLICT`）、非交互凭据抑制与 Git 进程组清理、CLI 多阶段 `resolve` 与不支持冲突类型拒绝；通过 `G02`–`G04`、`G06`、`C01`–`C04`、`L01` 前台 Git 子进程场景与 `G08.1`、`G08.3`–`G08.7`。
 - 已完成阶段 A-5 子任务 1（`T018`）：新增 `internal/syncer` 后台派生与凭据白名单快照，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符），实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、锁忙立即退出与进程组/锁生命周期继承；通过 `G08.2`、`L01` 后台与强杀场景、`L02`。
 - 已完成阶段 A-5 子任务 2（`T019`）：新增 `internal/hookio`、`internal/assets`、`internal/state/session.go` 与 `internal/app/session.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；提供 Hook JSON 有界读取与 SID 优先级解析、`injected` 与 `syncSucceeded` 分离的会话级去重、14 天缓存清理、内嵌默认指引与 envelope 编码，以及 `wrap` 的子进程退出码与信号透传；通过 H01–H06，并归档本机性能基线与宿主适配状态。
+- 已完成阶段 A-6（`T020`）：新增 `internal/doctor` 只读诊断与 `internal/app/doctor.go`、`internal/cli/doctor.go` 接线，把写入事务与诊断共用的仓库修订摘要抽到 `internal/vault.RepoRevision`；`doctor` 支持 `--json`，按契约以 error 返回退出码 `1`、仅 warning/info 返回 `0`，不改变记忆内容、Git 索引或 HEAD；通过 `F03`、`R04`、`R01` 的默认指引场景与 `R02` 的 Git/凭据场景。CLI `doctor --fix` 按阶段计划属 `C-1`，本轮显式返回 `UNSUPPORTED`。
 - 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --json` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
-- 尚未实现前端工程与 Web UI、只读诊断、Dreaming 与正式安装流程；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
+- 尚未实现前端工程与 Web UI、Dreaming 与正式安装流程；`--fix` 等确定性诊断修复属 `C-1`；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
 
@@ -43,30 +44,22 @@
 | T017 | 已完成 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；[归档证据](./validation/stage-a.md#t017前台远端同步a-4) |
 | T018 | 已完成 | 对应 A-5 子任务 1：后台同步派生与进程生命周期；依赖 A-4；[归档证据](./validation/stage-a.md#t018后台同步派生与进程生命周期a-5-子任务-1) |
 | T019 | 已完成 | 对应 A-5 子任务 2：Hook 协议、会话身份与宿主性能实测；依赖 T018 与目标宿主协议；[归档证据](./validation/stage-a.md#t019hook-协议会话身份与宿主性能实测a-5-子任务-2) |
-| T020 | 待开始 | 对应 A-6：只读 `doctor`、CLI 候选包与隔离环境回归；依赖 A-1 至 A-5 的适用检查完成；契约见 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) |
-| T021 | 已完成 | 适配 Orca 1.4.227 重构 `scripts/next-round.sh`，改用 `orca terminal create` + `wait` + `send` 完全交接流并支持 `--terminal` + `--retry-request` 重放；消除接续阻塞；证据见下文 |
+| T020 | 已完成 | 对应 A-6：只读 `doctor`、内嵌默认指引与隔离环境回归；依赖 A-1 至 A-5 的适用检查完成；[归档证据](./validation/stage-a.md#t020诊断与-cli-交付a-6) |
+| T021 | 已完成 | 适配 Orca 1.4.227 重构 `scripts/next-round.sh`，改用 `orca terminal create` + `wait` + `send` 完全交接流并支持 `--terminal` + `--retry-request` 重放；消除接续阻塞；[归档证据](./validation/stage-a.md#t021修复跨会话接续入口以适配-orca-14227) |
 
-任务 ID 不代表执行顺序。`T021`（修复 Orca 1.4.227 跨会话接续入口）已完成；当前无进行中任务，近期已登记待开始任务为 `T020`（A-6：诊断与 CLI 交付）。后续阶段步骤按 `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
+任务 ID 不代表执行顺序。阶段 A 的全部任务（`A-1`–`A-6`）已完成，当前无进行中任务与待开始任务，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户。后续在用户确认后按 `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T021：修复跨会话接续入口以适配 Orca 1.4.227
+## T020：诊断与 CLI 交付（A-6）
 
-- 目标与范围：Orca CLI 1.4.227 移除了 `orca agent launch` 子命令，导致 `scripts/next-round.sh` 启动失败且不返回可重放 ID。按 `orca-cli` Skill 的「Full Handoffs（完全所有权交接）」规范重构 `scripts/next-round.sh`，改用 `orca terminal create --worktree <worktree> --command=<agent_cmd> [--focus] --json`、`orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json`（超时则追加一次 120000ms 等待，仍未就绪则拒绝投递）与 `orca terminal send --terminal <handle> --text=<prompt_body> --enter --json` 三步流程，并在 stderr 输出含 `handle`、`tui-idle=satisfied:true`、`accepted=true` 与 `requestId` 的新会话启动回执；支持 `--terminal <handle> --retry-request <id>`（保留 `--retry-launch <id>` 兼容别名）对同一次提示词投递做幂等重放，不重复创建终端；同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
-- 契约：[接续的执行机制](./06-development-loop.md#61-接续的执行机制)、[协作入口](../AGENTS.md)。
-- 验证日期与环境：2026-10-16，macOS arm64，Orca CLI 1.4.227（`terminal.prompt-delivery.v1`），Git 2.54.0；执行者为主会话。
-- 命令与结果：
-  - 语法与参数边界校验：`bash -n scripts/next-round.sh` 通过；缺少提示词、`--prompt` 与 `--prompt-file` 互斥、文件不存在、空提示词、缺少任一四要素小节、`--effort` 未配 `--model`、`--retry-request` 或 `--retry-launch` 未配 `--terminal`、`--terminal` 未配 `--retry-request`、未知参数、工作树不干净等 11 类拒绝分支均返回退出码 `1`。
-  - 预览与桩测试：`--dry-run` 在默认 `pi`、`--agent codex --model gpt-5.4 --effort high --focus` 及 `--terminal <handle> --retry-request <id>` 重放模式下输出符合预期；`--command=` 与 `--text=` 等号传参避免 `--` 开头内容被 Orca 参数解析器误判为选项；通过 `ORCA_CLI_COMMAND` 桩验证 `wait` 超时一次后重试成功、`wait` 连续超时拒绝投递、`send` 失败提取 `requestId` 给出重放指引，以及重放模式跳过工作树干净度前置检查。
-  - Orca 1.4.227 真实宿主实测：在干净工作树下调用 `scripts/next-round.sh --prompt-file <test-prompt> --agent pi`，成功创建终端 `term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e`、等待 `tui-idle` 并投递提示词（返回 `accepted: true`、`requestId: d3a3f928-657c-431d-94e3-ea2c206fa93b`、`mutation.replayed: false`）；随后执行 `scripts/next-round.sh --prompt-file <test-prompt> --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --retry-request d3a3f928-657c-431d-94e3-ea2c206fa93b`，Orca 返回 `ok: true` 且 `mutation.replayed: true`；最后执行 `orca terminal close --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --json` 清理测试终端（`ptyKilled: true`）。
-  - 文档与格式检查：全仓 Markdown 本地链接与锚点校验、`git diff --check`、行尾空白检查全部通过；`T019` 完整验收记录已归档至 [阶段 A 归档](./validation/stage-a.md#t019hook-协议会话身份与宿主性能实测a-5-子任务-2)。
-- 未验证与遗留：本轮仅修复跨会话接续工具链与规范文档，未变更 `memctl` Go 源码；按用户确认的范围，本轮提交推送后不自动触发 `T020` 会话，保留原 `/tmp/next-round.md` 供后续直接启动 `T020`。
-- 下一步：推进 `T020`（A-6：只读 `doctor`、CLI 候选包与隔离环境回归）；`A-6` 完成后阶段 A 全部完成，届时暂停自动接续并通知用户。
+- 目标与范围：完成 A-6，前置为 A-1 至 A-5 的适用检查完成。新增 `internal/doctor` 只读诊断与 `internal/app/doctor.go`、`internal/cli/doctor.go` 接线，把写入事务与诊断共用的仓库修订摘要抽到 `internal/vault.RepoRevision`；`doctor` 支持 `--json`。CLI `doctor --fix` 与 `POST /api/v1/doctor:fix` 按阶段计划属 `C-1`，A-6 的 `--fix` 显式返回 `UNSUPPORTED`，不返回占位成功，所有 `DiagnosticIssue.autoFixable` 恒为 `false`。
+- 契约：[诊断对象与级别](./02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[Hook 输入输出与时限](./04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分)；完整记录见 [T020 归档](./validation/stage-a.md#t020诊断与-cli-交付a-6)。
+- 验证日期与环境：2026-10-16，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./... -count=1`、`make build` 全部通过。`F03` 与 `R04` 由 `TestA6DoctorOrphanRingCoversF03`、`TestA6DoctorReadOnlyDiagnosisCoversR04` 覆盖（孤立环标记、死链为 `error` 返回 1、仅 `warning`/`info` 返回 0、执行前后文件与 Git 状态一致）；`R01` 默认指引由 `TestR01EmbeddedInstructionsFromEmptyHome` 覆盖（空 HOME 仅复制二进制即输出内嵌指引）；`R02` 的 Git/凭据场景由 `TestR02MissingGitIsTargeted`、`TestR02MissingCredentialsAreTargeted` 覆盖。
+- 未验证与遗留：`doctor` 仅在 macOS arm64 实机运行，Windows/Linux 的 Git 中间态、`index.lock` 与路径语义未运行；真实宿主注入未验证（安装属 `C-3`）；runner 场景按 05 留待 `D-1`。
+- 下一步：阶段 A 全部完成，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户；待用户确认后再登记并启动 `B-1`（本地 HTTP 安全框架与只读 API）。
 
 ## 近期实施任务
 
-### T020：诊断与 CLI 交付（A-6）
-
-- 目标与依赖：完成 A-6，前置为 A-1 至 A-5 的适用检查完成。交付只读 `doctor`（`--json`、`--fix` 在当前基线上执行支持的确定性修复）、内嵌默认指引的包内可用性验证、CLI 候选包与隔离环境回归；列明未验证的平台与宿主。
-- 交付物：`internal/doctor` 诊断实现与对应测试，`doctor` 命令接线，按 [验收与交付](./05-validation-and-delivery.md#1-交付顺序) 复跑前序相关用例，并覆盖 `F03`、`R04`、`R01` 的默认指引与 `R02` 的 Git/凭据降级场景。
-- 完成检查：`doctor` 默认只读、Level 与退出码符合契约（error 返回 1，仅 warning/info 返回 0）；复制二进制到空 HOME 后内嵌指引可用；未验证的平台、宿主与降级路径如实记录于阶段报告。
+`A-6`（`T020`）已完成，阶段 A 全部任务结束。按 [停止条件](./06-development-loop.md#3-状态与推进)，本轮不自动创建下一轮会话；待用户确认后按 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 将 `B-1`（`internal/server` 只读 API 与 HTTP 安全框架）登记为下一轮任务，`B-2`、`B-3` 随后滚动登记。

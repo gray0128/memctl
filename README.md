@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决，以及阶段 A-5 的 Hook 与后台能力（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`）；尚未实现 Web UI、只读诊断、Dreaming 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决、阶段 A-5 的 Hook 与后台能力，以及阶段 A-6 的只读诊断与内嵌默认指引（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`）；尚未实现 Web UI、Dreaming 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -34,7 +34,7 @@ memctl/
   Makefile              # 阶段 A 的 CLI 构建、测试与清理入口
   go.mod                # Go 模块定义（Go 1.27.1）
   cmd/memctl/           # CLI 进程入口与版本注入
-  internal/cli/         # 命令分发、init/read/write/sync/end/start/context/pull/tag/wrap/resolve/recover、参数错误边界与终端检测
+  internal/cli/         # 命令分发、init/read/write/sync/end/start/context/pull/tag/wrap/resolve/recover/doctor、参数错误边界与终端检测
   internal/hookio/      # Hook JSON 有界读取、SID 优先级与 stdout envelope 编码
   internal/assets/      # 内嵌默认指引（后续含 adapter 模板）
   internal/config/      # 仓库与状态路径解析、repoId
@@ -42,10 +42,11 @@ memctl/
   internal/syncer/      # 前台同步编排、错误分类、冲突快照与后台派生
   internal/lock/        # 仓库排他锁；锁描述符可被 Git 子进程继承
   internal/state/       # 事务恢复记录、冲突/操作记录、远端审批、同步摘要与会话缓存
-  internal/vault/       # 根相对路径边界、有界读取、格式解析与受管文件写入
-  internal/app/         # 初始化、读取、受管写入、capture、远端同步、会话上下文与冲突解决
+  internal/vault/       # 根相对路径边界、有界读取、格式解析、仓库修订与受管文件写入
+  internal/doctor/      # 只读诊断：死链、孤立文件、入口膨胀、元数据与 Git/状态一致性
+  internal/app/         # 初始化、读取、受管写入、capture、远端同步、会话上下文、冲突解决与只读诊断
   internal/memerr/      # 契约错误码
-  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3、A-4、A-5）
+  tests/integration/    # 跨模块与 CLI 二进制集成测试（R01–R04、A-2、A-3、A-4、A-5、A-6）
   docs/                 # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/         # 只读参考，不作为新实现或发布入口
 ```
@@ -88,9 +89,13 @@ printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --ba
 ./bin/memctl resolve --json
 ./bin/memctl resolve --apply ./resolution.json --conflict <conflictId>
 ./bin/memctl resolve --abort --conflict <conflictId>
+
+# 只读诊断：默认检查死链、孤立文件、入口膨胀与运行状态；发现 error 返回退出码 1，仅 warning/info 返回 0
+./bin/memctl doctor
+./bin/memctl doctor --json
 ```
 
-当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve` 与 `recover` 可用。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
+当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve`、`recover` 与 `doctor` 可用。`doctor` 默认只读，不改变记忆内容、Git 索引或 HEAD；确定性修复 `doctor --fix` 与 `POST /api/v1/doctor:fix` 在阶段 C-1 落地，当前调用 `--fix` 返回 `UNSUPPORTED`。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
 
 Hook 场景使用隔离路径验证（`--stdin` 读取宿主 JSON，`--json` 输出单个 envelope）：
 

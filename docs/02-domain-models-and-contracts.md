@@ -77,7 +77,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `warnings`, `createdAt`, `appliedCommit?`, `error?` |
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
 
-诊断级别为 `error | warning | info`。死链、不可访问路径报告错误；入口膨胀报告警告；缺少推荐元数据报告信息。可疑指令模式报告需审阅的警告，不把合法 SQL、脚本示例认定为恶意行为。
+诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据报告 `info`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。
 
 `DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的 Agent 状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 

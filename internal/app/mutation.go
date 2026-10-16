@@ -2,9 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -654,34 +651,12 @@ func samePathSet(got, want []string) bool {
 }
 
 // repoRevision is the deterministic digest of HEAD, the managed path list and
-// each file revision. It is a comparison baseline, not an authorization token.
+// each file revision. The definition lives in vault so diagnosis and the write
+// transaction share one baseline.
 func (a *App) repoRevision(ctx context.Context, session *writeSession) (string, error) {
 	head := ""
 	if value, err := git.Head(ctx, session.repoPath); err == nil {
 		head = value
 	}
-	paths, err := session.root.ListManaged()
-	if err != nil {
-		return "", err
-	}
-	hash := sha256.New()
-	writeHashField(hash, []byte(head))
-	writeHashField(hash, []byte(session.repoPath))
-	for _, rel := range paths {
-		meta, err := session.root.Stat(rel)
-		if err != nil {
-			return "", err
-		}
-		writeHashField(hash, []byte(rel))
-		writeHashField(hash, []byte(meta.Mode))
-		writeHashField(hash, []byte(meta.Revision))
-	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func writeHashField(w interface{ Write([]byte) (int, error) }, value []byte) {
-	var prefix [8]byte
-	binary.BigEndian.PutUint64(prefix[:], uint64(len(value)))
-	_, _ = w.Write(prefix[:])
-	_, _ = w.Write(value)
+	return vault.RepoRevision(session.root, session.repoPath, head)
 }

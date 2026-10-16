@@ -2,6 +2,31 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## T020：诊断与 CLI 交付（A-6）
+
+- 目标与范围：完成 A-6，前置为 A-1 至 A-5 的适用检查完成。新增 `internal/doctor` 只读诊断，以及 `internal/app/doctor.go` 与 `internal/cli/doctor.go` 接线；`internal/vault` 新增写入事务与诊断共用的仓库修订摘要 `RepoRevision`；`doctor` 支持 `--json`。按 [阶段步骤的子任务切分](../05-validation-and-delivery.md#阶段步骤的子任务切分)，CLI `doctor --fix` 与 `POST /api/v1/doctor:fix` 属于 `C-1` 的确定性修复，A-6 只提供只读诊断：`--fix` 返回退出码 `1` 与 `UNSUPPORTED`，不返回占位成功，所有 `DiagnosticIssue.autoFixable` 恒为 `false`。不实现前端、安装器与 Dreaming。
+- 契约：[诊断对象与级别](../02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[Hook 输入输出与时限](../04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[同步可观测性](../03-workflows-and-dataflows.md#8-同步可观测性)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[阶段步骤的子任务切分](../05-validation-and-delivery.md#阶段步骤的子任务切分)。
+- 验证日期与环境：2026-10-16，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./... -count=1`、`make build` 全部通过；`doctor` 集成测试使用临时 HOME、临时记忆仓库与本地 bare 远端或受控 `GIT_SSH_COMMAND` 桩、`AGENT_MEMORY_BACKGROUND=0`，不访问网络或真实凭据。
+- `F03`：`TestA6DoctorOrphanRingCoversF03` 把与入口断开的环 `ring1.md` ↔ `ring2.md` 标记为 `ORPHAN_FILE` 警告；仅间接引用的 `leaf.md`、入口 `MEMORY.md` 与 `topic.md` 均不误报，且无 `error` 级诊断。单元测试 `TestCheckClassifiesLinksOrphansAndEntries` 另外覆盖死链与非法链接为 `error`、同名歧义为 `warning`、缺少推荐元数据为 `info`。
+- `R04`：`TestA6DoctorReadOnlyDiagnosisCoversR04` 在合成诊断仓库运行 `doctor` 与 `doctor --json`，校验报告含 `sha256:` 前缀的 `revision`、`checkedAt`、逐条 `severity`/`filePath`/`lineNumber` 以及 `counts`（`error`+`warning`+`info` 等于 `total`，且 `total` 等于问题条数）；发现死链时返回 `1`，仅 `warning`/`info` 时返回 `0`。执行前后 `MEMORY.md`、`topic.md`、`orphan.md` 内容与 `HEAD`、`git status --porcelain` 完全一致，`.git/index.lock` 不存在。`TestCheckDoesNotModifyRepository` 在已提交仓库上复验只读性；`TestCheckEntryBloat` 与 `TestCheckReportsGitAndStateConsistency` 覆盖入口膨胀与未完成事务、Git 中间态的判定。
+- `R01`（默认指引）：`TestR01EmbeddedInstructionsFromEmptyHome` 仅把二进制复制进空 HOME 并保留系统 Git，`init` 后 `start --stdin` 仍输出 `----- INSTRUCTIONS -----`、内嵌安全规则与 `MEMORY.md`；`$HOME/INSTRUCTIONS.md` 与 `$STATE/INSTRUCTIONS.md` 都不存在，证明指引随二进制发布。
+- `R02`（Git/凭据）：`TestR02MissingGitIsTargeted` 在无 Git 时 `doctor` 返回 `1` 与 `GIT_FAILED`，`version` 仍可用；`TestR02MissingCredentialsAreTargeted` 在无 agent、无 askpass 且 SSH 拒绝认证时 `sync --wait` 返回 `1` 并在 stdout 给出 `remote: failed`、`reason: AUTH_FAILED`，随后 `read` 与 `doctor` 正常，本地内容不受影响。runner 场景按 05 留待 D-1。
+- 未验证与遗留：`doctor` 仅在 macOS arm64 实机运行；Windows/Linux 的 Git 中间态、`index.lock` 与路径语义未运行，交叉编译不能替代。未在真实宿主验证注入可达性，宿主安装属 `C-3`。未覆盖反向链接、二进制资产出入度与超大文本的诊断边界。
+
+## T021：修复跨会话接续入口以适配 Orca 1.4.227
+
+- 目标与范围：Orca CLI 1.4.227 移除了 `orca agent launch` 子命令，导致 `scripts/next-round.sh` 启动失败且不返回可重放 ID。按 `orca-cli` Skill 的「Full Handoffs（完全所有权交接）」规范重构 `scripts/next-round.sh`，改用 `orca terminal create --worktree <worktree> --command=<agent_cmd> [--focus] --json`、`orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json`（超时则追加一次 120000ms 等待，仍未就绪则拒绝投递）与 `orca terminal send --terminal <handle> --text=<prompt_body> --enter --json` 三步流程，并在 stderr 输出含 `handle`、`tui-idle=satisfied:true`、`accepted=true` 与 `requestId` 的新会话启动回执；支持 `--terminal <handle> --retry-request <id>`（保留 `--retry-launch <id>` 兼容别名）对同一次提示词投递做幂等重放，不重复创建终端；同步更新 `AGENTS.md` 与 [开发循环规范](../06-development-loop.md#61-接续的执行机制)。
+- 契约：[接续的执行机制](../06-development-loop.md#61-接续的执行机制)、[协作入口](../../AGENTS.md)。
+- 验证日期与环境：2026-10-16，macOS arm64，Orca CLI 1.4.227（`terminal.prompt-delivery.v1`），Git 2.54.0；执行者为主会话。
+- 命令与结果：
+  - 语法与参数边界校验：`bash -n scripts/next-round.sh` 通过；缺少提示词、`--prompt` 与 `--prompt-file` 互斥、文件不存在、空提示词、缺少任一四要素小节、`--effort` 未配 `--model`、`--retry-request` 或 `--retry-launch` 未配 `--terminal`、`--terminal` 未配 `--retry-request`、未知参数、工作树不干净等 11 类拒绝分支均返回退出码 `1`。
+  - 预览与桩测试：`--dry-run` 在默认 `pi`、`--agent codex --model gpt-5.4 --effort high --focus` 及 `--terminal <handle> --retry-request <id>` 重放模式下输出符合预期；`--command=` 与 `--text=` 等号传参避免 `--` 开头内容被 Orca 参数解析器误判为选项；通过 `ORCA_CLI_COMMAND` 桩验证 `wait` 超时一次后重试成功、`wait` 连续超时拒绝投递、`send` 失败提取 `requestId` 给出重放指引，以及重放模式跳过工作树干净度前置检查。
+  - Orca 1.4.227 真实宿主实测：在干净工作树下调用 `scripts/next-round.sh --prompt-file <test-prompt> --agent pi`，成功创建终端 `term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e`、等待 `tui-idle` 并投递提示词（返回 `accepted: true`、`requestId: d3a3f928-657c-431d-94e3-ea2c206fa93b`、`mutation.replayed: false`）；随后执行 `scripts/next-round.sh --prompt-file <test-prompt> --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --retry-request d3a3f928-657c-431d-94e3-ea2c206fa93b`，Orca 返回 `ok: true` 且 `mutation.replayed: true`；最后执行 `orca terminal close --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --json` 清理测试终端（`ptyKilled: true`）。
+  - 文档与格式检查：全仓 Markdown 本地链接与锚点校验、`git diff --check`、行尾空白检查全部通过；`T019` 完整验收记录已归档至 [T019 归档](#t019hook-协议会话身份与宿主性能实测a-5-子任务-2)。
+- 未验证与遗留：本轮仅修复跨会话接续工具链与规范文档，未变更 `memctl` Go 源码；按用户确认的范围，本轮提交推送后不自动触发 `T020` 会话，保留原 `/tmp/next-round.md` 供后续直接启动 `T020`。
+- 下一步：推进 `T020`（A-6：只读 `doctor`、CLI 候选包与隔离环境回归）；`A-6` 完成后阶段 A 全部完成，届时暂停自动接续并通知用户。
+
 ## 阶段 A 性能与适配记录
 
 本节按 [性能与适配记录](../05-validation-and-delivery.md#3-性能与适配记录) 记录 `T019` 期间的本地性能基线与宿主适配状态。数值来自本机单次会话的临时环境，不是跨机承诺；未实测的宿主保持未验证。

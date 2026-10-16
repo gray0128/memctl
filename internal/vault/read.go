@@ -134,6 +134,31 @@ func (r *Root) ReadFile(rel string) (FileRead, error) {
 	}, nil
 }
 
+// RepoRevision is the documented whole-repository revision: HEAD, the canonical
+// repository path and every managed file's mode and revision, in sorted path
+// order, with length-prefixed fields. It is a comparison baseline shared by the
+// write transaction and read-only diagnosis, not an authorization token. An
+// empty head is the explicit value for a repository without a commit.
+func RepoRevision(root *Root, repoPath, head string) (string, error) {
+	paths, err := root.ListManaged()
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.New()
+	writeField(hash, []byte(head))
+	writeField(hash, []byte(repoPath))
+	for _, rel := range paths {
+		meta, err := root.Stat(rel)
+		if err != nil {
+			return "", err
+		}
+		writeField(hash, []byte(rel))
+		writeField(hash, []byte(meta.Mode))
+		writeField(hash, []byte(meta.Revision))
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 // FileRevision is the full SHA-256 of the Git file mode and the raw bytes,
 // both length-prefixed so that concatenations cannot collide by construction.
 func FileRevision(gitMode string, content []byte) string {
