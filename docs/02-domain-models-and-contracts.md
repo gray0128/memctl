@@ -156,7 +156,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | 401 | `AUTH_REQUIRED` | 重新打开当前 UI 会话 |
 | 403 | `ORIGIN_DENIED`, `READ_ONLY`, `REMOTE_NOT_APPROVED` | 检查访问来源、只读模式或远端授权 |
 | 404 | `NOT_FOUND`, `NO_REPO` | 刷新资源或初始化仓库 |
-| 409 | `EXTERNAL_CHANGES`, `OPERATION_ACTIVE`, `CONFLICT_STALE`, `PROPOSAL_STALE`, `RECOVERY_REQUIRED` | 保留用户草稿，按具体状态恢复 |
+| 409 | `EXTERNAL_CHANGES`, `OPERATION_ACTIVE`, `CONFLICT_STALE`, `CONTENT_CONFLICT`, `PROPOSAL_STALE`, `RECOVERY_REQUIRED` | 保留用户草稿，按具体状态恢复 |
 | 412 | `REVISION_MISMATCH` | 重新读取并显示差异，不盲目重发 |
 | 413 | `LIMIT_EXCEEDED` | 缩小输入，不能截断替代 |
 | 422 | `UNSUPPORTED` | 改用支持的路径或人工处理 |

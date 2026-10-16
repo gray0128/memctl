@@ -102,8 +102,108 @@ type doctorFixBody struct {
 	BaseRevision string   `json:"baseRevision"`
 }
 
+// resolvedFileBody is one entry of the conflict:resolve request.
+type resolvedFileBody struct {
+	Path       string `json:"path"`
+	Action     string `json:"action"`
+	RawContent string `json:"rawContent"`
+}
+
+// conflictResolveBody is the POST /api/v1/conflict:resolve request.
+type conflictResolveBody struct {
+	ConflictID    string             `json:"conflictId"`
+	BaseRevision  string             `json:"baseRevision"`
+	ResolvedFiles []resolvedFileBody `json:"resolvedFiles"`
+}
+
+// conflictAbortBody is the POST /api/v1/conflict:abort request.
+type conflictAbortBody struct {
+	ConflictID string `json:"conflictId"`
+}
+
+// revertBody is the POST /api/v1/audit/{hash}/revert request.
+type revertBody struct {
+	BaseRevision string `json:"baseRevision"`
+}
+
+// resolveResultDTO is the shared response of the two conflict routes. It
+// mirrors the CLI JSON shape: the completed step, the next stage when the replay
+// stopped again, and the remote state. A nil Conflict means the replay finished.
+type resolveResultDTO struct {
+	ConflictID  string            `json:"conflictId,omitempty"`
+	Head        string            `json:"head,omitempty"`
+	RemoteState string            `json:"remoteState"`
+	Conflict    *app.ConflictView `json:"conflict,omitempty"`
+}
+
+func toResolveResultDTO(result app.ResolveResult) resolveResultDTO {
+	return resolveResultDTO{
+		ConflictID:  result.ConflictID,
+		Head:        result.Head,
+		RemoteState: result.RemoteState,
+		Conflict:    result.Conflict,
+	}
+}
+
 // deviceLabel reads the normalized device label for the commit source trailer.
 func deviceLabel() string { return hookio.ResolveDevice(os.Getenv) }
+
+// handleConflictResolve applies one stage's resolved files through the same
+// multi-stage state machine the CLI uses. A further conflict is a 200 response
+// carrying the next snapshot; a stale stage is 409 CONFLICT_STALE.
+func (s *Server) handleConflictResolve(w http.ResponseWriter, r *http.Request) {
+	var body conflictResolveBody
+	if err := decodeBody(r, &body); err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	resolved := make([]app.ResolvedFile, 0, len(body.ResolvedFiles))
+	for _, file := range body.ResolvedFiles {
+		resolved = append(resolved, app.ResolvedFile{
+			Path:       file.Path,
+			Action:     app.ChangeAction(file.Action),
+			RawContent: file.RawContent,
+		})
+	}
+	result, err := s.app.ResolveApply(r.Context(), false, body.ConflictID, body.BaseRevision, resolved)
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	writeJSON(w, toResolveResultDTO(result))
+}
+
+// handleConflictAbort aborts the owned replay and returns the restored state.
+func (s *Server) handleConflictAbort(w http.ResponseWriter, r *http.Request) {
+	var body conflictAbortBody
+	if err := decodeBody(r, &body); err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	result, err := s.app.ResolveAbort(r.Context(), body.ConflictID)
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	writeJSON(w, toResolveResultDTO(result))
+}
+
+// handleAuditRevert reverts one single-parent commit as a new managed commit.
+// A conflicting revert is aborted and verified by the application service
+// before the caller sees CONTENT_CONFLICT.
+func (s *Server) handleAuditRevert(w http.ResponseWriter, r *http.Request) {
+	var body revertBody
+	if err := decodeBody(r, &body); err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	result, err := s.app.Revert(r.Context(), r.PathValue("hash"), body.BaseRevision, "", "", deviceLabel())
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	writeJSON(w, toMutationResultDTO(result))
+}
 
 // handlePutFile replaces or creates one managed file. If-Match binds an existing
 // file's fileRevision; If-None-Match: * creates a new file. A request without

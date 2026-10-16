@@ -53,11 +53,19 @@ func writeHashField(hash interface{ Write([]byte) (int, error) }, value string) 
 // CaptureStopped reads the current stopped rebase's conflict into a snapshot.
 // It does not abort the rebase; the caller decides whether to keep it active.
 func CaptureStopped(ctx context.Context, repo, repoID, operationID, upstream, phase string) (*state.Conflict, error) {
-	unmerged, err := git.UnmergedPaths(ctx, repo)
+	replayCommit, err := git.RebaseHead(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
-	replayCommit, err := git.RebaseHead(ctx, repo)
+	return CaptureSides(ctx, repo, repoID, operationID, upstream, phase, replayCommit)
+}
+
+// CaptureSides reads the current stopped operation's three-way conflict with an
+// explicit replay commit, so the rebase snapshot and the diagnostic capture of
+// a conflicting revert share one implementation. It does not abort the
+// operation; the caller decides whether to keep it active.
+func CaptureSides(ctx context.Context, repo, repoID, operationID, upstream, phase, replayCommit string) (*state.Conflict, error) {
+	unmerged, err := git.UnmergedPaths(ctx, repo)
 	if err != nil {
 		return nil, err
 	}

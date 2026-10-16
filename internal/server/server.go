@@ -199,6 +199,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/doctor:fix", s.handleDoctorFix)
 	s.mux.HandleFunc("POST /api/v1/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)
+	s.mux.HandleFunc("POST /api/v1/conflict:resolve", s.handleConflictResolve)
+	s.mux.HandleFunc("POST /api/v1/conflict:abort", s.handleConflictAbort)
+	s.mux.HandleFunc("POST /api/v1/audit/{hash}/revert", s.handleAuditRevert)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleEvents)
 	// The current page and its compiled assets. `GET /{$}` matches only the
 	// exact root path so it does not shadow the API routes.
