@@ -110,7 +110,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/state`、`lock` | 仓库身份 → 状态、恢复记录、锁 | 原子状态写入和内核锁；PID 仅供诊断，不能决定锁是否仍有效 |
 | `internal/doctor` | vault 快照 → 诊断和修复计划 | 默认只读；修复计划交 app 提交 |
 | `internal/dream` | 固定快照、runner → 提案 | 隔离生成与校验；应用交 app，不在 Agent 内直接推送 |
-| `internal/adapters` | 已知宿主版本、配置 → 安装计划及检测结果 | 管理独立配置锁和备份，不持仓库锁等待配置安装 |
+| `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
 | `internal/server` | HTTP → app 请求、SSE | 鉴权、请求限制和响应转换，不重复加锁 |
 | `internal/watcher` | 文件事件 → 索引失效通知 | 不解析业务状态，不承担持久化消息队列职责 |
 

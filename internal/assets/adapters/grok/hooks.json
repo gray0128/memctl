@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent grok --stdin" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent grok --stdin" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent grok --stdin" }] }
+    ]
+  }
+}

@@ -8,9 +8,25 @@
 // rules of this design. The reference directory is never read at runtime.
 package assets
 
-import _ "embed"
+import (
+	"embed"
+	"io/fs"
+)
 
 // Instructions is the default instruction block injected at session start.
 //
 //go:embed INSTRUCTIONS.md
 var Instructions string
+
+// Adapters embeds every supported adapter template. The installer copies or
+// merges these fragments without reading 脚本化实现参考 at runtime. See
+// docs/04-ui-and-cli-specification.md section 6.
+//
+//go:embed all:adapters
+var Adapters embed.FS
+
+// AdapterFile reads one embedded adapter template by its relative path, for
+// example "claude-code/hooks.json".
+func AdapterFile(name string) ([]byte, error) {
+	return fs.ReadFile(Adapters, "adapters/"+name)
+}

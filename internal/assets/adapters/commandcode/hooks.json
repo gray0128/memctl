@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent commandcode --stdin" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent commandcode --stdin" }] }
+    ]
+  }
+}

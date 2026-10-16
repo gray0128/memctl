@@ -22,8 +22,7 @@ const (
 )
 
 var plannedSubcommands = map[string]string{
-	"dream":   "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
-	"install": "inspect, preview, or install agent adapter configurations (planned in Stage C)",
+	"dream": "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
 }
 
 const usageText = `Usage:
@@ -47,10 +46,10 @@ Available Commands:
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
   doctor               Run read-only repository diagnostics (--json)
+  install [agent...]   Inspect or install agent adapter configurations (--all --dry-run --status)
   ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
 
 Planned Commands (not yet enabled):
-  install [agent...]   Manage host adapter configurations (--all --dry-run --status)
   dream                Preview, show, or apply memory organization proposals
 
 Run "memctl help" for usage details.
@@ -127,6 +126,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	case "doctor":
 		return runDoctor(rest, stdout, stderr)
+
+	case "install":
+		return runInstall(rest, stdout, stderr)
 
 	case "ui":
 		return runUI(rest, stdout, stderr)

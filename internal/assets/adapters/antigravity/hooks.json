@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent antigravity --stdin" }] }
+    ],
+    "AfterAgent": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent antigravity --stdin" }] }
+    ],
+    "SessionEnd": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent antigravity --stdin" }] }
+    ]
+  }
+}

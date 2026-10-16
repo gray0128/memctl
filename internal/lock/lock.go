@@ -39,12 +39,18 @@ type Lock struct {
 // lock is still held elsewhere it returns BUSY instead of blocking forever.
 // The same process must not acquire the lock recursively.
 func Acquire(ctx context.Context, gitDir string) (*Lock, error) {
+	return AcquirePath(ctx, filepath.Join(gitDir, FileName))
+}
+
+// AcquirePath takes an exclusive advisory lock on an arbitrary path. It is used
+// for locks that are independent of the repository lock, such as one per
+// adapter configuration file. The parent directory must exist.
+func AcquirePath(ctx context.Context, path string) (*Lock, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, defaultWait)
 		defer cancel()
 	}
-	path := filepath.Join(gitDir, FileName)
 	for {
 		held, ok, err := tryOpen(path)
 		if err != nil {
@@ -56,7 +62,7 @@ func Acquire(ctx context.Context, gitDir string) (*Lock, error) {
 		select {
 		case <-ctx.Done():
 			return nil, memerr.New(memerr.Busy,
-				"repository lock %s is held by another process; retry after it finishes", path)
+				"lock %s is held by another process; retry after it finishes", path)
 		case <-time.After(retryDelay):
 		}
 	}

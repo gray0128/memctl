@@ -1,0 +1,33 @@
+# agent-memory × pi —— 基于插件 pi-yaml-hooks 的适配。
+#
+# 安装:  pi install npm:pi-yaml-hooks
+# 放到:  ~/.pi/agent/hook/hooks.yaml（全局文件，不需要 /hooks-trust）
+# 校验:  重启 pi 后运行 /hooks-validate、/hooks-status
+#
+# 本文件中 id 以 agent-memory- 开头的条目由 memctl 管理，重复安装不会追加副本；
+# 其余条目与注释不受影响。
+hooks:
+  # 读记忆：把规则 + MEMORY.md 注入当次回合的系统上下文
+  - id: agent-memory-context
+    event: user.prompt.submit
+    scope: all
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" context --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 30000
+
+  # 写后同步：回合结束时提交，push 在后台
+  - id: agent-memory-sync
+    event: session.idle
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" sync --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 15000
+
+  # 收尾：退出或切换会话时再提交一次（尽力而为）
+  - id: agent-memory-end
+    event: session.deleted
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" end --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 15000

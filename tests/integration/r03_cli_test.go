@@ -114,17 +114,17 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 		t.Fatalf("init without git stderr missing GIT_FAILED: %q", stderr)
 	}
 
-	// Commands that are still unimplemented must not return placeholder success.
-	// (`ui` is implemented since B-3 and is covered by the B-3 tests.)
+	// install is implemented since C-3. It requires an explicit agent or --all,
+	// so a bare invocation is a usage error and creates no path.
 	code, stdout, stderr = runIsolated("install")
-	if code != 1 {
-		t.Fatalf("unimplemented install exit code = %d, want 1 (stderr=%q)", code, stderr)
+	if code != 2 {
+		t.Fatalf("install without an agent exit code = %d, want 2 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented install stdout = %q, want empty", stdout)
+		t.Fatalf("install without an agent stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "UNSUPPORTED") {
-		t.Fatalf("unimplemented install stderr missing UNSUPPORTED: %q", stderr)
+	if !strings.Contains(stderr, "at least one agent") {
+		t.Fatalf("install usage stderr missing guidance: %q", stderr)
 	}
 
 	// doctor is implemented since A-6. With no repository it fails with a

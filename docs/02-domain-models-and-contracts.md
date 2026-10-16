@@ -76,6 +76,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
 | `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `warnings`, `createdAt`, `appliedCommit?`, `error?` |
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
+| `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
 
 诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据报告 `info`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
 
@@ -96,6 +97,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `app.Resolve` | 冲突 ID、阶段结果 → 状态或下一冲突 | 绑定指定重放阶段 |
 | `app.Revert` | 提交 hash、仓库基线 → `MutationResult` | 验证父提交数，失败保留恢复信息 |
 | `dream.Preview` | runner、固定基线 → 提案 ID | 不修改主仓库 |
+| `adapters.Plan` / `adapters.Apply` | 探测环境、agent → 安装计划 / 安装结果 | 每配置路径独立锁与基线校验；无法安全合并时给人工补丁，不写文件 |
 | `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案后执行受管事务 |
 | `lock.Acquire` | context、资源键 → release 或错误 | 仓库操作使用同一锁；非重入 |
 | `git.Inspect` | 仓库 → Git 状态或错误 | 检查索引、rebase、merge、revert、cherry-pick、sequencer 和 Git 锁 |

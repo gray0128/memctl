@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决、阶段 A-5 的 Hook 与后台能力、阶段 A-6 的只读诊断与内嵌默认指引（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`），阶段 B-1 的本地只读 HTTP 安全框架与 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 只读 API，阶段 B-2 的 `internal/watcher` 递归文件监听与 `GET /api/v1/events` SSE 状态流（`vault.updated` 与 `resync.required` 提示、Token 鉴权与评论心跳），以 `fetch` 流解析 SSE 并在每次连接与重连后重新读取快照，只读模式下服务端拒绝全部写请求。阶段 B 的全部能力已完成：新增只读知识图谱（Cytoscape.js）、条目检索与过滤浏览、审计 Diff 预览（Diff2Html）与诊断计数展示（按 error/warning/info 分组，不生成健康分），图谱与 Diff 库按需分块并随二进制内嵌。阶段 C 已启动：`C-1` 子任务 1 实现了与 CLI 共用锁和版本基线的受管写入、移动改链、条目增删改与跨文件移动、确定性修复与手动同步后端与 API（`PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix`、`POST /api/v1/sync`，以及 CLI `doctor --fix`）；UI 编辑与图谱拆分交互属 `C-1` 子任务 2。Dreaming 与正式安装流程尚未实现。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决、阶段 A-5 的 Hook 与后台能力、阶段 A-6 的只读诊断与内嵌默认指引（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`），阶段 B-1 的本地只读 HTTP 安全框架与 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 只读 API，阶段 B-2 的 `internal/watcher` 递归文件监听与 `GET /api/v1/events` SSE 状态流（`vault.updated` 与 `resync.required` 提示、Token 鉴权与评论心跳），以 `fetch` 流解析 SSE 并在每次连接与重连后重新读取快照，只读模式下服务端拒绝全部写请求。阶段 B 的全部能力已完成：新增只读知识图谱（Cytoscape.js）、条目检索与过滤浏览、审计 Diff 预览（Diff2Html）与诊断计数展示（按 error/warning/info 分组，不生成健康分），图谱与 Diff 库按需分块并随二进制内嵌。阶段 C 已启动：`C-1` 子任务 1 实现了与 CLI 共用锁和版本基线的受管写入、移动改链、条目增删改与跨文件移动、确定性修复与手动同步后端与 API（`PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix`、`POST /api/v1/sync`，以及 CLI `doctor --fix`）；UI 编辑与图谱拆分交互属 `C-1` 子任务 2。`C-1` 与 `C-2` 已全部完成：UI 编辑、条目移动改链、图谱拆分、手动同步与确定性修复交互已接入；冲突解决与审计回滚实现了后端与 API（`POST /api/v1/conflict:resolve`、`POST /api/v1/conflict:abort`、`app.Revert` 与 `POST /api/v1/audit/{hash}/revert`）并接入 UI「冲突解决」与「审计回滚」视图。`C-3` 子任务 1 实现了内嵌 adapter 模板（`internal/assets/adapters/`）、`internal/adapters` 的宿主与插件版本探测、按配置路径独立锁、基线校验、JSON/JSONC/YAML/TOML 保留语义更新、同目录原子替换与中断恢复，以及 CLI `install`（`--all`、`--dry-run`、`--status`）。Dreaming、HTTP 安装接口与 UI 接入面板尚未实现。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -36,7 +36,8 @@ memctl/
   cmd/memctl/           # CLI 进程入口与版本注入
   internal/cli/         # 命令分发、init/read/write/sync/end/start/context/pull/tag/wrap/resolve/recover/doctor/ui、参数错误边界与终端检测
   internal/hookio/      # Hook JSON 有界读取、SID 优先级与 stdout envelope 编码
-  internal/assets/      # 内嵌默认指引（后续含 adapter 模板）
+  internal/assets/      # 内嵌默认指引与全部支持的 adapter 模板（JSON/JSONC/YAML/TOML/插件文件）
+  internal/adapters/    # 宿主与插件版本探测、配置格式定点合并、独立配置锁、基线校验、备份与中断恢复
   internal/config/      # 仓库与状态路径解析、repoId
   internal/git/         # Git 调用、状态检查、环境清理、失败分类、提交日志与提交 Diff（禁用外部 diff/textconv、有界读取）
   internal/syncer/      # 前台同步编排、错误分类、冲突快照与后台派生
@@ -102,11 +103,16 @@ printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --ba
 ./bin/memctl doctor --fix
 ./bin/memctl doctor --json --fix
 
+# 探测、预览或安装 agent 接入配置；安装不访问记忆仓库，常驻状态在 $AGENT_MEMORY_STATE/adapters/
+./bin/memctl install --status
+./bin/memctl install --all --dry-run
+./bin/memctl install claude-code codex pi
+
 # 本地只读 Web UI：仅绑定 127.0.0.1，首页注入 Session Token；--readonly 在服务端拒绝全部写请求
 ./bin/memctl ui --no-open
 ```
 
-当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve`、`recover`、`doctor`、`doctor --fix` 与 `ui` 可用。`doctor` 默认只读，不改变记忆内容、Git 索引或 HEAD；`doctor --fix` 与 `POST /api/v1/doctor:fix` 经受管事务执行确定性修复，首版只重建缺失的入口文件，其余 `issueCodes` 返回 `UNSUPPORTED`。UI 与 CLI 的写入共用同一仓库锁与版本基线：HTTP 写路由为 `PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix` 与 `POST /api/v1/sync`，均要求 `X-Memctl-Token`、Host/Origin 校验，并在 `--readonly` 下返回 `READ_ONLY`。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程已接入 `Makefile`：`make ui` 构建 `web/dist`，Go 构建与测试依赖该产物；跨平台正式发布打包（`make release`）属阶段 D，尚未实现。
+当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve`、`recover`、`doctor`、`doctor --fix`、`install` 与 `ui` 可用。`install [agent...]`（`--all`、`--dry-run`、`--status`）按宿主与插件版本探测结果生成安装计划，用格式专用定点合并保留用户已有配置与注释，写入前校验配置基线并备份，安装中断后下一次运行先恢复现场；不支持的结构、未内嵌模板的宿主或缺少必需插件时只给出人工补丁与说明，不强制全文件重序列化。`install` 不访问记忆仓库、不要求 Git 或 Node.js，且不会自动安装第三方插件或修改全局 Git 配置。`doctor` 默认只读，不改变记忆内容、Git 索引或 HEAD；`doctor --fix` 与 `POST /api/v1/doctor:fix` 经受管事务执行确定性修复，首版只重建缺失的入口文件，其余 `issueCodes` 返回 `UNSUPPORTED`。UI 与 CLI 的写入共用同一仓库锁与版本基线：HTTP 写路由为 `PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix` 与 `POST /api/v1/sync`，均要求 `X-Memctl-Token`、Host/Origin 校验，并在 `--readonly` 下返回 `READ_ONLY`。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程已接入 `Makefile`：`make ui` 构建 `web/dist`，Go 构建与测试依赖该产物；跨平台正式发布打包（`make release`）属阶段 D，尚未实现。
 
 Hook 场景使用隔离路径验证（`--stdin` 读取宿主 JSON，`--json` 输出单个 envelope）：
 

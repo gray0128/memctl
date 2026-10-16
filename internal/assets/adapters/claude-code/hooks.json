@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent claude-code --stdin" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent claude-code --stdin" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent claude-code --stdin" }] }
+    ]
+  }
+}
