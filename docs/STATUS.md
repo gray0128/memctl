@@ -24,6 +24,7 @@
 - 已完成 `T024`（`B-2`）：新增 `internal/watcher`（递归目录监听、150ms 防抖、有界扇出与溢出降级）、`internal/app` 写事务提交后主动失效通知与 `internal/server` 的 `GET /api/v1/events` SSE（Token 鉴权、`vault.updated`、`resync.required`、心跳与 `Server.Watch` 接线）；通过 `A05` 与 `A02` 的 SSE 鉴权场景，详见 [T024 归档](./validation/stage-b.md#t024文件监听与-sse-状态流b-2)。
 - 已完成 `T025`（`B-3` 子任务 1）：新增 `web/` 前端工程（Preact、Vite、Tailwind CSS）、`web/embed.go` 内嵌入口与 `Makefile` 的 `ui` 构建链路；`internal/server` 增加内嵌首页（注入 Session Token 与只读标识，本地 `self` CSP）与 `/assets/` 静态资源路由；新增 `memctl ui` 命令（`--port`、`--no-open`、`--readonly`），启动递归监听并在 SIGINT/SIGTERM 时取消请求上下文后关闭；前端实现 Meta Token 读取、JSON API 封装、基于 `fetch` 流的 SSE 解析与断线重连全量校正及顶栏状态；通过 `R01` 的 UI 资产场景、`A02` 的首页 Token 注入与 `A03` 的只读拦截，详见 [T025 归档](./validation/stage-b.md#t025内嵌前端工程与只读视图子任务-1b-3)。
 - 已完成 `T026`（`B-3` 子任务 2）：为补齐审计 Diff 数据来源，先在 [模型与契约](./02-domain-models-and-contracts.md#42-路由) 新增只读路由 `GET /api/v1/audit/{hash}/diff` 与 §4.1 的单次提交 Diff 4 MiB 限额，再实现 `internal/git.DiffCommit`（`diff-tree -m --first-parent`、禁用外部 diff 与 textconv、有界读取）、`app.AuditDiff` 与 `internal/server` 处理器；`web/src` 新增知识图谱（Cytoscape.js）、条目检索与过滤、审计 Diff 预览（Diff2Html）与诊断计数展示四个只读视图，图谱与 Diff 库按需分块并随构建内嵌；通过 `B-3` 视图联调与 `R01` 的 UI 资产场景，详见 [T026 完成记录](#t026只读业务视图子任务-2b-3)。
+- 已完成阶段 B 实现审查：以 01–06 为唯一权威契约审查 `B-1`–`B-3`（`T023`–`T026`）的 `internal/server`、`internal/watcher`、`internal/app/readsvc.go`、`internal/git/log.go`/`diff.go`、`tests/integration/b1`–`b3` 与 `web/` 全量源码，并抽查阶段 A 已收口不变量；识别 `P1-1`（`audit` 的 `before` 未校验即进入 Git argv）、`P2-1`（`snapshot` 保护态缺少 `stale` 快照）、`P2-2`（`conflict` 读路径阻塞取锁）与 `P3-1`–`P3-6` 共 9 项问题，阶段 A 抽查回归成立，详见 [阶段 B 实现审查报告](./validation/stage-b-review.md)；问题尚未修复，已登记 `T027`。
 - 阶段 A 与阶段 B 全部已完成；尚未实现 Dreaming 与正式安装流程，`--fix` 等确定性诊断修复属 `C-1`；`G05`/`G07` 沿用 A-3/A-4 场景；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
@@ -56,8 +57,9 @@
 | T024 | 已完成 | 对应 `B-2`：`internal/watcher` 递归目录监听与防抖、写事务完成后主动失效通知、`GET /api/v1/events` SSE 有界队列与心跳、`resync.required` 溢出降级与客户端解析校正；依赖 `B-1`；[归档证据](./validation/stage-b.md#t024文件监听与-sse-状态流b-2) |
 | T025 | 已完成 | 对应 `B-3` 子任务 1：`web/` 前端工程与 `web/embed.go`、`Makefile` 的 `ui` 链路、`memctl ui` 命令（`--port`/`--no-open`/`--readonly`）、首页 Token 注入、SSE 客户端解析与重连校正及顶栏状态；依赖 `B-1`、`B-2`；[归档证据](./validation/stage-b.md#t025内嵌前端工程与只读视图子任务-1b-3) |
 | T026 | 已完成 | 对应 `B-3` 子任务 2：新增只读路由 `GET /api/v1/audit/{hash}/diff`、`internal/git.DiffCommit`、`app.AuditDiff` 与知识图谱/条目检索/审计 Diff/诊断四个只读视图；依赖 `T025`；[完成记录](#t026只读业务视图子任务-2b-3) |
+| T027 | 待开始 | 收口 [阶段 B 实现审查](./validation/stage-b-review.md) 的 `P1-1`、`P2-1`–`P2-2` 与 `P3-1`–`P3-6`（9 项）；只修复既有契约违背并补齐回归证据，不新增产品能力；依赖阶段 B 全部实现，阶段 C 启动前完成 |
 
-任务 ID 不代表执行顺序。阶段 A 与阶段 B 的全部任务（`A-1`–`A-6`、`B-1`–`B-3`）已完成并验收，阶段 B 到达停止条件。后续按 `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次推进；阶段 C 启动前按 [停止条件](./06-development-loop.md#3-状态与推进) 等待用户确认。
+任务 ID 不代表执行顺序。阶段 A 与阶段 B 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`）已完成并验收，阶段 B 到达停止条件；阶段 B 实现审查已完成并登记收口任务 `T027`。后续先执行 `T027` 修复审查问题，再按 `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次推进；阶段 C 启动前按 [停止条件](./06-development-loop.md#3-状态与推进) 等待用户确认。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
@@ -72,4 +74,4 @@
 
 ## 近期实施任务
 
-`T026`（`B-3` 子任务 2）已完成并通过验收，阶段 B 全部完成且触发 [停止条件](./06-development-loop.md#3-状态与推进) 第一条。本轮不再自动创建下一轮会话，暂停接续并通知用户；待用户确认后按 `C-1`（UI/API 受管写入、移动改链与确定性修复）启动阶段 C。前端构建基线为 Node v26.10.0 / npm 11.19.1，`dist` 不提交，Go 构建与测试前先执行 `make ui`，跨平台与跨版本支持另行验证。
+阶段 B 实现审查已完成，[阶段 B 实现审查报告](./validation/stage-b-review.md) 记录 `P1-1`、`P2-1`–`P2-2` 与 `P3-1`–`P3-6` 共 9 项问题；下一轮任务为 `T027` 收口修复，优先处理 `P1-1` 并补充「非法 `before` 返回 `INVALID_ARGUMENT` 且不触发 Git 写文件」的回归。阶段 B 的 [停止条件](./06-development-loop.md#3-状态与推进) 第一条仍然有效，阶段 C 待用户确认后启动。前端构建基线为 Node v26.10.0 / npm 11.19.1，`dist` 不提交，Go 构建与测试前先执行 `make ui`，跨平台与跨版本支持另行验证。
