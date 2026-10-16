@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
+import { revertBlockReason } from '../conflicts.js'
 import { renderDiffHtml, summarizeDiff } from '../diff.js'
 
 const PAGE_SIZE = 50
@@ -83,10 +84,102 @@ function DiffPreview({ api, hash }) {
   )
 }
 
-// AuditView is the read-only audit and diff preview. It lists commit metadata
+// RevertPanel is the confirmed revert action of the audit view. It reads the
+// current repository revision as the required baseRevision and posts
+// POST /api/v1/audit/{hash}/revert. A root or merge commit is disabled up
+// front; a conflict is reported as a restored-history state, not as a partial
+// revert. See docs/04-ui-and-cli-specification.md section 4.
+function RevertPanel({ api, commit, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [message, setMessage] = useState(null)
+  const blocked = revertBlockReason(commit)
+
+  async function run() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const snapshot = await api.snapshot()
+      const result = await api.revertCommit(commit.hash, snapshot.revision)
+      const count = (result.changedFiles || []).length
+      setMessage({
+        tone: 'ok',
+        text: `已生成回滚提交 ${shortHash(result.commit)}，涉及 ${count} 个文件，远端状态 ${result.syncState}。`,
+      })
+      setConfirming(false)
+      onChanged?.()
+    } catch (requestError) {
+      setConfirming(false)
+      if (requestError.code === 'CONTENT_CONFLICT') {
+        setMessage({ tone: 'warn', text: '回滚遇到冲突，已中止并恢复原始历史；冲突内容需在 memctl 外人工处理。' })
+      } else if (requestError.code === 'UNSUPPORTED') {
+        setMessage({ tone: 'warn', text: `该提交不支持自动回滚：${requestError.message}` })
+      } else if (requestError.code === 'REVISION_MISMATCH') {
+        setMessage({ tone: 'warn', text: '仓库基线已过期，请刷新后重试。' })
+      } else if (requestError.code === 'RECOVERY_REQUIRED') {
+        setMessage({ tone: 'error', text: `回滚恢复不完整，需人工检查仓库：${requestError.message}` })
+      } else {
+        setMessage({ tone: 'error', text: requestError.message })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tones = {
+    ok: 'text-emerald-700 dark:text-emerald-300',
+    warn: 'text-amber-700 dark:text-amber-300',
+    error: 'text-rose-700 dark:text-rose-300',
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+      <div className="flex flex-wrap items-center gap-2">
+        {blocked ? (
+          <span className="text-xs text-slate-500 dark:text-slate-400">{blocked}</span>
+        ) : confirming ? (
+          <>
+            <button
+              type="button"
+              disabled={busy || api.readOnly}
+              onClick={run}
+              className="rounded bg-rose-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            >
+              确认回滚
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700"
+            >
+              取消
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={busy || api.readOnly}
+            onClick={() => setConfirming(true)}
+            className="rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-700 disabled:opacity-40 dark:border-rose-900 dark:text-rose-300"
+          >
+            回滚此提交
+          </button>
+        )}
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          回滚创建新提交，保留旧历史，需要当前仓库修订作为基线。
+        </span>
+      </div>
+      {message && <p className={`mt-2 text-sm ${tones[message.tone]}`}>{message.text}</p>}
+    </div>
+  )
+}
+
+// AuditView is the audit and diff preview. It lists commit metadata
 // from GET /api/v1/audit and lazily loads one commit's per-file diff from
-// GET /api/v1/audit/{hash}/diff. Confirmed revert belongs to stage C-2.
-export function AuditView({ api, refreshKey }) {
+// GET /api/v1/audit/{hash}/diff. A confirmed revert posts
+// POST /api/v1/audit/{hash}/revert. See
+// docs/04-ui-and-cli-specification.md section 4.
+export function AuditView({ api, refreshKey, onChanged }) {
   const [commits, setCommits] = useState([])
   const [cursor, setCursor] = useState('')
   const [selected, setSelected] = useState(null)
@@ -179,6 +272,7 @@ export function AuditView({ api, refreshKey }) {
               {open && (
                 <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <DiffPreview api={api} hash={commit.hash} />
+                  <RevertPanel api={api} commit={commit} onChanged={onChanged} />
                 </div>
               )}
             </li>

@@ -87,5 +87,16 @@ export function createApi(options = {}) {
       }),
     doctorFix: (payload) => writeJSON('/api/v1/doctor:fix', 'POST', payload),
     sync: () => request('/api/v1/sync', { method: 'POST' }),
+
+    // Conflict resolution and audit revert. Both reuse the same state
+    // machine and repository baseline as the CLI, see
+    // docs/02-domain-models-and-contracts.md section 4.2. GET
+    // /api/v1/conflict answers 204 with no active conflict, which request()
+    // maps to null.
+    conflict: (signal) => request('/api/v1/conflict', { signal }),
+    resolveConflict: (payload) => writeJSON('/api/v1/conflict:resolve', 'POST', payload),
+    abortConflict: (payload) => writeJSON('/api/v1/conflict:abort', 'POST', payload),
+    revertCommit: (hash, baseRevision) =>
+      writeJSON(`/api/v1/audit/${encodeURIComponent(hash)}/revert`, 'POST', { baseRevision }),
   }
 }

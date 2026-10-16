@@ -95,4 +95,38 @@ describe('createApi', () => {
     expect(calls[0].path).toBe('/api/v1/files/notes/alpha%20beta.md')
     expect(calls[0].init.headers['X-Memctl-Token']).toBe('secret')
   })
+
+  it('sends the conflict and revert requests and maps 204 to null', async () => {
+    const calls = []
+    const fetchImpl = async (path, init) => {
+      calls.push({ path, init })
+      if (path === '/api/v1/conflict') {
+        return { ok: true, status: 204, json: async () => ({}) }
+      }
+      return { ok: true, status: 200, json: async () => ({ commit: 'abc' }) }
+    }
+    const api = createApi({ token: 'secret', fetchImpl })
+
+    await expect(api.conflict()).resolves.toBeNull()
+    expect(calls[0].path).toBe('/api/v1/conflict')
+    expect(calls[0].init.body).toBeUndefined()
+
+    await api.resolveConflict({
+      conflictId: 'c1',
+      baseRevision: 'sha256:rev',
+      resolvedFiles: [{ path: 'a.md', action: 'put', rawContent: 'x' }],
+    })
+    expect(calls[1].path).toBe('/api/v1/conflict:resolve')
+    expect(calls[1].init.method).toBe('POST')
+    expect(JSON.parse(calls[1].init.body).resolvedFiles[0].path).toBe('a.md')
+
+    await api.abortConflict({ conflictId: 'c1' })
+    expect(calls[2].path).toBe('/api/v1/conflict:abort')
+    expect(calls[2].init.method).toBe('POST')
+
+    await api.revertCommit('abc123', 'sha256:rev')
+    expect(calls[3].path).toBe('/api/v1/audit/abc123/revert')
+    expect(calls[3].init.method).toBe('POST')
+    expect(JSON.parse(calls[3].init.body)).toEqual({ baseRevision: 'sha256:rev' })
+  })
 })

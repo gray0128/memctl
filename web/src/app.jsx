@@ -5,15 +5,17 @@ import { TopBar } from './components/TopBar.jsx'
 import { Overview } from './components/Overview.jsx'
 import { KnowledgeGraph } from './components/KnowledgeGraph.jsx'
 import { EntryBrowser } from './components/EntryBrowser.jsx'
+import { ConflictView } from './components/ConflictView.jsx'
 import { AuditView } from './components/AuditView.jsx'
 import { DiagnosticsView } from './components/DiagnosticsView.jsx'
 
-// The five views of docs/04-ui-and-cli-specification.md section 4. The
-// conflict-resolution and adapter views arrive with stages C-2 and C-3.
+// The views of docs/04-ui-and-cli-specification.md section 4. The adapter view
+// arrives with stage C-3.
 const VIEWS = [
   { id: 'overview', label: '概览' },
   { id: 'graph', label: '知识图谱' },
   { id: 'entries', label: '条目' },
+  { id: 'conflict', label: '冲突解决' },
   { id: 'audit', label: '审计' },
   { id: 'diagnostics', label: '诊断' },
 ]
@@ -63,6 +65,21 @@ export function App() {
     }
   }, [api])
 
+  // refreshSnapshot re-reads the snapshot and bumps refreshKey so views that
+  // fetch their own endpoint re-read it. Conflict resolve, abort and audit
+  // revert use it because they change history without always emitting a
+  // vault.updated event.
+  async function refreshSnapshot() {
+    try {
+      const next = await api.snapshot()
+      setSnapshot(next)
+      setError(null)
+    } catch (err) {
+      setError(err)
+    }
+    setRefreshKey((current) => current + 1)
+  }
+
   async function runSync() {
     setSyncBusy(true)
     setSyncMessage(null)
@@ -94,8 +111,11 @@ export function App() {
     case 'entries':
       content = <EntryBrowser api={api} refreshKey={refreshKey} snapshot={snapshot} />
       break
+    case 'conflict':
+      content = <ConflictView api={api} refreshKey={refreshKey} onChanged={refreshSnapshot} />
+      break
     case 'audit':
-      content = <AuditView api={api} refreshKey={refreshKey} />
+      content = <AuditView api={api} refreshKey={refreshKey} onChanged={refreshSnapshot} />
       break
     case 'diagnostics':
       content = <DiagnosticsView api={api} refreshKey={refreshKey} />
