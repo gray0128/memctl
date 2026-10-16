@@ -17,7 +17,7 @@
 - 已完成阶段 A-4（`T017`）：新增 `internal/syncer` 与 `internal/git`、`internal/state`、`internal/app`、`internal/cli` 的远端相关实现，提供空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类（`AUTH_FAILED`/`NETWORK_UNAVAILABLE`/`NON_FAST_FORWARD`/`TIMEOUT`/`NO_UPSTREAM`/`CONTENT_CONFLICT`）、非交互凭据抑制与 Git 进程组清理、CLI 多阶段 `resolve` 与不支持冲突类型拒绝；通过 `G02`–`G04`、`G06`、`C01`–`C04`、`L01` 前台 Git 子进程场景与 `G08.1`、`G08.3`–`G08.7`。
 - 已完成阶段 A-5 子任务 1（`T018`）：新增 `internal/syncer` 后台派生与凭据白名单快照，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符），实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、锁忙立即退出与进程组/锁生命周期继承；通过 `G08.2`、`L01` 后台与强杀场景、`L02`。
 - 已完成阶段 A-5 子任务 2（`T019`）：新增 `internal/hookio`、`internal/assets`、`internal/state/session.go` 与 `internal/app/session.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；提供 Hook JSON 有界读取与 SID 优先级解析、`injected` 与 `syncSucceeded` 分离的会话级去重、14 天缓存清理、内嵌默认指引与 envelope 编码，以及 `wrap` 的子进程退出码与信号透传；通过 H01–H06，并归档本机性能基线与宿主适配状态。
-- 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --wait-submit 10` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
+- 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --json` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
 - 尚未实现前端工程与 Web UI、只读诊断、Dreaming 与正式安装流程；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
@@ -52,7 +52,7 @@
 
 ## T021：修复跨会话接续入口以适配 Orca 1.4.227
 
-- 目标与范围：Orca CLI 1.4.227 移除了 `orca agent launch` 子命令，导致 `scripts/next-round.sh` 启动失败且不返回可重放 ID。按 `orca-cli` Skill 的「Full Handoffs（完全所有权交接）」规范重构 `scripts/next-round.sh`，改用 `orca terminal create --worktree <worktree> --command=<agent_cmd> [--focus] --json`、`orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json`（超时则追加一次 120000ms 等待，仍未就绪则拒绝投递）与 `orca terminal send --terminal <handle> --text=<prompt_body> --enter --wait-submit 10 --json` 三步流程；支持 `--terminal <handle> --retry-request <id>`（保留 `--retry-launch <id>` 兼容别名）对同一次提示词投递做幂等重放，不重复创建终端；同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
+- 目标与范围：Orca CLI 1.4.227 移除了 `orca agent launch` 子命令，导致 `scripts/next-round.sh` 启动失败且不返回可重放 ID。按 `orca-cli` Skill 的「Full Handoffs（完全所有权交接）」规范重构 `scripts/next-round.sh`，改用 `orca terminal create --worktree <worktree> --command=<agent_cmd> [--focus] --json`、`orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json`（超时则追加一次 120000ms 等待，仍未就绪则拒绝投递）与 `orca terminal send --terminal <handle> --text=<prompt_body> --enter --json` 三步流程，并在 stderr 输出含 `handle`、`tui-idle=satisfied:true`、`accepted=true` 与 `requestId` 的新会话启动回执；支持 `--terminal <handle> --retry-request <id>`（保留 `--retry-launch <id>` 兼容别名）对同一次提示词投递做幂等重放，不重复创建终端；同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
 - 契约：[接续的执行机制](./06-development-loop.md#61-接续的执行机制)、[协作入口](../AGENTS.md)。
 - 验证日期与环境：2026-10-16，macOS arm64，Orca CLI 1.4.227（`terminal.prompt-delivery.v1`），Git 2.54.0；执行者为主会话。
 - 命令与结果：

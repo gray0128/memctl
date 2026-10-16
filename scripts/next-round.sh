@@ -285,7 +285,7 @@ command -v "$orca_cmd" >/dev/null 2>&1 || die "找不到 Orca 可执行文件：
 agent_cmd="$(build_agent_command "$agent" "$model" "$effort" "$orca_cmd")"
 
 if [ -n "$retry_request" ]; then
-	send_args=("$orca_cmd" terminal send --terminal "$terminal_handle" "--text=$prompt_body" --enter --retry-request "$retry_request" --wait-submit 10 --json)
+	send_args=("$orca_cmd" terminal send --terminal "$terminal_handle" "--text=$prompt_body" --enter --retry-request "$retry_request" --json)
 	if [ "$dry_run" = 1 ]; then
 		printf '命令参数预览（未执行，重放模式，按参数逐行输出）：\n'
 		for arg in "${send_args[@]}"; do
@@ -302,7 +302,7 @@ if [ -n "$retry_request" ]; then
 	fi
 
 	printf '%s\n' "$send_out"
-	printf '交接提示词重放请求已确认（终端：%s）。本轮会话到此结束开发，只向用户报告结果。\n' "$terminal_handle" >&2
+	printf '交接提示词重放回执：terminal=%s, requestId=%s。本轮会话到此结束开发，只向用户报告结果。\n' "$terminal_handle" "$retry_request" >&2
 	exit 0
 fi
 
@@ -314,7 +314,7 @@ create_args+=(--json)
 
 if [ "$dry_run" = 1 ]; then
 	wait_preview_args=("$orca_cmd" terminal wait --terminal "<handle>" --for tui-idle --timeout-ms 60000 --json)
-	send_preview_args=("$orca_cmd" terminal send --terminal "<handle>" "--text=$prompt_body" --enter --wait-submit 10 --json)
+	send_preview_args=("$orca_cmd" terminal send --terminal "<handle>" "--text=$prompt_body" --enter --json)
 	printf '命令参数预览（未执行，按步骤与参数逐行输出）：\n'
 	printf '[1/3] create:\n'
 	for arg in "${create_args[@]}"; do
@@ -360,7 +360,7 @@ if [ "$wait_satisfied" -ne 1 ]; then
 fi
 
 send_status=0
-send_out="$("$orca_cmd" terminal send --terminal "$created_handle" "--text=$prompt_body" --enter --wait-submit 10 --json)" || send_status=$?
+send_out="$("$orca_cmd" terminal send --terminal "$created_handle" "--text=$prompt_body" --enter --json)" || send_status=$?
 if [ "$send_status" -ne 0 ]; then
 	[ -z "$send_out" ] || printf '%s\n' "$send_out" >&2
 	req_id="$(printf '%s\n' "$send_out" | sed -nE 's/.*"(orchestrationRequestId|requestId)"[[:space:]]*:[[:space:]]*"([^"]*)".*/\2/p' | head -n 1)"
@@ -370,5 +370,6 @@ if [ "$send_status" -ne 0 ]; then
 	die "Orca 提示词投递失败（退出码 ${send_status}，终端 ${created_handle}）。保留交接提示词；若上方输出含 requestId，请使用 --terminal ${created_handle} --retry-request <id> 重放同一次投递，否则先用 ${orca_cmd} terminal read --terminal ${created_handle} 核查终端状态"
 fi
 
+req_id="$(printf '%s\n' "$send_out" | sed -nE 's/.*"(orchestrationRequestId|requestId)"[[:space:]]*:[[:space:]]*"([^"]*)".*/\2/p' | head -n 1)"
 printf '%s\n' "$send_out"
-printf '新会话已启动并投递交接提示词（终端：%s）。本轮会话到此结束开发，只向用户报告结果。\n' "$created_handle" >&2
+printf '新会话启动回执：handle=%s, tui-idle=satisfied:true, accepted=true, requestId=%s。本轮会话到此结束开发，只向用户报告结果。\n' "$created_handle" "${req_id:-unknown}" >&2
