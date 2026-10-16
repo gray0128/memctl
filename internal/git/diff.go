@@ -63,7 +63,7 @@ func DiffCommit(ctx context.Context, dir, commit string) (CommitDiff, error) {
 	for _, path := range order {
 		file := stats[path]
 		if !file.Binary {
-			patch, _, overflow, err := runGitBounded(ctx, dir, Options{}, MaxDiffPatchBytes-totalPatch,
+			patch, _, overflow, err := runGitBounded(ctx, dir, Options{ExtraEnv: []string{"GIT_LITERAL_PATHSPECS=1"}}, MaxDiffPatchBytes-totalPatch,
 				"diff-tree", "--no-commit-id", "-r", "--no-renames", "--root", "--no-color",
 				"--no-ext-diff", "--no-textconv", "-m", "--first-parent", "-p",
 				resolved, "--", path)

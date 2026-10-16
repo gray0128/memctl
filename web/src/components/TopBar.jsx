@@ -35,6 +35,12 @@ function Field({ label, value }) {
 // docs/04-ui-and-cli-specification.md section 4: repository path, local and
 // remote state, the last successful sync time, the read-only flag and the SSE
 // connection state. Unknown ahead/behind counts stay unknown instead of zero.
+function aheadBehind(sync) {
+  if (!sync || sync.aheadCount === null || sync.aheadCount === undefined) return '未知'
+  if (sync.behindCount === null || sync.behindCount === undefined) return '未知'
+  return `领先 ${sync.aheadCount} · 落后 ${sync.behindCount}`
+}
+
 export function TopBar({ connection, snapshot, readOnly, error }) {
   const sync = snapshot ? snapshot.syncState : null
   const localState = snapshot ? sync.localState : error ? 'unavailable' : 'loading'
@@ -51,10 +57,11 @@ export function TopBar({ connection, snapshot, readOnly, error }) {
             {CONNECTION_LABELS[connection] || connection}
           </Badge>
         </div>
-        <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-5">
           <Field label="仓库" value={snapshot ? snapshot.repoPath : '未知'} />
           <Field label="本地状态" value={localState} />
           <Field label="远端状态" value={remoteState} />
+          <Field label="ahead/behind" value={aheadBehind(sync)} />
           <Field label="最后同步" value={lastSync} />
         </div>
       </div>

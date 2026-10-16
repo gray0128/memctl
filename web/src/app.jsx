@@ -74,7 +74,7 @@ export function App() {
       content = <DiagnosticsView api={api} refreshKey={refreshKey} />
       break
     default:
-      content = <Overview snapshot={snapshot} error={error} />
+      content = <Overview api={api} refreshKey={refreshKey} snapshot={snapshot} error={error} />
   }
 
   return (

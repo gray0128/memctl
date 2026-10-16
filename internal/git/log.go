@@ -39,7 +39,15 @@ func Log(ctx context.Context, dir string, limit int, before string) ([]CommitInf
 		"--name-only",
 	}
 	if before != "" {
-		args = append(args, before)
+		// before is a client-supplied pagination cursor. It must be a bare
+		// object name: an option-like value such as `--output=<file>` would be
+		// interpreted by Git and could write an arbitrary path. --end-of-options
+		// keeps the revision parser from treating any later value as an option.
+		if !commitArg.MatchString(before) {
+			return nil, memerr.New(memerr.InvalidArgument,
+				"before %q is not a hexadecimal object name", before)
+		}
+		args = append(args, "--end-of-options", before)
 	}
 	args = append(args, "--")
 	out, err := Run(ctx, dir, args...)

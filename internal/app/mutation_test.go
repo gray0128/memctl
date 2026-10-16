@@ -290,7 +290,7 @@ func TestCaptureCommitsExternalEdits(t *testing.T) {
 	writeTestFile(t, filepath.Join(repo, "extra.md"), "external\n", 0o644)
 	writeTestFile(t, filepath.Join(repo, "MEMORY.md"), "# Memory\n\n## Index\n- external\n", 0o644)
 
-	result, err := service.Capture(ctx, "tester", "sid-1")
+	result, err := service.Capture(ctx, "tester", "sid-1", "test-device")
 	if err != nil {
 		t.Fatalf("capture: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestCaptureCommitsExternalEdits(t *testing.T) {
 		t.Fatalf("worktree not clean after capture: %q", status)
 	}
 
-	empty, err := service.Capture(ctx, "tester", "sid-1")
+	empty, err := service.Capture(ctx, "tester", "sid-1", "test-device")
 	if err != nil {
 		t.Fatalf("second capture: %v", err)
 	}
@@ -801,12 +801,12 @@ func TestApplyRejectsStaleBaseRevision(t *testing.T) {
 	service, repo := newTestService(t)
 	ctx := context.Background()
 
-	baseline, err := service.Capture(ctx, "", "")
+	baseline, err := service.Capture(ctx, "", "", "")
 	if err != nil {
 		t.Fatalf("capture revision: %v", err)
 	}
 	writeTestFile(t, filepath.Join(repo, "extra.md"), "external\n", 0o644)
-	if _, err := service.Capture(ctx, "", ""); err != nil {
+	if _, err := service.Capture(ctx, "", "", ""); err != nil {
 		t.Fatalf("capture external edit: %v", err)
 	}
 

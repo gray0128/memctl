@@ -57,7 +57,15 @@ export function KnowledgeGraph({ snapshot }) {
   const container = useRef(null)
   const [selected, setSelected] = useState(null)
   const graph = snapshot ? snapshot.graph : null
-  const built = useMemo(() => buildGraphElements(graph || { nodes: [], edges: [] }), [graph])
+  // Rebuild the elements and the Cytoscape instance only when the graph content
+  // changes. The SSE stream replaces snapshot.graph with a new object even when
+  // the content is identical, so keying on object identity would reset pan,
+  // zoom and selection on every refresh.
+  const signature = useMemo(
+    () => JSON.stringify(graph || { nodes: [], edges: [] }),
+    [graph],
+  )
+  const built = useMemo(() => buildGraphElements(graph || { nodes: [], edges: [] }), [signature])
 
   useEffect(() => {
     if (!container.current || built.nodes.length === 0) return undefined
@@ -86,7 +94,7 @@ export function KnowledgeGraph({ snapshot }) {
       disposed = true
       if (cy) cy.destroy()
     }
-  }, [built])
+  }, [signature])
 
   if (!snapshot) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">正在加载知识图谱…</p>

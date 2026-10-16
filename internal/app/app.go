@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/git"
@@ -65,6 +66,11 @@ type App struct {
 	// mutationObserver is set by the UI server so a committed local write
 	// invalidates the client view without waiting for the file watcher.
 	mutationObserver MutationObserver
+	// snapshotMu guards cachedSnapshot, the most recent complete snapshot. A
+	// protected state serves it with stale: true instead of BUSY when one is
+	// available. See docs/02-domain-models-and-contracts.md section 1.1.
+	snapshotMu     sync.Mutex
+	cachedSnapshot *Snapshot
 }
 
 // New builds the application service for the given configuration.

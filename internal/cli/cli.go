@@ -328,6 +328,7 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}},
 		Agent:     hookio.ResolveAgent(agent, os.Getenv),
 		SessionID: hookio.ResolveSID(sid, os.Getenv, hookio.Input{}),
+		Device:    hookio.ResolveDevice(os.Getenv),
 	})
 	if err != nil {
 		return fail(stderr, "write", err)
@@ -402,7 +403,8 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		// session id in a --stdin Hook payload.
 		result, err := service.Capture(ctx,
 			hookio.ResolveAgent(agent, os.Getenv),
-			hookio.ResolveSID(sid, os.Getenv, payload))
+			hookio.ResolveSID(sid, os.Getenv, payload),
+			hookio.ResolveDevice(os.Getenv))
 		if err != nil {
 			return fail(stderr, "sync", err)
 		}

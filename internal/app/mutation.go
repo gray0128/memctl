@@ -50,6 +50,9 @@ type MutationRequest struct {
 	Changes      []FileChange
 	Agent        string
 	SessionID    string
+	// Device is the normalized device label recorded in the commit source
+	// trailer so the read-only audit view can resolve it.
+	Device string
 }
 
 // MutationResult is the outcome of one local transaction.
@@ -150,7 +153,7 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		Kind:         state.KindMutation,
 		OriginalHead: head,
 		StartedAt:    state.StartedAt(),
-		Message:      commitMessage("write", req.Agent, req.SessionID, txID),
+		Message:      commitMessage("write", req.Agent, req.SessionID, req.Device, txID),
 	}
 	for _, plan := range plans {
 		record.Paths = append(record.Paths, state.PathRecord{
@@ -239,7 +242,7 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 // Capture accepts serial external edits explicitly. It freezes the changed path
 // list first, then stages exactly that list and commits it. It is the only
 // local path that commits content memctl did not itself write.
-func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationResult, error) {
+func (a *App) Capture(ctx context.Context, agent, sessionID, device string) (MutationResult, error) {
 	session, err := a.beginWrite(ctx)
 	if err != nil {
 		return MutationResult{}, err
@@ -302,7 +305,7 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 	if err != nil {
 		return MutationResult{}, err
 	}
-	commit, err := git.Commit(ctx, session.repoPath, commitMessage("capture", agent, sessionID, txID))
+	commit, err := git.Commit(ctx, session.repoPath, commitMessage("capture", agent, sessionID, device, txID))
 	if err != nil {
 		_ = git.ResetPaths(ctx, session.repoPath, paths)
 		return MutationResult{}, err
@@ -551,6 +554,29 @@ func (a *App) beginProtected(ctx context.Context, requireEntry, nonBlocking bool
 	return session, nil
 }
 
+// beginConflictRead takes the repository lock without waiting and allows the
+// Git intermediate state an owned rebase leaves behind, so the conflict view
+// stays readable while resolution is in progress. Ordinary reads must still
+// refuse a transaction-intermediate tree, so they keep using beginRead. An
+// unfinished transaction is reported instead of being treated as readable.
+func (a *App) beginConflictRead(ctx context.Context) (*writeSession, error) {
+	session, err := a.beginLocked(ctx, true, true, true)
+	if err != nil {
+		return nil, err
+	}
+	pending, err := session.store.Pending()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	if len(pending) > 0 {
+		session.Close()
+		return nil, memerr.New(memerr.RecoveryRequired,
+			"transaction %s is unfinished; run `memctl recover --status`", pending[0].ID)
+	}
+	return session, nil
+}
+
 // beginLocked validates the repository, takes the lock and refuses an active
 // Git operation. It deliberately allows unfinished transactions so recovery
 // can run. requireEntry is false for recovery, which must work when an
@@ -680,7 +706,7 @@ func (a *App) persistLocalCommit(session *writeSession, result MutationResult) {
 	_ = cache.SaveSync(record)
 }
 
-func commitMessage(operation, agent, sessionID, txID string) string {
+func commitMessage(operation, agent, sessionID, device, txID string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "memctl %s\n\n", operation)
 	fmt.Fprintf(&b, "%s%s\n", transactionTrailer, txID)
@@ -689,6 +715,9 @@ func commitMessage(operation, agent, sessionID, txID string) string {
 	}
 	if sessionID != "" {
 		fmt.Fprintf(&b, "Session: %s\n", sessionID)
+	}
+	if device != "" {
+		fmt.Fprintf(&b, "Device: %s\n", device)
 	}
 	return b.String()
 }

@@ -210,10 +210,16 @@ type AuditDiff struct {
 
 // Snapshot scans the repository read-only and returns the documented snapshot.
 // It takes the repository lock without waiting and refuses to read a
-// transaction-intermediate tree; callers map an active state to BUSY.
+// transaction-intermediate tree; callers map an active state to BUSY. When a
+// protected state blocks the read, the most recent complete snapshot is
+// returned with Stale=true; only a repository with no cached snapshot reports
+// the protected state as an error.
 func (a *App) Snapshot(ctx context.Context) (Snapshot, error) {
 	session, err := a.beginRead(ctx)
 	if err != nil {
+		if stale, ok := a.staleSnapshot(err); ok {
+			return stale, nil
+		}
 		return Snapshot{}, err
 	}
 	defer session.Close()
@@ -227,7 +233,7 @@ func (a *App) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{
+	snapshot := Snapshot{
 		RepoID:     config.RepoID(session.repoPath),
 		RepoPath:   session.repoPath,
 		Revision:   scan.revision,
@@ -237,7 +243,41 @@ func (a *App) Snapshot(ctx context.Context) (Snapshot, error) {
 		Graph:      scan.graph,
 		SyncState:  syncState,
 		Health:     scan.health,
-	}, nil
+	}
+	a.cacheSnapshot(snapshot)
+	return snapshot, nil
+}
+
+// cacheSnapshot stores one complete snapshot as the most recent stale fallback.
+func (a *App) cacheSnapshot(snapshot Snapshot) {
+	snapshot.Stale = false
+	a.snapshotMu.Lock()
+	a.cachedSnapshot = &snapshot
+	a.snapshotMu.Unlock()
+}
+
+// staleSnapshot returns the cached snapshot marked stale when err is one of
+// the documented protected states. It reports false when the error is not a
+// protected state or when no complete snapshot has been cached yet; callers
+// then surface the original error, which the HTTP layer maps to BUSY.
+func (a *App) staleSnapshot(err error) (Snapshot, bool) {
+	contractErr, ok := memerr.As(err)
+	if !ok {
+		return Snapshot{}, false
+	}
+	switch contractErr.Code {
+	case memerr.Busy, memerr.OperationActive, memerr.RecoveryRequired:
+	default:
+		return Snapshot{}, false
+	}
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	if a.cachedSnapshot == nil {
+		return Snapshot{}, false
+	}
+	stale := *a.cachedSnapshot
+	stale.Stale = true
+	return stale, true
 }
 
 // ListEntries returns one page of parsed entries with the repository revision
@@ -280,7 +320,16 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 	return EntryPage{Revision: scan.revision, Items: page, Total: total}, nil
 }
 
-// Audit returns one page of commits for the read-only audit view.
+// maxAuditScanPages bounds how many raw commit pages one filtered audit
+// request reads while it looks for enough matches. The default page size is 50
+// and the maximum is 200, so one request reads at most 1600 raw commits before
+// returning a cursor for the client to continue from.
+const maxAuditScanPages = 8
+
+// Audit returns one page of commits for the read-only audit view. When the
+// agent filter drops a whole raw page, it keeps reading strictly older pages
+// (bounded by maxAuditScanPages) so a matching commit on a later page is still
+// returned, and nextCursor always points at the last consumed commit.
 func (a *App) Audit(ctx context.Context, query AuditQuery) (AuditPage, error) {
 	if query.Limit == 0 {
 		query.Limit = DefaultPageSize
@@ -300,20 +349,47 @@ func (a *App) Audit(ctx context.Context, query AuditQuery) (AuditPage, error) {
 	defer session.Close()
 	ctx = session.ctx
 
-	commits, err := git.Log(ctx, session.repoPath, query.Limit, query.Before)
-	if err != nil {
-		return AuditPage{}, err
-	}
 	page := AuditPage{Commits: []AuditCommitDTO{}}
-	for _, commit := range commits {
-		dto := toAuditCommit(commit)
-		if query.Agent != "" && !strings.EqualFold(dto.Agent, query.Agent) {
-			continue
+	before := query.Before
+	for scan := 0; scan < maxAuditScanPages; scan++ {
+		// One extra record tells the caller whether another raw page exists.
+		raw, err := git.Log(ctx, session.repoPath, query.Limit+1, before)
+		if err != nil {
+			return AuditPage{}, err
 		}
-		page.Commits = append(page.Commits, dto)
+		if len(raw) == 0 {
+			// The cursor is already at the oldest commit; do not echo it back as
+			// a next cursor, or the client would loop on the same empty page.
+			before = ""
+			break
+		}
+		more := len(raw) > query.Limit
+		if more {
+			raw = raw[:query.Limit]
+		}
+		for index, commit := range raw {
+			dto := toAuditCommit(commit)
+			if query.Agent != "" && !strings.EqualFold(dto.Agent, query.Agent) {
+				continue
+			}
+			page.Commits = append(page.Commits, dto)
+			if len(page.Commits) == query.Limit {
+				// A cursor is only meaningful when an older commit remains: either
+				// this raw page was truncated or it had unconsumed entries.
+				if more || index < len(raw)-1 {
+					page.NextCursor = commit.Hash
+				}
+				return page, nil
+			}
+		}
+		if !more {
+			// History is exhausted; there is no older commit to continue from.
+			return page, nil
+		}
+		before = raw[len(raw)-1].Hash
 	}
-	if len(commits) == query.Limit {
-		page.NextCursor = commits[len(commits)-1].Hash
+	if len(page.Commits) > 0 || before != "" {
+		page.NextCursor = before
 	}
 	return page, nil
 }
@@ -348,7 +424,7 @@ func (a *App) AuditDiff(ctx context.Context, hash string) (AuditDiff, error) {
 // ConflictState returns the persisted conflict snapshot when one is awaiting
 // resolution. The boolean is false for the documented 204 case.
 func (a *App) ConflictState(ctx context.Context) (ConflictView, bool, error) {
-	session, err := a.beginResolve(ctx)
+	session, err := a.beginConflictRead(ctx)
 	if err != nil {
 		if contractErr, ok := memerr.As(err); ok && contractErr.Code == memerr.NotFound {
 			return ConflictView{}, false, nil
@@ -685,6 +761,8 @@ func toAuditCommit(commit git.CommitInfo) AuditCommitDTO {
 			dto.Agent = value
 		case "Session":
 			dto.SessionID = value
+		case "Device":
+			dto.Device = value
 		}
 	}
 	if alerts := doctor.SuspiciousPhrases(commit.Subject + "\n" + commit.Body); len(alerts) > 0 {

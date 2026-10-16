@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'preact/hooks'
+
 function Stat({ label, value, tone = 'default' }) {
   const tones = {
     default: 'text-slate-900 dark:text-slate-100',
@@ -13,11 +15,28 @@ function Stat({ label, value, tone = 'default' }) {
   )
 }
 
-// Overview renders the fields of the single read-only snapshot API. It is the
-// minimal view that proves the meta-token injection, the API call and the SSE
-// refresh path are wired end to end; the dedicated graph, entry, audit and
-// diagnosis views follow in the next subtask.
-export function Overview({ snapshot, error }) {
+// Overview renders the fields of the read-only snapshot API plus the
+// diagnostic counts. It reads the same GET /api/v1/doctor counts the
+// diagnostics view shows, so the two views never report different
+// error/warning/info numbers for one repository.
+export function Overview({ api, refreshKey, snapshot, error }) {
+  const [counts, setCounts] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .doctor()
+      .then((report) => {
+        if (!cancelled) setCounts(report.counts)
+      })
+      .catch(() => {
+        if (!cancelled) setCounts(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, refreshKey])
+
   if (!snapshot) {
     return (
       <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -35,6 +54,7 @@ export function Overview({ snapshot, error }) {
         <h1 className="text-xl font-semibold">仓库概览</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           入口 {snapshot.entryPoint || 'MEMORY.md'} · 修订 {revision}
+          {snapshot.stale ? ' · 快照已过期' : ''}
         </p>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -44,9 +64,9 @@ export function Overview({ snapshot, error }) {
         <Stat label="图谱关系" value={snapshot.graph.edges.length} />
       </div>
       <div className="grid grid-cols-3 gap-4">
-        <Stat label="错误" value={snapshot.health.error} tone="error" />
-        <Stat label="警告" value={snapshot.health.warning} tone="warning" />
-        <Stat label="信息" value={snapshot.health.info} tone="info" />
+        <Stat label="错误" value={counts ? counts.error : '—'} tone="error" />
+        <Stat label="警告" value={counts ? counts.warning : '—'} tone="warning" />
+        <Stat label="信息" value={counts ? counts.info : '—'} tone="info" />
       </div>
     </section>
   )
