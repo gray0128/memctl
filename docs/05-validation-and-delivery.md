@@ -86,7 +86,7 @@
 | G05 | 缺少身份、签名失败、hooks 拒绝 | 明确失败，不改全局配置，不自动关闭签名或 hooks |
 | G06 | 手工 merge/rebase/revert/cherry-pick、sequencer、未合并索引 | 普通写入和自动同步暂停；不替用户 abort 或提交冲突标记 |
 | G07 | 外部 autostash 恢复后留下冲突但没有 rebase 目录 | 通过索引检测拦截，不只检查目录 |
-| G08 | 终端与后台的凭据环境不同、SSH agent 不可用、HTTPS helper 需要交互或阻塞 | 按已确认的凭据契约继承环境；可用凭据非交互认证成功，不可用时明确失败，阻塞按预算终止；不泄露凭据，不遗留无锁 Git 进程 |
+| G08 | 终端与后台的凭据环境不同、SSH agent 不可用、HTTPS helper 需要交互或阻塞 | 按 [凭据契约](./03-workflows-and-dataflows.md#43-凭据环境继承与失败处理) 继承环境；可用凭据非交互认证成功，不可用时明确失败，阻塞按预算终止；不泄露凭据，不遗留无锁 Git 进程；子场景见 2.1 |
 | C01 | 两个连续本地提交分别冲突 | 每阶段获得正确 stage 1/2/3；一次确认不假设全部完成 |
 | C02 | rebase abort 后用旧 UI 提交解决结果，期间 HEAD 已变 | 返回 `CONFLICT_STALE`，不覆盖新历史 |
 | C03 | 删除/修改、空文件、二进制、重命名冲突 | 删除与空文件区分；不支持类型明确拒绝 |
@@ -118,6 +118,20 @@
 | R04 | 在合成诊断仓库运行 `doctor` / `doctor --json`，对比执行前后文件与 Git 状态 | 诊断级别、路径和计数符合契约；error 返回 1，仅 warning/info 返回 0；只读检查不改变记忆内容、Git 索引或 HEAD |
 | L01 | 同步时强杀父进程、宿主、Git 子进程 | 没有遗留 Git 在锁释放后继续写；否则该组合不开放后台写入 |
 | L02 | 连续触发大量 Stop/end，网络持续不可用 | 无后台进程队列无限增长；本地已提交内容完整 |
+
+### 2.1 `G08` 凭据子场景
+
+子场景只定义可复现构造与预期行为，不表示已经验证。执行时使用临时 HOME、临时记忆仓库和本机受控传输桩，不连接真实远端、不使用真实凭据。
+
+| 子场景 | 可复现构造 | 预期结果 |
+| --- | --- | --- |
+| `G08.1` SSH agent 可用（前台显式） | 临时仓库配置受控远端，`GIT_SSH_COMMAND` 指向测试桩，桩记录 `SSH_AUTH_SOCK` 并以成功退出 | `sync --wait` 返回成功，远端收到预期提交，`remoteState=synced`，工作树干净 |
+| `G08.2` 终端成功但后台凭据环境不同 | 前台显式同步在带 `SSH_AUTH_SOCK` 的环境中成功；后台派生进程的凭据环境移除或改写该变量，桩拒绝无 agent 的认证 | 后台同步以 `AUTH_FAILED` 结束，本地提交保留，`remoteState=failed`，无遗留 Git 子进程，仓库锁可再次获取；下一次前台同步成功补推 |
+| `G08.3` HTTPS credential helper 非交互成功 | 配置返回固定凭据的桩 `credential.helper`，无 TTY | 认证成功，凭据不出现在 stdout、stderr、日志或状态文件 |
+| `G08.4` 交互式 helper 被抑制 | 配置需要终端输入或会阻塞的 `credential.helper` 或 `GIT_ASKPASS` 桩，无 TTY | 非交互路径不调用 askpass、不弹出提示，按 `AUTH_FAILED` 在预算内失败 |
+| `G08.5` 凭据阻塞与总超时 | 桩 helper 或 SSH 挂起超过总 deadline | 返回 `TIMEOUT`，Git、SSH 与 helper 进程组被终止并确认清理，锁可再次获取，无无锁写仓库的残留进程 |
+| `G08.6` 未知主机密钥 | `known_hosts` 缺失或与桩主机密钥不匹配，且无 TTY | 不自动接受主机密钥，返回 `AUTH_FAILED`，不写入 `known_hosts` |
+| `G08.7` 凭据泄露检查 | 在失败、超时与成功路径检查进程输出、日志和状态文件 | 不出现凭据、含凭据的 URL 或 Hook payload；含 `user:pass@` 的 URL 在诊断文本中被脱敏为 `://***@` |
 
 ## 3. 性能与适配记录
 

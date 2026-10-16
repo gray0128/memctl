@@ -2,6 +2,26 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## T007：受管写入与恢复
+
+- 目标与范围：完成 A-3，前置为 T006。新增 `internal/lock`、`internal/state`、`internal/vault/write.go`、`internal/app/mutation.go`、`internal/app/recover.go` 及对应测试，实现仓库排他锁、锁内 Git 状态与基线校验、事务恢复记录、`write`、仅本地的 `sync --capture` 与 `recover`；不实现远端同步、Hook、UI、链接重命名与并发 UI 写入。
+- 契约：[写入模型](../01-architecture-and-modules.md#2-写入模型)、[受管写入事务](../03-workflows-and-dataflows.md#2-受管写入事务)、[修订标识](../02-domain-models-and-contracts.md#1-修订标识与格式解析)、[错误与部分成功](../02-domain-models-and-contracts.md#43-错误与部分成功)。
+- 验证日期与环境：2026-10-16，macOS arm64（26.6.2），Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build`、`make test` 全部通过；`bin/memctl` 在临时 `HOME` 与临时仓库下的 `init`、`read --json`、`write`、`sync --capture`、`recover` 手工闭环成功，本地流程不访问网络。
+- `W01`：`TestApplyPutAndRevisionMismatch` 与 `TestA3WriteCoversW01` 验证首个写入成功、旧 `fileRevision` 写入返回 `REVISION_MISMATCH`、首个写入内容不变且提交数不增加；`TestApplyRejectsStaleBaseRevision` 覆盖旧仓库 `baseRevision`。
+- `W03`：`TestApplyRejectsExternalChanges`、`TestCaptureCommitsExternalEdits` 与 `TestA3WriteCoversW03AndCapture` 验证存在 staged、unstaged 或 untracked 变化时普通写入返回 `EXTERNAL_CHANGES` 且不落盘；`sync --capture` 只提交冻结的变更清单并使工作树干净。
+- `W04`：`TestRecoverRollsBackInterruptedWrite` 在多文件写入第一个文件后注入中断，`recover --rollback` 将全部前镜像与 `HEAD` 恢复一致并删除记录。
+- `W05`：`TestRecoverRecognizesCommittedTransaction` 在提交成功后、完成标记前注入中断，恢复通过 `Memctl-Transaction` 标记识别既有提交，补充状态而不重复提交。
+- `W06`：`TestRecoverRefusesUserEditedFile` 在恢复前手工修改受影响文件，恢复拒绝覆盖该文件、仍恢复受控路径并在 `RECOVERY_REQUIRED` 中列出待人工处理路径。
+- `W07`：`TestApplyHookRejectionRollsBack` 验证 `pre-commit` 拒绝时写入返回 `GIT_FAILED`、前镜像与索引干净且无遗留记录；`TestApplyHookAddingOutOfPlanFileIsReported` 验证钩子夹带计划外文件时报告真实提交与越界路径，恢复识别该提交而不重复提交。
+- `G05`–`G07`（本地部分）：`TestA3WriteRequiresIdentity` 验证缺少 Git 身份时写入在修改文件前返回 `GIT_FAILED` 且不改全局配置；`TestApplyRejectsGitOperations/merge in progress` 与 `/unmerged index without rebase directory` 分别通过操作目录与 `git ls-files --unmerged` 拦截进行中的 merge 和无 rebase 目录的未合并索引，返回 `OPERATION_ACTIVE`。
+- `P01`–`P03`：`TestApplyRejectsLimitsAndBadPaths` 与 `TestA3WriteBoundaries` 验证逃逸路径、`.git`、设备名与反斜杠路径返回 `INVALID_PATH`，库外符号链接与多硬链接目标返回 `UNSUPPORTED` 且不修改库外内容，超过 2 MiB 的单文件与超过 100 个变更返回 `LIMIT_EXCEEDED`。
+- `L01`（本地写入部分）：`TestApplyReportsBusyWhileLockHeld` 验证仓库锁被占用时第二个写入在预算内返回 `BUSY`；`internal/lock` 使用 `gofrs/flock` 在 Git 目录固定文件上取排他锁，释放时不删除锁文件。
+- 回归：A-1 `R03` 与 A-2 的 `init`、`read`、格式解析集成与单元测试全部通过；`write` 从「未实现」改为实现后，`R03` 的占位成功检查改用仍未实现的 `resolve`。
+- 未运行：`W02`（CLI/UI 并发，属 C-1）、真实 `SIGKILL` 与父/子进程生命周期测试（属 A-4/A-5 的 `L01` 完整场景）、远端同步、Hook、UI、Windows/Linux 平台测试。
+- 遗留限制：中断由进程内故障注入模拟，未用真实 `SIGKILL` 验证 OS 锁释放；`capture` 不写恢复记录，中断后重新执行即可；新文件要求父目录已存在；`write` 仅支持单文件，多文件由应用服务测试覆盖；仓库修订对单个文件最多读取 8 MiB。
+- 下一步：当时剩余已登记待办为 `T002`（凭据契约）与 `T011`（引号统一），其后按 `A-4` → `D-2` 推进；已完成，由 T002 接续。
+
 ## T008：记忆格式与链接解析
 
 - 目标与范围：完成 A-2 的解析部分，前置为 T003。新增 `internal/vault/parse.go` 与 `internal/vault/link.go`，实现行级无损解析（顶层 `- ` 条目、行尾保序元数据、同一行多个 `source`、未知键、根相对 `[[path]]`、代码围栏与行内代码排除）、`entryId` 与 `WikiLink` 标识，以及同名歧义、死链和非法路径诊断；不实现受管写入（T007）与链接重命名。

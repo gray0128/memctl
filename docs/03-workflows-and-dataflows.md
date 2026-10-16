@@ -127,6 +127,31 @@ stateDiagram-v2
     RecoveryRequired --> Pending: 显式恢复并通过检查
 ```
 
+### 4.3 凭据环境继承与失败处理
+
+远端同步使用 [架构定义的凭据与网络环境白名单](./01-architecture-and-modules.md#34-凭据与信任边界)。前台进程直接使用调用方环境；后台工作进程由父进程在派生时显式传入白名单快照，不读取登录 shell 或宿主初始化文件，也不把凭据环境写入状态。三条路径的交互与预算如下。
+
+| 路径 | 触发 | 凭据环境 | 交互 | 远端预算 |
+| --- | --- | --- | --- | --- |
+| 前台显式 | 用户在终端运行 `init <url>`、`sync --wait`、`pull`、`resolve`、`recover`，或手工运行 `start`/`context` | 调用方环境的白名单 | 标准输入与标准错误均为终端时交给 Git/SSH 原生提示 | 30 秒 |
+| 前台 Hook | 宿主触发 `start`/`context`/`pull` | 同上 | 强制非交互 | 8 秒 |
+| 后台派生 | 受管写入或 `sync` 后尽力唤起 | 父进程传入的白名单快照 | 强制非交互 | 30 秒 |
+
+`memctl` 不实现自己的凭据提示界面。只有前台且存在可用终端时才允许 Git 与 SSH 走原生提示（解锁密钥、输入 passphrase、确认主机密钥）；此时它把调用方的标准输入输出透传给 Git，不自行读取或回显凭据。非交互路径关闭标准输入，设置 `GIT_TERMINAL_PROMPT=0`，并抑制 SSH 与 Git 的 askpass 回退，使 `GIT_ASKPASS`/`SSH_ASKPASS` 指向的交互式或图形程序不会被调用；agent、密钥文件和 credential helper 等无需终端即可完成的来源仍然可用。抑制只作用于本次 Git 子进程，不修改用户配置。若用户唯一的凭据来源是交互式 askpass，非交互路径返回 `AUTH_FAILED`，留待下一次前台运行处理。
+
+每次远端任务使用单一总 deadline（前台 Hook 8 秒，前台显式与后台 30 秒），覆盖 fetch、整合、push 及全部子进程，不因切换到下一个 Git 子命令而重新计时。deadline 到期后终止 Git 进程组，包含 SSH、credential helper 和 askpass；确认全部结束才释放仓库锁，清理耗时不计入下一次请求的预算。无法确认清理完成时不释放锁并进入 `recovery_required`，不留下在锁释放后继续写仓库的 Git。用户配置的 helper 或 SSH 若在预算内无返回，按超时处理，不会无限阻塞。
+
+失败分类使用 [错误契约](./02-domain-models-and-contracts.md#43-错误与部分成功) 的内部 Git 错误码，判定规则如下。
+
+| 结果 | 判定 | 前台显式 | 前台 Hook 与后台 |
+| --- | --- | --- | --- |
+| `AUTH_FAILED` | 非交互路径没有可用凭据源（agent socket 缺失或无效、helper 无返回），或提供的凭据被拒绝、主机密钥校验失败 | 终端下交给原生提示；仍失败返回 1 | `remoteState=failed` 并记录原因，下次同步可重试，本轮不自动重试、不排队 |
+| `NETWORK_UNAVAILABLE` | DNS、连接、代理或重置类传输错误 | 返回 1 | 保持 `pending`，下次同步重试 |
+| `TIMEOUT` | 总 deadline 到期 | 返回 1 | 保持 `pending`，下次同步重试 |
+| `NO_UPSTREAM` | 仓库没有可用 upstream 或目标 ref | 返回 1 并指向初始化协议 | `remoteState=failed` 并记录原因，不伪造同步成功 |
+
+鉴权失败与超时按证据区分：deadline 终止一律记为 `TIMEOUT`，即使 stderr 内容看起来像认证错误，因为无法证明认证交换已完成；只有在 deadline 之前拿到明确的拒绝结果（认证失败、helper 返回无凭据、主机密钥不匹配）才记为 `AUTH_FAILED`。两类都保留本地已提交内容，只更新远端状态与原因码，不把失败解释成 `synced`，也不因此撤销本地提交。前台 Hook 与后台按 [CLI 退出行为](./04-ui-and-cli-specification.md#3-hook-输入输出与时限) 返回 0 或记录状态，避免阻断宿主。
+
 ## 5. 冲突采集与解决
 
 ### 5.1 自动同步发现冲突
