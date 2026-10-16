@@ -243,20 +243,23 @@ func TestUIRejectsInvalidFlags(t *testing.T) {
 	}
 }
 
-// TestDoctorRejectsUnsupportedFix verifies that the read-only doctor does not
-// pretend to apply the deterministic repairs that belong to stage C-1.
-func TestDoctorRejectsUnsupportedFix(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+// TestDoctorFixRequiresRepository verifies that `doctor --fix` runs the managed
+// repair path instead of the former stage placeholder, and that it reports the
+// missing repository before touching anything.
+func TestDoctorFixRequiresRepository(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AGENT_MEMORY_DIR", filepath.Join(home, "memory"))
 	var stdout, stderr bytes.Buffer
 	code := cli.Run([]string{"doctor", "--fix"}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
 	if code != cli.ExitError {
 		t.Fatalf("doctor --fix exit code = %d, want %d (stderr=%q)", code, cli.ExitError, stderr.String())
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("doctor --fix stdout = %q, want empty", stdout.String())
+	if !strings.Contains(stderr.String(), "NO_REPO") {
+		t.Fatalf("doctor --fix stderr = %q, want NO_REPO", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "UNSUPPORTED") {
-		t.Fatalf("doctor --fix stderr = %q, want UNSUPPORTED", stderr.String())
+	if strings.Contains(stderr.String(), "stage C-1") {
+		t.Fatalf("doctor --fix still reports the stage placeholder: %q", stderr.String())
 	}
 }
 

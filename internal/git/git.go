@@ -50,6 +50,15 @@ func Add(ctx context.Context, dir string, paths ...string) error {
 	return err
 }
 
+// MoveForce stages a rename and updates the index, including a case-only rename
+// that a plain `git add` cannot express on a case-insensitive index. The caller
+// has already moved the working-tree file; `git mv -f` reconciles the index with
+// the new spelling and the already-moved content.
+func MoveForce(ctx context.Context, dir, from, to string) error {
+	_, err := runWithEnv(ctx, dir, []string{"GIT_LITERAL_PATHSPECS=1"}, "mv", "-f", "--", from, to)
+	return err
+}
+
 // Commit creates a commit and returns the resulting HEAD hash.
 func Commit(ctx context.Context, dir, message string) (string, error) {
 	if _, err := Run(ctx, dir, "commit", "-q", "-m", message); err != nil {

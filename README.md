@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决、阶段 A-5 的 Hook 与后台能力、阶段 A-6 的只读诊断与内嵌默认指引（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`），阶段 B-1 的本地只读 HTTP 安全框架与 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 只读 API，阶段 B-2 的 `internal/watcher` 递归文件监听与 `GET /api/v1/events` SSE 状态流（`vault.updated` 与 `resync.required` 提示、Token 鉴权与评论心跳），以 `fetch` 流解析 SSE 并在每次连接与重连后重新读取快照，只读模式下服务端拒绝全部写请求。阶段 B 的全部能力已完成：新增只读知识图谱（Cytoscape.js）、条目检索与过滤浏览、审计 Diff 预览（Diff2Html）与诊断计数展示（按 error/warning/info 分组，不生成健康分），图谱与 Diff 库按需分块并随二进制内嵌；Dreaming 与正式安装流程尚未实现。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决、阶段 A-5 的 Hook 与后台能力、阶段 A-6 的只读诊断与内嵌默认指引（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`），阶段 B-1 的本地只读 HTTP 安全框架与 `snapshot`/`files`/`entries`/`audit`/`doctor`/`conflict` 只读 API，阶段 B-2 的 `internal/watcher` 递归文件监听与 `GET /api/v1/events` SSE 状态流（`vault.updated` 与 `resync.required` 提示、Token 鉴权与评论心跳），以 `fetch` 流解析 SSE 并在每次连接与重连后重新读取快照，只读模式下服务端拒绝全部写请求。阶段 B 的全部能力已完成：新增只读知识图谱（Cytoscape.js）、条目检索与过滤浏览、审计 Diff 预览（Diff2Html）与诊断计数展示（按 error/warning/info 分组，不生成健康分），图谱与 Diff 库按需分块并随二进制内嵌。阶段 C 已启动：`C-1` 子任务 1 实现了与 CLI 共用锁和版本基线的受管写入、移动改链、条目增删改与跨文件移动、确定性修复与手动同步后端与 API（`PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix`、`POST /api/v1/sync`，以及 CLI `doctor --fix`）；UI 编辑与图谱拆分交互属 `C-1` 子任务 2。Dreaming 与正式安装流程尚未实现。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -44,10 +44,10 @@ memctl/
   internal/state/       # 事务恢复记录、冲突/操作记录、远端审批、同步摘要与会话缓存
   internal/vault/       # 根相对路径边界、有界读取、格式解析、仓库修订与受管文件写入
   internal/doctor/      # 只读诊断：死链、孤立文件、入口膨胀、元数据与 Git/状态一致性
-  internal/server/      # 本地只读 HTTP 路由（snapshot/files/entries/audit/audit diff/doctor/conflict）、内嵌首页与静态资源、Session Token 鉴权、Host/Origin 校验、安全响应头、只读拦截与 SSE 状态流（vault.updated、resync.required、心跳）
+  internal/server/      # 本地 HTTP 路由（snapshot/files/entries/audit/audit diff/doctor/conflict 只读，files 写入、files:move、entries 增删改、doctor:fix、sync 写入）、内嵌首页与静态资源、Session Token 鉴权、Host/Origin 校验、安全响应头、只读拦截与 SSE 状态流（vault.updated、resync.required、心跳）
   internal/watcher/     # 递归文件监听、新建目录登记、rename/remove/原子替换处理与 150ms 防抖扇出
   web/                  # 前端源码（Preact、Vite、Tailwind CSS、Cytoscape.js、Diff2Html）与 web/embed.go 内嵌入口；含概览、知识图谱、条目、审计 Diff 与诊断视图；dist 由 make ui 构建，不提交
-  internal/app/         # 初始化、读取、受管写入、capture、远端同步、会话上下文、冲突解决、只读诊断与只读查询
+  internal/app/         # 初始化、读取、受管写入与文件移动、条目增删改与跨文件移动、capture、远端同步、会话上下文、冲突解决、只读诊断、确定性修复与只读查询
   internal/memerr/      # 契约错误码
   tests/integration/    # 跨模块与 CLI 二进制集成测试（R01–R04、A-2、A-3、A-4、A-5、A-6、B-1、B-2、B-3）
   docs/                 # 设计契约、开发循环、任务状态与验收
@@ -98,11 +98,15 @@ printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --ba
 ./bin/memctl doctor
 ./bin/memctl doctor --json
 
+# 确定性修复：当前只重建缺失的入口文件；没有确定性修复的诊断返回 UNSUPPORTED，不猜测修复
+./bin/memctl doctor --fix
+./bin/memctl doctor --json --fix
+
 # 本地只读 Web UI：仅绑定 127.0.0.1，首页注入 Session Token；--readonly 在服务端拒绝全部写请求
 ./bin/memctl ui --no-open
 ```
 
-当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve`、`recover`、`doctor` 与 `ui` 可用。`doctor` 默认只读，不改变记忆内容、Git 索引或 HEAD；确定性修复 `doctor --fix` 与 `POST /api/v1/doctor:fix` 在阶段 C-1 落地，当前调用 `--fix` 返回 `UNSUPPORTED`。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程已接入 `Makefile`：`make ui` 构建 `web/dist`，Go 构建与测试依赖该产物；跨平台正式发布打包（`make release`）属阶段 D，尚未实现。
+当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`start`、`context`、`pull`、`tag`、`wrap`、`resolve`、`recover`、`doctor`、`doctor --fix` 与 `ui` 可用。`doctor` 默认只读，不改变记忆内容、Git 索引或 HEAD；`doctor --fix` 与 `POST /api/v1/doctor:fix` 经受管事务执行确定性修复，首版只重建缺失的入口文件，其余 `issueCodes` 返回 `UNSUPPORTED`。UI 与 CLI 的写入共用同一仓库锁与版本基线：HTTP 写路由为 `PUT /api/v1/files/{path...}`、`POST /api/v1/files:move`、`POST/PATCH/DELETE /api/v1/entries`、`POST /api/v1/doctor:fix` 与 `POST /api/v1/sync`，均要求 `X-Memctl-Token`、Host/Origin 校验，并在 `--readonly` 下返回 `READ_ONLY`。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；`tag` 缺少稳定 SID 时返回退出码 `1`，`wrap` 返回被包装程序的退出状态。未知命令或参数返回用法错误（退出码 `2`）。前端工程已接入 `Makefile`：`make ui` 构建 `web/dist`，Go 构建与测试依赖该产物；跨平台正式发布打包（`make release`）属阶段 D，尚未实现。
 
 Hook 场景使用隔离路径验证（`--stdin` 读取宿主 JSON，`--json` 输出单个 envelope）：
 

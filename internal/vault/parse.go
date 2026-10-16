@@ -268,6 +268,24 @@ func parseEntry(relPath, fileRevision string, lineNumber int, rawLine, body, hea
 // when every `;`-separated segment is `key: value` with a plain key, so links,
 // Markdown link text and other bracket text stay part of the fact.
 func splitTrailingMetadata(body string) ([]MetadataField, string) {
+	fields, fact, _ := splitEntryBody(body)
+	return fields, fact
+}
+
+// SplitFactAndMetadata returns the trimmed fact text of one bullet body and the
+// exact trailing metadata suffix, including the whitespace before the first
+// metadata group. A body without metadata returns the fact and an empty suffix,
+// so a caller can rewrite only the fact and keep every metadata byte.
+func SplitFactAndMetadata(body string) (string, string) {
+	_, fact, suffix := splitEntryBody(body)
+	return strings.TrimSpace(fact), suffix
+}
+
+// splitEntryBody returns the parsed metadata fields, the fact prefix (trimmed
+// on the right) and the exact suffix from the first metadata group to the end of
+// body. The suffix includes the whitespace that separates the fact from the
+// metadata so string concatenation reproduces the original bytes.
+func splitEntryBody(body string) ([]MetadataField, string, string) {
 	trimmed := strings.TrimRight(body, " \t")
 	index := len(trimmed)
 	var fields []MetadataField
@@ -286,7 +304,62 @@ func splitTrailingMetadata(body string) ([]MetadataField, string) {
 			index--
 		}
 	}
-	return fields, trimmed[:index]
+	return fields, trimmed[:index], body[index:]
+}
+
+// ReplaceEntryFact rewrites the fact text of one bullet line and keeps its
+// trailing metadata bytes untouched. It reports false for a non-bullet line.
+func ReplaceEntryFact(rawLine, newFact string) (string, bool) {
+	if len(rawLine) < 2 || rawLine[0] != '-' || (rawLine[1] != ' ' && rawLine[1] != '\t') {
+		return rawLine, false
+	}
+	_, suffix := SplitFactAndMetadata(rawLine[2:])
+	return rawLine[:2] + strings.TrimSpace(newFact) + suffix, true
+}
+
+// WithAppendedLine returns the content with one line appended after the final
+// line and the 1-based number of the appended line.
+func (p ParsedFile) WithAppendedLine(line string) (string, int) {
+	content := p.Raw()
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += line + "\n"
+	return content, strings.Count(content, "\n")
+}
+
+// WithoutLine returns the content with one physical line removed, including its
+// terminator. It reports false when the line is not part of the file.
+func (p ParsedFile) WithoutLine(lineNumber int) (string, bool) {
+	var b strings.Builder
+	found := false
+	for _, line := range p.Lines {
+		if line.Number == lineNumber {
+			found = true
+			continue
+		}
+		b.WriteString(line.Text)
+		b.WriteString(line.Ending)
+	}
+	return b.String(), found
+}
+
+// WithReplacedLine returns the content with one physical line replaced by text.
+// It reports false when the line is not part of the file.
+func (p ParsedFile) WithReplacedLine(lineNumber int, text string) (string, bool) {
+	var b strings.Builder
+	found := false
+	for _, line := range p.Lines {
+		if line.Number == lineNumber {
+			b.WriteString(text)
+			b.WriteString(line.Ending)
+			found = true
+			continue
+		}
+		b.WriteString(line.Text)
+		b.WriteString(line.Ending)
+	}
+	return b.String(), found
 }
 
 func parseMetadataGroup(content string) ([]MetadataField, bool) {
@@ -361,6 +434,8 @@ func scanLinks(sourceFile string, lineNumber int, text string) []RawLink {
 				SourceFile: sourceFile,
 				LineNumber: lineNumber,
 				RawTarget:  text[i+2 : i+2+end],
+				Start:      i + 2,
+				End:        i + 2 + end,
 			})
 			i += 2 + end + 2
 			continue

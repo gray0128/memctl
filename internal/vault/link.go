@@ -8,11 +8,15 @@ import (
 )
 
 // RawLink is a `[[target]]` occurrence located during parsing, before it is
-// resolved against the set of existing files.
+// resolved against the set of existing files. Start and End are the byte offsets
+// of the target inside the physical line text (exclusive End, without the
+// brackets), so a rename can rewrite only the target bytes.
 type RawLink struct {
 	SourceFile string
 	LineNumber int
 	RawTarget  string
+	Start      int
+	End        int
 }
 
 // WikiLink is a raw link resolved against the repository file set. ResolvedPath
@@ -132,6 +136,62 @@ func candidatePaths(clean string) []string {
 		return []string{clean}
 	}
 	return []string{clean, clean + ".md", clean + ".markdown"}
+}
+
+// LinkTargetFor returns the link text that replaces rawTarget when the file it
+// resolves to is renamed to newPath. A Markdown link omits its .md or .markdown
+// extension, so an extensionless raw target stays extensionless; any other
+// target keeps the new path literally.
+func LinkTargetFor(rawTarget, newPath string) string {
+	if path.Ext(rawTarget) != "" {
+		return newPath
+	}
+	switch path.Ext(newPath) {
+	case ".md", ".markdown":
+		return strings.TrimSuffix(newPath, path.Ext(newPath))
+	default:
+		return newPath
+	}
+}
+
+// RewriteLinks rewrites every parsed link in file that resolves to oldPath so it
+// points at newPath. Only the link target bytes change; untouched lines keep
+// their original bytes. It returns the new content and whether anything
+// changed. Links inside code fences or inline code are not parsed as links, so
+// they are not rewritten.
+func RewriteLinks(file ParsedFile, index *LinkIndex, oldPath, newPath string) (string, bool) {
+	rangesByLine := map[int][][2]int{}
+	changed := false
+	for _, raw := range file.Links {
+		if index.Resolve(raw.RawTarget).ResolvedPath != oldPath {
+			continue
+		}
+		rangesByLine[raw.LineNumber] = append(rangesByLine[raw.LineNumber], [2]int{raw.Start, raw.End})
+		changed = true
+	}
+	if !changed {
+		return file.Raw(), false
+	}
+
+	var b strings.Builder
+	for _, line := range file.Lines {
+		ranges := rangesByLine[line.Number]
+		if len(ranges) == 0 {
+			b.WriteString(line.Text)
+			b.WriteString(line.Ending)
+			continue
+		}
+		text := line.Text
+		// Replace from the end of the line backwards so earlier offsets stay
+		// valid while the target bytes change length.
+		for i := len(ranges) - 1; i >= 0; i-- {
+			start, end := ranges[i][0], ranges[i][1]
+			text = text[:start] + LinkTargetFor(text[start:end], newPath) + text[end:]
+		}
+		b.WriteString(text)
+		b.WriteString(line.Ending)
+	}
+	return b.String(), true
 }
 
 func linkDiagnostic(raw RawLink, resolution LinkResolution) (LinkDiagnostic, bool) {

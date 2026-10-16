@@ -77,7 +77,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `warnings`, `createdAt`, `appliedCommit?`, `error?` |
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
 
-诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据报告 `info`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。
+诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据报告 `info`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
 
 `DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的 Agent 状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 
@@ -123,10 +123,10 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `GET /api/v1/snapshot` | 无 | `VaultSnapshot` |
 | `GET /api/v1/files/{path...}` | 根相对路径 | `{file, rawContent}`，附带文件 `ETag` |
 | `PUT /api/v1/files/{path...}` | 版本头、`{rawContent}` | `MutationResult` |
-| `POST /api/v1/files:move` | `{fromPath, toPath, baseRevision}` | `MutationResult`；更新引用 |
+| `POST /api/v1/files:move` | `{fromPath, toPath, baseRevision}` | `MutationResult`；同一事务内移动文件并只重写已解析到源文件的链接；仅大小写不同的重命名经事务内中间路径完成，拒绝覆盖已有目标 |
 | `GET /api/v1/entries` | `q, agent, device, file, from, to, limit, offset` | `{revision, items, total}`；默认 50、最多 200 条，变更后重新分页 |
 | `POST /api/v1/entries` | `{filePath, heading?, factText, sources?, expectedRevision}` | `{entry, result: MutationResult}` |
-| `PATCH /api/v1/entries/{id}` | 版本头、`{filePath, factText, moveToFilePath?, baseRevision?}` | `{entry, result}`；移动时要求仓库基线 |
+| `PATCH /api/v1/entries/{id}` | 版本头、`{filePath, factText, moveToFilePath?, baseRevision?}` | `{entry, result}`；移动时要求仓库基线，目标不存在时创建该文件（图谱拆分），源文件只移除该条目并保留其余内容与元数据 |
 | `DELETE /api/v1/entries/{id}` | 版本头、`?filePath=` | `MutationResult` |
 | `POST /api/v1/sync` | 无 | 202、`SyncSummary`；完整双向同步，通过 snapshot 查询后续状态 |
 | `GET /api/v1/conflict` | 无 | `ConflictState`，无冲突时 204 |

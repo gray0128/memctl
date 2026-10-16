@@ -32,6 +32,10 @@ type ChangeAction string
 const (
 	ActionPut    ChangeAction = "put"
 	ActionDelete ChangeAction = "delete"
+	// actionMove is an internal transaction action for a file rename. It is
+	// never accepted from a MutationRequest, whose public actions stay put and
+	// delete. It carries the destination in path and the source in moveFrom.
+	actionMove ChangeAction = "move"
 )
 
 // FileChange is one path change inside a MutationRequest. ExpectedRevision is
@@ -57,11 +61,11 @@ type MutationRequest struct {
 
 // MutationResult is the outcome of one local transaction.
 type MutationResult struct {
-	TransactionID string
-	Revision      string
-	Commit        string
-	ChangedFiles  []string
-	SyncState     string
+	TransactionID string   `json:"transactionId,omitempty"`
+	Revision      string   `json:"revision,omitempty"`
+	Commit        string   `json:"commit,omitempty"`
+	ChangedFiles  []string `json:"changedFiles"`
+	SyncState     string   `json:"syncState"`
 }
 
 // transactionTrailer identifies a commit created by one local transaction.
@@ -110,35 +114,52 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	// killed parent cannot leave Git writing after the lock is released.
 	ctx = session.ctx
 
-	// A normal transaction requires a clean baseline so that it never stages
-	// content the caller did not plan. External edits are captured explicitly.
-	status, err := git.StatusPorcelain(ctx, session.repoPath)
-	if err != nil {
+	if err := a.requireWriteBaseline(ctx, session, req.BaseRevision); err != nil {
 		return MutationResult{}, err
 	}
-	if status != "" {
-		return MutationResult{}, memerr.New(memerr.ExternalChanges,
-			"the repository has staged, unstaged or untracked changes; commit them with `memctl sync --capture` after stopping other writers")
-	}
-	if err := git.RequireIdentity(ctx, session.repoPath); err != nil {
-		return MutationResult{}, err
-	}
-	if req.BaseRevision != "" {
-		current, err := a.repoRevision(ctx, session)
-		if err != nil {
-			return MutationResult{}, err
-		}
-		if req.BaseRevision != current {
-			return MutationResult{}, memerr.New(memerr.RevisionMismatch,
-				"the repository revision changed since it was read; reread the affected files before writing")
-		}
-	}
-
 	plans, err := session.plan(req)
 	if err != nil {
 		return MutationResult{}, err
 	}
+	result, err := a.commit(ctx, session, "write", req, plans)
+	if err != nil {
+		return result, err
+	}
+	return a.finishWrite(session, result), nil
+}
 
+// requireWriteBaseline enforces the preconditions shared by every managed
+// write: a clean worktree and index, a resolvable commit identity and, when the
+// caller supplied one, a current whole-repository baseline.
+func (a *App) requireWriteBaseline(ctx context.Context, session *writeSession, baseRevision string) error {
+	status, err := git.StatusPorcelain(ctx, session.repoPath)
+	if err != nil {
+		return err
+	}
+	if status != "" {
+		return memerr.New(memerr.ExternalChanges,
+			"the repository has staged, unstaged or untracked changes; commit them with `memctl sync --capture` after stopping other writers")
+	}
+	if err := git.RequireIdentity(ctx, session.repoPath); err != nil {
+		return err
+	}
+	if baseRevision != "" {
+		current, err := a.repoRevision(ctx, session)
+		if err != nil {
+			return err
+		}
+		if baseRevision != current {
+			return memerr.New(memerr.RevisionMismatch,
+				"the repository revision changed since it was read; reread the affected files before writing")
+		}
+	}
+	return nil
+}
+
+// commit applies an already-planned and revalidated change list as one local
+// transaction. The caller keeps the session open: it owns the final close,
+// background-sync trigger and mutation notification through finishWrite.
+func (a *App) commit(ctx context.Context, session *writeSession, operation string, req MutationRequest, plans []plannedChange) (MutationResult, error) {
 	head, err := git.Head(ctx, session.repoPath)
 	if err != nil {
 		return MutationResult{}, err
@@ -153,16 +174,10 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		Kind:         state.KindMutation,
 		OriginalHead: head,
 		StartedAt:    state.StartedAt(),
-		Message:      commitMessage("write", req.Agent, req.SessionID, req.Device, txID),
+		Message:      commitMessage(operation, req.Agent, req.SessionID, req.Device, txID),
 	}
 	for _, plan := range plans {
-		record.Paths = append(record.Paths, state.PathRecord{
-			Path:            plan.path,
-			Existed:         plan.existedBefore,
-			Mode:            plan.gitMode,
-			Before:          string(plan.before),
-			PlannedRevision: plan.plannedRevision,
-		})
+		record.Paths = append(record.Paths, plan.records()...)
 	}
 	if err := session.store.Save(record); err != nil {
 		return MutationResult{}, err
@@ -172,9 +187,12 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	}
 
 	for index, plan := range plans {
-		if plan.action == ActionDelete {
+		switch plan.action {
+		case ActionDelete:
 			err = session.root.RemoveFile(plan.path)
-		} else {
+		case actionMove:
+			err = session.root.RenameFile(plan.moveFrom, plan.path)
+		default:
 			err = session.root.WriteAtomic(plan.path, []byte(plan.content), plan.fsMode)
 		}
 		if err != nil {
@@ -185,8 +203,8 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		}
 	}
 
-	paths := planPaths(plans)
-	if err := git.Add(ctx, session.repoPath, paths...); err != nil {
+	paths := planGitPaths(plans)
+	if err := stagePlans(ctx, session, plans); err != nil {
 		return session.abort(ctx, txID, record, err)
 	}
 	staged, err := git.StagedPaths(ctx, session.repoPath)
@@ -230,13 +248,17 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		SyncState:     session.remoteStateAfterCommit(ctx),
 	}
 	a.persistLocalCommit(session, result)
-	// Release the lock before triggering background sync so the worker can
-	// acquire it. The trigger is best-effort and does not change the result.
+	return result, nil
+}
+
+// finishWrite releases the lock before triggering the best-effort background
+// sync, then notifies the UI that the local commit exists. A failure to derive
+// the background worker never changes the result.
+func (a *App) finishWrite(session *writeSession, result MutationResult) MutationResult {
 	session.Close()
 	a.triggerBackgroundSync()
-	// The UI invalidates its snapshot only after the local commit exists.
 	a.notifyMutation(result)
-	return result, nil
+	return result
 }
 
 // Capture accepts serial external edits explicitly. It freezes the changed path
@@ -345,6 +367,48 @@ type plannedChange struct {
 	fsMode          fs.FileMode
 	gitMode         string
 	plannedRevision string
+	// moveFrom is the source path of an actionMove change; path is the
+	// destination. It is empty for put and delete.
+	moveFrom string
+}
+
+// records returns the pre-image records one change contributes to the
+// transaction. A move contributes two: the source it removes and the
+// destination it creates.
+func (p plannedChange) records() []state.PathRecord {
+	if p.action == actionMove {
+		return []state.PathRecord{
+			{
+				Path:            p.moveFrom,
+				Existed:         true,
+				Mode:            p.gitMode,
+				Before:          string(p.before),
+				PlannedRevision: vault.AbsentRevision,
+			},
+			{
+				Path:            p.path,
+				Existed:         false,
+				Mode:            p.gitMode,
+				PlannedRevision: p.plannedRevision,
+			},
+		}
+	}
+	return []state.PathRecord{{
+		Path:            p.path,
+		Existed:         p.existedBefore,
+		Mode:            p.gitMode,
+		Before:          string(p.before),
+		PlannedRevision: p.plannedRevision,
+	}}
+}
+
+// gitPaths returns the paths one change stages. A move stages both the source
+// removal and the destination addition.
+func (p plannedChange) gitPaths() []string {
+	if p.action == actionMove {
+		return []string{p.moveFrom, p.path}
+	}
+	return []string{p.path}
 }
 
 // plan validates every change against the current disk state and builds the
@@ -403,6 +467,9 @@ func (s *writeSession) plan(req MutationRequest) ([]plannedChange, error) {
 
 func (s *writeSession) planPut(clean string, change FileChange) (plannedChange, error) {
 	plan := plannedChange{path: clean, action: ActionPut, content: change.RawContent}
+	if err := s.root.RequireParentDir(clean); err != nil {
+		return plannedChange{}, err
+	}
 	if change.ExpectedRevision == vault.AbsentRevision {
 		meta, err := s.root.Stat(clean)
 		if err != nil {
@@ -491,11 +558,12 @@ func (s *writeSession) restoreSelected(ctx context.Context, record state.Transac
 	if err := git.ResetPaths(ctx, s.repoPath, record.AffectedPaths()); err != nil {
 		return err
 	}
+	// Remove transaction-created paths before rewriting the pre-images. On a
+	// case-insensitive filesystem a case-only rename leaves the source and
+	// destination spelling pointing at the same file, so the removal must
+	// happen first or it would delete the restored content.
 	for _, pathRecord := range selected {
 		if pathRecord.Existed {
-			if err := s.root.WriteAtomic(pathRecord.Path, []byte(pathRecord.Before), fsMode(pathRecord.Mode)); err != nil {
-				return err
-			}
 			continue
 		}
 		meta, err := s.root.Stat(pathRecord.Path)
@@ -506,6 +574,14 @@ func (s *writeSession) restoreSelected(ctx context.Context, record state.Transac
 			if err := s.root.RemoveFile(pathRecord.Path); err != nil {
 				return err
 			}
+		}
+	}
+	for _, pathRecord := range selected {
+		if !pathRecord.Existed {
+			continue
+		}
+		if err := s.root.WriteAtomic(pathRecord.Path, []byte(pathRecord.Before), fsMode(pathRecord.Mode)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -659,12 +735,33 @@ func (a *App) fault(stage string) error {
 	return a.testFault(stage)
 }
 
-func planPaths(plans []plannedChange) []string {
+// planGitPaths returns every path the planned changes stage, including both
+// sides of a move.
+func planGitPaths(plans []plannedChange) []string {
 	paths := make([]string, 0, len(plans))
 	for _, plan := range plans {
-		paths = append(paths, plan.path)
+		paths = append(paths, plan.gitPaths()...)
 	}
 	return paths
+}
+
+// stagePlans stages exactly the planned paths. A case-only rename first goes
+// through `git mv -f`, because `git add` cannot record a case change on a
+// case-insensitive index; the following `git add` keeps the rename and stages
+// every other planned path.
+func stagePlans(ctx context.Context, session *writeSession, plans []plannedChange) error {
+	for _, plan := range plans {
+		if plan.action != actionMove {
+			continue
+		}
+		if plan.moveFrom == plan.path || !strings.EqualFold(plan.moveFrom, plan.path) {
+			continue
+		}
+		if err := git.MoveForce(ctx, session.repoPath, plan.moveFrom, plan.path); err != nil {
+			return err
+		}
+	}
+	return git.Add(ctx, session.repoPath, planGitPaths(plans)...)
 }
 
 // remoteStateAfterCommit reports the remote state of a fresh local commit: a

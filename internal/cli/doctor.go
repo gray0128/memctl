@@ -7,13 +7,13 @@ import (
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/doctor"
-	"github.com/gray0128/memctl/internal/memerr"
 )
 
 // runDoctor implements `doctor [--json] [--fix]`. The default is a read-only
 // diagnosis: it reports the documented levels and returns 1 when any error-level
-// issue is found, 0 otherwise. `--fix` needs the managed write API and lands
-// with stage C-1, so it is rejected explicitly instead of pretending success.
+// issue is found, 0 otherwise. `--fix` applies the deterministic repairs through
+// the managed write API; codes without a deterministic repair are refused with
+// UNSUPPORTED instead of guessed.
 func runDoctor(args []string, stdout, stderr io.Writer) int {
 	asJSON := false
 	fix := false
@@ -27,16 +27,18 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 			return usageError(stderr, "doctor", fmt.Sprintf("unknown flag %q", arg))
 		}
 	}
-	if fix {
-		return fail(stderr, "doctor", memerr.New(memerr.Unsupported,
-			"--fix applies deterministic repairs through the managed write API and is implemented in stage C-1; this stage provides the read-only diagnosis"))
-	}
 
 	cfg, err := loadConfig()
 	if err != nil {
 		return fail(stderr, "doctor", err)
 	}
-	report, err := app.New(cfg).Doctor(context.Background())
+	service := app.New(cfg)
+	ctx := context.Background()
+	if fix {
+		return runDoctorFix(ctx, service, asJSON, stdout, stderr)
+	}
+
+	report, err := service.Doctor(ctx)
 	if err != nil {
 		return fail(stderr, "doctor", err)
 	}
@@ -49,6 +51,35 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		printDoctor(stdout, report)
 	}
 	if report.Counts.Error > 0 {
+		return ExitError
+	}
+	return ExitOK
+}
+
+// runDoctorFix applies the deterministic repairs and reports the resulting
+// diagnosis. It still returns 1 when error-level issues remain after the fix.
+func runDoctorFix(ctx context.Context, service *app.App, asJSON bool, stdout, stderr io.Writer) int {
+	result, err := service.DoctorFix(ctx, app.DoctorFixRequest{})
+	if asJSON {
+		payload := struct {
+			Report doctor.Report       `json:"report"`
+			Result *app.MutationResult `json:"result,omitempty"`
+		}{Report: result.Report, Result: result.Result}
+		if encodeErr := encodeJSON(stdout, payload); encodeErr != nil {
+			return fail(stderr, "doctor", encodeErr)
+		}
+	} else {
+		printDoctor(stdout, result.Report)
+		if result.Result != nil {
+			fmt.Fprintf(stdout, "applied: transaction %s commit %s\n", result.Result.TransactionID, result.Result.Commit)
+		} else {
+			fmt.Fprintln(stdout, "no deterministic fixes applied")
+		}
+	}
+	if err != nil {
+		return fail(stderr, "doctor", err)
+	}
+	if result.Report.Counts.Error > 0 {
 		return ExitError
 	}
 	return ExitOK

@@ -20,6 +20,11 @@ const MaxRevisionBytes = 8 << 20
 // memctlTempSuffix marks the atomic-write temporary file of one managed path.
 const memctlTempSuffix = ".memctl-tmp"
 
+// memctlMoveSuffix marks the intermediate name of a case-only rename. It lives
+// only inside one transaction, so a leftover one is a recoverable artifact and
+// never a managed memory file.
+const memctlMoveSuffix = ".memctl-move"
+
 // FileMeta describes one existing-or-absent managed path without reading the
 // whole file into the caller.
 type FileMeta struct {
@@ -194,6 +199,112 @@ func (r *Root) WriteAtomic(rel string, content []byte, mode fs.FileMode) error {
 		return memerr.Wrap(memerr.IOFailed, err, "cannot replace %q", clean)
 	}
 	return r.syncDir(parent)
+}
+
+// RequireParentDir verifies that the parent directory of one root-relative path
+// already exists and is a directory. memctl does not create directory structure
+// while holding the repository lock, so a new file is refused before any
+// recovery record is written.
+func (r *Root) RequireParentDir(rel string) error {
+	clean, err := ValidateRelPath(rel)
+	if err != nil {
+		return err
+	}
+	parent := path.Dir(clean)
+	if parent == "." {
+		return nil
+	}
+	info, err := r.lstatNoSymlinks(parent)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return memerr.New(memerr.InvalidPath, "parent path %q is not a directory", parent)
+	}
+	return nil
+}
+
+// RenameFile moves one managed regular file inside the repository without
+// overwriting an existing target. A rename that only changes letter case goes
+// through a temporary intermediate name, so it also works on a
+// case-insensitive filesystem. Parent directories of the destination must
+// already exist; memctl does not create directory structure while holding the
+// repository lock. See docs/01-architecture-and-modules.md section 3.2.
+func (r *Root) RenameFile(from, to string) error {
+	cleanFrom, err := ValidateRelPath(from)
+	if err != nil {
+		return err
+	}
+	cleanTo, err := ValidateRelPath(to)
+	if err != nil {
+		return err
+	}
+	if cleanFrom == cleanTo {
+		return memerr.New(memerr.InvalidArgument, "source and destination path are identical: %q", cleanFrom)
+	}
+
+	info, err := r.lstatNoSymlinks(cleanFrom)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return memerr.New(memerr.Unsupported, "path %q is not a regular file", cleanFrom)
+	}
+	if count := hardLinkCount(info); count > 1 {
+		return memerr.New(memerr.Unsupported,
+			"path %q has %d hard links; refusing to move content shared with another name", cleanFrom, count)
+	}
+
+	parent := path.Dir(cleanTo)
+	if parent != "." {
+		parentInfo, err := r.lstatNoSymlinks(parent)
+		if err != nil {
+			return err
+		}
+		if !parentInfo.IsDir() {
+			return memerr.New(memerr.InvalidPath, "parent path %q is not a directory", parent)
+		}
+	}
+
+	// A case-only rename is allowed to find the source under the destination
+	// spelling on a case-insensitive filesystem; any other existing target is a
+	// refused overwrite.
+	caseOnly := strings.EqualFold(cleanFrom, cleanTo) && cleanFrom != cleanTo
+	if _, err := r.lstatNoSymlinks(cleanTo); err == nil {
+		if !caseOnly {
+			return memerr.New(memerr.InvalidArgument,
+				"destination %q already exists; moving never overwrites an existing file", cleanTo)
+		}
+	} else if contractErr, ok := memerr.As(err); !ok || contractErr.Code != memerr.NotFound {
+		return err
+	}
+
+	if caseOnly {
+		intermediate := path.Join(parent, "."+path.Base(cleanTo)+memctlMoveSuffix)
+		if _, err := r.lstatNoSymlinks(intermediate); err == nil {
+			return memerr.New(memerr.Busy,
+				"a leftover rename intermediate %q exists; run `memctl recover --status` before renaming", intermediate)
+		} else if contractErr, ok := memerr.As(err); !ok || contractErr.Code != memerr.NotFound {
+			return err
+		}
+		if err := r.root.Rename(cleanFrom, intermediate); err != nil {
+			return memerr.Wrap(memerr.IOFailed, err, "cannot start the case-only rename of %q", cleanFrom)
+		}
+		if err := r.root.Rename(intermediate, cleanTo); err != nil {
+			_ = r.root.Rename(intermediate, cleanFrom)
+			return memerr.Wrap(memerr.IOFailed, err, "cannot finish the case-only rename of %q to %q", cleanFrom, cleanTo)
+		}
+	} else if err := r.root.Rename(cleanFrom, cleanTo); err != nil {
+		return memerr.Wrap(memerr.IOFailed, err, "cannot move %q to %q", cleanFrom, cleanTo)
+	}
+
+	if err := r.syncDir(path.Dir(cleanFrom)); err != nil {
+		return err
+	}
+	if parent != path.Dir(cleanFrom) {
+		return r.syncDir(parent)
+	}
+	return nil
 }
 
 // RemoveFile deletes one managed regular file.

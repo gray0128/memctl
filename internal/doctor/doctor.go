@@ -146,11 +146,12 @@ func Check(ctx context.Context, repoPath string) (Report, error) {
 
 	if !entryFound {
 		report.Issues = append(report.Issues, Issue{
-			Code:       CodeEntryMissing,
-			Severity:   SeverityError,
-			FilePath:   vault.EntryPointName,
-			Message:    fmt.Sprintf("the repository has no %s entry point", vault.EntryPointName),
-			Suggestion: "restore the entry file from Git or run `memctl init` on a new repository",
+			Code:        CodeEntryMissing,
+			Severity:    SeverityError,
+			FilePath:    vault.EntryPointName,
+			Message:     fmt.Sprintf("the repository has no %s entry point", vault.EntryPointName),
+			Suggestion:  "restore the entry file from Git or run `memctl init` on a new repository",
+			AutoFixable: true,
 		})
 	}
 
@@ -346,6 +347,14 @@ func hasMetadata(entry vault.MemoryEntry, key string) bool {
 		}
 	}
 	return false
+}
+
+// AutoFixable reports whether the first version has a deterministic repair for
+// one diagnostic code. Only ENTRY_MISSING is auto-fixable: recreating the entry
+// file restores a valid repository without inventing facts. Every other code
+// needs a human decision, so `doctor --fix` refuses it instead of guessing.
+func AutoFixable(code string) bool {
+	return code == CodeEntryMissing
 }
 
 // SuspiciousPhrases returns every conservative prompt-injection phrase found in
