@@ -71,3 +71,10 @@
 - 目标与依赖：完成 A-6，前置为 A-1 至 A-5 的适用检查完成。交付只读 `doctor`（`--json`、`--fix` 在当前基线上执行支持的确定性修复）、内嵌默认指引的包内可用性验证、CLI 候选包与隔离环境回归；列明未验证的平台与宿主。
 - 交付物：`internal/doctor` 诊断实现与对应测试，`doctor` 命令接线，按 [验收与交付](./05-validation-and-delivery.md#1-交付顺序) 复跑前序相关用例，并覆盖 `F03`、`R04`、`R01` 的默认指引与 `R02` 的 Git/凭据降级场景。
 - 完成检查：`doctor` 默认只读、Level 与退出码符合契约（error 返回 1，仅 warning/info 返回 0）；复制二进制到空 HOME 后内嵌指引可用；未验证的平台、宿主与降级路径如实记录于阶段报告。
+
+## 接续阻塞
+
+- 现象：`T019` 完成后按 [接续的执行机制](./06-development-loop.md#61-接续的执行机制) 执行 `scripts/next-round.sh --prompt-file /tmp/next-round.md`，Orca 启动失败（退出码 1），无 `operationId` 可重放。
+- 原因：脚本调用 `orca agent launch`，而当前安装的 Orca CLI `1.4.227`（`/Applications/Orca.app/Contents/Resources/bin/orca`）没有该子命令，只提供 `orca orchestration worker-start` 与 `orca terminal create`。属入口与 Orca 版本不匹配，非 `T019` 交付问题。
+- 影响：下一轮 `T020`（A-6）的交接提示词已保留在 `/tmp/next-round.md`，但无法通过当前入口自动启动新会话；阶段 A 仍未完成。
+- 解除条件：升级 Orca 到带 `agent launch` 的版本，或由用户确认后修改 `scripts/next-round.sh` 改用当前版本可用的启动命令，二者都需要用户决策。
