@@ -1,0 +1,8 @@
+{
+  "_说明": "未在 Antigravity 上验证：按 Gemini CLI 的 hook 事件名写（SessionStart / AfterAgent / SessionEnd）。合并进 ~/.gemini/settings.json；若不生效，用 agy 的 hooks 管理界面核对事件名与格式。",
+  "hooks": {
+    "SessionStart": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl start --agent antigravity --stdin" }] }],
+    "AfterAgent":   [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl sync --agent antigravity --stdin" }] }],
+    "SessionEnd":   [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl end --agent antigravity --stdin" }] }]
+  }
+}

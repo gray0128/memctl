@@ -1,0 +1,58 @@
+# =============================================================================
+# agent-memory × pi —— 基于插件 pi-yaml-hooks 的适配（替代之前的 TS 扩展方案）
+#
+# 安装:  pi install npm:pi-yaml-hooks
+# 放到:  ~/.pi/agent/hook/hooks.yaml        （全局文件，不需要 /hooks-trust）
+# 校验:  重启 pi 后运行 /hooks-validate、/hooks-status；排错 PI_YAML_HOOKS_DEBUG=1 pi，再 /hooks-tail-log
+#
+# ---------------------------- 适配说明（与其它 agent 的差异）------------------
+# 1. 事件映射（Claude Code 风格 → pi-yaml-hooks）
+#      SessionStart → user.prompt.submit   （见 2、3）
+#      Stop         → session.idle         （回合结束）
+#      SessionEnd   → session.deleted      （尽力而为，见 6）
+# 2. 不用 session.created 做 pull：它只在 startup / new 触发，resume / fork 不触发。
+#    改为在每个会话的"第一次提交 prompt"时 pull（memctl context 用 $STATE/seen/ 标记按会话去重），
+#    这样 startup / new / resume / fork 都覆盖到。
+# 3. user.prompt.submit 的 stdout 会作为"当次回合"的系统上下文注入（不是永久的），
+#    所以 memctl context 每次都打印 规则 + MEMORY.md，但 git 同步只在每个会话第一次做。
+#    想省 token 且确认注入内容会留在对话历史里的话，可在命令末尾加 --once（同一会话只打印一次）。
+#    该事件的限制：只能 bash、同步执行、失败不影响本轮（fail-open）、不能 async、
+#    输出上限 64 KiB、只有"成功且非空"的 stdout 才会注入——memctl 都满足。
+# 4. session.idle 不允许 async；memctl sync 本身只做本地 commit，push 丢到后台，不会阻塞 pi。
+# 5. session id：优先用 bash 环境变量 $PI_SESSION_ID（pi-yaml-hooks 注入），
+#    同时加 --stdin 兜底从 stdin JSON 的 session_id 取，并把 stdin 读完（payload 不落盘）。
+# 6. session.deleted 在 pi 里"有损"：退出和 /new、/resume、/fork 切换都会触发，也可能漏。
+#    漏了也不要紧：残留的本地提交会在下次会话的第一个 prompt 时被 memctl 补推。
+# 7. user.prompt.submit 的 stdin 含用户 prompt 原文；memctl 只在内存里读，不写日志、不回显。
+# 8. 若设置了 PI_YAML_HOOKS_ENV_ALLOWLIST（过滤继承环境），必须把 HOME、PATH、
+#    SSH_AUTH_SOCK（git over ssh）列进去，否则 memctl 找不到 git/ssh 凭据。默认是继承全部环境。
+# 9. pi-yaml-hooks 会往系统提示里追加一小段 hook 说明，可用 PI_YAML_HOOKS_PROMPT_AWARENESS=0 关闭。
+# 10. 依据: pi-yaml-hooks 2026.8–2026.9 版文档（pi SDK 0.74+，运行时冒烟测试基于 0.86.1）。
+#     事件名/字段以后可能变，升级插件后请重新 /hooks-validate。
+# 11. 本文件是全局 hooks，不涉及项目级 hooks 的 trust；不使用 imports（全局 imports 默认被拒绝）。
+# =============================================================================
+hooks:
+  # 读记忆：把 规则 + MEMORY.md + 本会话 source 标签 注入当次回合的系统上下文
+  - id: agent-memory-context
+    event: user.prompt.submit
+    scope: all            # 子会话（subagent）也需要记忆；只想主会话用就改成 main
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" context --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 30000  # 首次会话包含 git pull/push，给足时间；memctl 自身另有网络超时保护
+
+  # 写后同步：回合结束时 commit，push 在后台
+  - id: agent-memory-sync
+    event: session.idle
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" sync --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 15000
+
+  # 收尾：退出或切换会话时再 commit 一次（尽力而为）
+  - id: agent-memory-end
+    event: session.deleted
+    actions:
+      - bash:
+          command: '"$HOME/.agent-memory/bin/memctl" end --agent pi --sid "${PI_SESSION_ID:-}" --stdin'
+          timeout: 15000

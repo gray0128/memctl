@@ -1,0 +1,7 @@
+{
+  "_说明": "未验证 payload 字段：合并进 ~/.commandcode/settings.json（确切路径以官方 hooks 文档为准）。拿不到 session id 时 memctl 会自动生成。",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl start --agent commandcode --stdin" }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl sync --agent commandcode --stdin" }] }]
+  }
+}

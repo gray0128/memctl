@@ -1,0 +1,28 @@
+# =============================================================================
+# 备选方案：使用第三方插件 PeterBon/dsh-hooks（npm 包名 dsh-hooks）
+# 与主方案（KYinCode/dsh-hooks-plugin 的 hooks.json）二选一，不要同时装，否则每个事件会触发两次。
+#
+# 适配说明：
+# 1. 这个插件的事件是 turn/start、turn/end（不是 Claude Code 的 SessionStart/Stop），配置写在
+#    cordis.patch.yml 的 id: dsh-hooks 那一行的 config.hooks 里，不是 hooks.json。
+# 2. 事件信息通过环境变量传入（DSH_HOOK_SESSION_ID 等），没有 stdin JSON，所以命令里不能带 --stdin；
+#    memctl 会自动读取 DSH_HOOK_SESSION_ID 作为 session id。
+# 3. turn/start 每个回合都触发 → 用 `pull --once`，同一会话只 pull 一次；
+#    turn/end 触发后只 commit，push 在后台。不写 when 表示所有结束原因（含被中断）都同步。
+# 4. 这个插件没有"把 stdout 注入上下文"的机制，所以"读记忆"完全靠 ~/.dsh/AGENTS.md 里的指引。
+# 5. run 是否经过 shell 展开 $HOME 文档没写清楚（未验证），所以这里用绝对路径——请把 /Users/YOU 换成你的家目录。
+# 6. 依据 PeterBon/dsh-hooks README（v0.14.x）；字段 on / when / run / timeoutMs 以其文档为准，
+#    可用 `dsh-hooks dry-run turn/end` 校验配置。
+# 用法：先 `dsh plugin --profile web add dsh-hooks`，再把下面 config 合并进
+#       ~/.dsh/profiles/web/cordis.patch.yml 里该插件对应的行。
+# =============================================================================
+- id: dsh-hooks
+  name: dsh-hooks
+  config:
+    hooks:
+      - on: 'turn/start'
+        run: '/Users/YOU/.agent-memory/bin/memctl pull --agent dsh --once'
+        timeoutMs: 30000
+      - on: 'turn/end'
+        run: '/Users/YOU/.agent-memory/bin/memctl sync --agent dsh'
+        timeoutMs: 15000

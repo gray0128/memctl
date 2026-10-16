@@ -1,0 +1,8 @@
+{
+  "_说明": "合并进 ~/.claude/settings.json 的 hooks 字段（已有同名事件则把对象追加到数组里）。_ 开头的键可删。",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl start --agent claude-code --stdin" }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl sync --agent claude-code --stdin" }] }],
+    "SessionEnd":   [{ "hooks": [{ "type": "command", "command": "$HOME/.agent-memory/bin/memctl end --agent claude-code --stdin" }] }]
+  }
+}

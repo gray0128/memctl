@@ -1,0 +1,13 @@
+.DS_Store
+
+# Local build outputs and dependencies.
+/bin/
+/dist/
+/web/dist/
+/web/node_modules/
+/coverage/
+
+# Local configuration; keep documented examples trackable.
+.env
+.env.*
+!.env.example

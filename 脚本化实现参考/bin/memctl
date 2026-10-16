@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# memctl — Agent Memory Repo 的同步胶水（macOS / Linux，依赖 git；jq 可选但推荐）
+#
+# 用法:  memctl <init|start|context|pull|sync|end|tag|wrap> [--agent NAME] [--sid ID] [--stdin] [--once] [--json] [-- 命令...]
+#   init [remote-url]  初始化本地记忆仓库（可选直接加 remote）
+#   start              会话开始：提交残留 → pull --rebase → push，然后把规则 + MEMORY.md 打印到 stdout
+#   pull [--once]      同 start，但不打印（给 opencode 这类插件用）；--once：同一会话只 pull 一次
+#   sync               回合结束：本地立即 commit，push 放后台
+#   end                会话结束：同 sync
+#   context [--once]   每次提交 prompt 时调用（pi-yaml-hooks 的 user.prompt.submit）：
+#                      每个会话首次才 git 同步；每次都打印规则 + MEMORY.md（因为注入只对当次回合有效）。
+#                      --once：同一会话里只在第一次打印
+#   --json             start / context 改用 hookSpecificOutput.additionalContext 的 JSON 输出（需要 jq）
+#   tag                打印本会话的 source 标签 agent://设备/agent/sessionid
+#   wrap -- cmd...     万能兜底：pull → 运行 cmd → sync（任何没有 hook 的 agent 都能用）
+#
+# session id 取值顺序: --sid > 环境变量 AGENT_MEMORY_SID / DSH_HOOK_SESSION_ID > (加 --stdin 时) stdin JSON 的 session_id/sessionId/sessionID > 自动生成
+set -u
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"   # 桌面 App 从 Finder 启动时没有 shell 的 PATH
+
+MEM="${AGENT_MEMORY_DIR:-$HOME/memory}"
+STATE="${AGENT_MEMORY_STATE:-$HOME/.agent-memory}"
+LOCK="$STATE/lock"
+mkdir -p "$STATE"
+
+# 联网保护：不弹密码框，连接/传输慢就放弃（macOS 没有 timeout 命令）
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=8}"
+GITNET=(-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15)
+
+clean() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
+dev_name() {
+  local n="${AGENT_MEMORY_DEVICE:-}"
+  [ -n "$n" ] || n=$(scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || echo unknown)
+  clean "$n"
+}
+
+# ---------- 参数 ----------
+cmd="${1:-help}"; [ $# -gt 0 ] && shift
+AGENT="${AGENT_MEMORY_AGENT:-unknown}"; SID="${AGENT_MEMORY_SID:-${DSH_HOOK_SESSION_ID:-}}"; ARG=""; READ_STDIN=0; ONCE=0; JSON=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --agent) AGENT="${2:-$AGENT}"; shift 2 2>/dev/null || shift ;;
+    --sid)   SID="${2:-$SID}";     shift 2 2>/dev/null || shift ;;
+    --stdin) READ_STDIN=1; shift ;;
+    --once)  ONCE=1; shift ;;
+    --json)  JSON=1; shift ;;
+    --)      shift; break ;;
+    *)       [ -z "$ARG" ] && ARG="$1"; shift ;;
+  esac
+done
+
+# 只有显式传 --stdin（hook 场景，stdin 会被关闭）才读 JSON，避免手动运行时卡住
+if [ "$READ_STDIN" = 1 ]; then
+  PAYLOAD=$(cat 2>/dev/null || true)   # 始终读完；payload 只在内存里，绝不落盘（user.prompt.submit 的 payload 含用户 prompt）
+  if [ -z "$SID" ] && [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
+    SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // .sessionId // .sessionID // empty' 2>/dev/null || true)
+  fi
+  PAYLOAD=""
+fi
+[ -n "$SID" ] || SID="auto-$(date +%Y%m%d%H%M%S)-$$"
+AGENT=$(clean "$AGENT"); SID=$(clean "$SID")
+tag() { echo "agent://$(dev_name)/$AGENT/$SID"; }
+
+# ---------- 锁（mkdir 原子；>2 分钟视为陈旧）----------
+try_lock() {
+  if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; fi
+  mkdir "$LOCK" 2>/dev/null
+}
+lock_wait() { local i; for ((i = 0; i < $1; i++)); do try_lock && return 0; sleep 1; done; return 1; }
+unlock() { rmdir "$LOCK" 2>/dev/null; return 0; }
+
+# ---------- git ----------
+g() { git -C "$MEM" "$@"; }
+need_repo() { [ -d "$MEM/.git" ]; }
+has_remote() { [ -n "$(g remote 2>/dev/null)" ]; }
+has_upstream() { g rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; }
+
+do_commit() {
+  g add -A
+  if ! g diff --cached --quiet; then
+    g -c user.name="$(g config user.name || echo agent-memory)" \
+      -c user.email="$(g config user.email || echo agent-memory@localhost)" \
+      commit -q -m "memory: $AGENT/${SID:0:8}@$(dev_name)"
+  fi
+}
+needs_remote() {  # 有未推送提交，或还没有 upstream
+  has_upstream || return 0
+  [ "$(g rev-list --count '@{u}..HEAD' 2>/dev/null || echo 1)" != 0 ]
+}
+do_remote() {
+  has_remote || return 0
+  local out
+  if has_upstream; then
+    if ! out=$(g "${GITNET[@]}" pull --rebase --autostash -q 2>&1); then
+      g rebase --abort >/dev/null 2>&1
+      printf '%s\n' "$out" > "$STATE/conflict"; return 1
+    fi
+    rm -f "$STATE/conflict"
+    g "${GITNET[@]}" push -q 2>/dev/null || return 1
+  else
+    g "${GITNET[@]}" push -q -u origin HEAD 2>/dev/null || return 1
+  fi
+}
+
+# ---------- 子命令 ----------
+cmd_init() {
+  if ! need_repo; then mkdir -p "$MEM"; git -C "$MEM" init -q -b main; fi
+  [ -f "$MEM/MEMORY.md" ] || printf '# Memory\n\n## Index\n' > "$MEM/MEMORY.md"
+  if [ -n "$ARG" ]; then g remote add origin "$ARG" 2>/dev/null || g remote set-url origin "$ARG"; fi
+  do_commit
+  echo "memory repo: $MEM"
+}
+
+cmd_pull() {  # 打印状态: ok / failed / busy / norepo / local
+  need_repo || { echo norepo; return; }
+  lock_wait 10 || { echo busy; return; }
+  do_commit
+  local st=local
+  if has_remote; then if do_remote; then st=ok; else st=failed; fi; fi
+  unlock; echo "$st"
+}
+
+emit() {  # $1 = hookEventName；--json 时把 stdin 包成 additionalContext，没有 jq 就退回纯文本
+  if [ "$JSON" = 1 ] && command -v jq >/dev/null 2>&1; then
+    jq -Rs --arg ev "$1" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: .}}'
+  else cat; fi
+}
+
+print_context() {  # $1 = 同步状态
+  echo "[agent-memory] repo=$MEM sync=$1 device=$(dev_name)"
+  if [ -s "$STATE/conflict" ]; then
+    echo "[agent-memory] ⚠ 上次同步有冲突（本地提交尚未推送）。请先: git -C $MEM pull --rebase，"
+    echo "[agent-memory]   读两边的版本、保留所有仍然有效的事实，解决后 git add -A && git rebase --continue && git push。"
+  fi
+  echo "[agent-memory] 本会话 source 标签（写入条目的 [source: ...] 时使用）: $(tag)"
+  if [ -f "$STATE/INSTRUCTIONS.md" ]; then echo "----- INSTRUCTIONS -----"; cat "$STATE/INSTRUCTIONS.md"; fi
+  if [ -f "$MEM/MEMORY.md" ]; then echo "----- $MEM/MEMORY.md -----"; cat "$MEM/MEMORY.md"
+  else echo "[agent-memory] 未找到 $MEM/MEMORY.md，请运行: memctl init [remote-url]"; fi
+}
+
+cmd_start() { print_context "$(cmd_pull)" | emit SessionStart; }
+
+cmd_context() {
+  local seen="$STATE/seen/$AGENT-$SID" st=cached
+  if [ ! -e "$seen" ]; then
+    mkdir -p "$STATE/seen"
+    st=$(cmd_pull); : > "$seen"
+    find "$STATE/seen" -type f -mtime +14 -delete 2>/dev/null
+  elif [ "$ONCE" = 1 ]; then
+    return 0
+  fi
+  print_context "$st" | emit UserPromptSubmit
+}
+
+cmd_sync() {  # commit 同步完成；push 放后台，不阻塞 hook
+  need_repo || exit 0
+  lock_wait 5 || exit 0
+  do_commit
+  if has_remote && needs_remote; then
+    ( do_remote; unlock ) >/dev/null 2>&1 </dev/null &
+    disown 2>/dev/null || true
+  else
+    unlock
+  fi
+}
+
+cmd_wrap() {
+  [ $# -gt 0 ] || { echo "usage: memctl wrap --agent NAME -- cmd..." >&2; exit 2; }
+  export AGENT_MEMORY_SID="$SID" AGENT_MEMORY_AGENT="$AGENT"
+  cmd_pull >/dev/null
+  echo "[agent-memory] source 标签: $(tag)" >&2
+  "$@"; local rc=$?
+  cmd_sync
+  exit $rc
+}
+
+case "$cmd" in
+  init)  cmd_init ;;
+  start) cmd_start ;;
+  context) cmd_context ;;
+  pull)  seen="$STATE/seen/$AGENT-$SID"
+         if [ "$ONCE" = 1 ] && [ -e "$seen" ]; then exit 0; fi
+         cmd_pull >/dev/null; mkdir -p "$STATE/seen"; : > "$seen" ;;
+  sync|end) cmd_sync ;;
+  tag)   tag ;;
+  wrap)  cmd_wrap "$@" ;;
+  *) sed -n '2,19p' "$0"; exit 0 ;;
+esac

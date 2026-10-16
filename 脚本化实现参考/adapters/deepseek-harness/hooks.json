@@ -1,0 +1,26 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent dsh --stdin --json", "timeout": 30 }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent dsh --stdin", "timeout": 15, "async": true }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent dsh --stdin", "timeout": 15 }
+      ]
+    }
+  ]
+}
