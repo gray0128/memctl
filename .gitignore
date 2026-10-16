@@ -11,3 +11,10 @@
 .env
 .env.*
 !.env.example
+
+# Local code-search indexes; rebuild with codegraph init / zg index.
+/.codegraph/
+/.zvec-grep/
+
+# Local agent tool state; not project content.
+/.commandcode/
