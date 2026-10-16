@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前仅完成阶段 A-1 的最小 Go 工程与 `version/help` 命令入口，尚未实现记忆库读写、Git 同步、Web UI 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口，以及阶段 A-2 的本地仓库初始化与安全读取（`init`、`read`）；尚未实现记忆格式解析、受管写入、Git 远端同步、Web UI 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -31,11 +31,16 @@ memctl/
   README.md             # 项目介绍与导航
   AGENTS.md             # Agent 按需加载规则的入口
   .gitignore            # 本机构建、依赖与临时文件排除
-  Makefile              # 阶段 A-1 的 CLI 构建、测试与清理入口
+  Makefile              # 阶段 A 的 CLI 构建、测试与清理入口
   go.mod                # Go 模块定义（Go 1.27.1）
   cmd/memctl/           # CLI 进程入口与版本注入
-  internal/cli/         # 命令分发、version/help 与参数错误边界
-  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03）
+  internal/cli/         # 命令分发、init/read、version/help 与参数错误边界
+  internal/config/      # 仓库与状态路径解析、repoId
+  internal/git/         # Git 调用、环境清理与失败分类
+  internal/vault/       # 根相对路径边界、有界读取与文件修订
+  internal/app/         # 初始化与读取的应用服务入口
+  internal/memerr/      # 契约错误码
+  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2）
   docs/                 # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/         # 只读参考，不作为新实现或发布入口
 ```
@@ -46,7 +51,7 @@ memctl/
 
 每次围绕一个可验证目标执行「文档契约 → 最小实现 → 验收证据 → 回写状态」。先从状态台账确认范围，再按方案索引读取相关契约；测试失败回到当前任务修复，影响结果的决策缺失则记录阻塞并确认。流程、状态转换和完成条件见 [开发循环规范](./docs/06-development-loop.md)。
 
-阶段 A-1 已验证的构建与测试命令（工具链基线 `Go 1.27.1`，不依赖本机记忆库、Git 远端或 Node.js）：
+阶段 A-1 与 A-2 已验证的构建与测试命令（工具链基线 `Go 1.27.1`，不依赖本机记忆库、Git 远端或 Node.js）：
 
 ```bash
 make build
@@ -55,7 +60,16 @@ make test
 ./bin/memctl help
 ```
 
-当前除 `version` 与 `help` 外，其余规划子命令均明确返回未实现错误（退出码 `1`），未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
+本地初始化与读取使用隔离路径验证；`init` 只创建本地仓库与首笔提交，不配置远端：
+
+```bash
+export AGENT_MEMORY_DIR=/tmp/memory-demo
+./bin/memctl init
+./bin/memctl read MEMORY.md
+./bin/memctl read MEMORY.md --json
+```
+
+当前 `version`、`help`、`init`（仅本地）与 `read` 可用。`init` 携带远端 URL 会明确拒绝；其余规划子命令仍返回未实现错误（退出码 `1`）。未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
 
 ## 上游与参考
 

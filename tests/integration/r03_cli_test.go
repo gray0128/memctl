@@ -99,12 +99,29 @@ func TestR03BuildAndCLIEntry(t *testing.T) {
 		t.Fatalf("unknown-subcommand stderr missing message: %q", stderr)
 	}
 
+	// init is implemented since stage A-2. In an environment without Git it
+	// must fail with a diagnostic exit code and must not create any path.
 	code, stdout, stderr = runIsolated("init")
-	if code == 0 {
-		t.Fatalf("unimplemented init command must not return placeholder exit code 0")
+	if code != 1 {
+		t.Fatalf("init without git exit code = %d, want 1 (stderr=%q)", code, stderr)
 	}
 	if stdout != "" {
-		t.Fatalf("unimplemented init stdout = %q, want empty", stdout)
+		t.Fatalf("init without git stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "GIT_FAILED") {
+		t.Fatalf("init without git stderr missing GIT_FAILED: %q", stderr)
+	}
+
+	// Commands that are still unimplemented must not return placeholder success.
+	code, stdout, stderr = runIsolated("write")
+	if code != 1 {
+		t.Fatalf("unimplemented write exit code = %d, want 1 (stderr=%q)", code, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("unimplemented write stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "UNSUPPORTED") {
+		t.Fatalf("unimplemented write stderr missing UNSUPPORTED: %q", stderr)
 	}
 
 	for _, p := range []string{isolatedHome, isolatedMem, isolatedState} {

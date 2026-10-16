@@ -110,7 +110,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 
 ## 5. 目录结构与依赖
 
-下表是项目布局的权威定义。当前仅落地项目入口、设计文档和脚本参考；代码、测试与构建目录在首次实际实现时创建，不添加 `.gitkeep` 或占位实现。已经存在的文件以磁盘为准，实施状态见 [开发状态](./STATUS.md)。
+下表是项目布局的权威定义。目录在首个实际文件落地时创建，不添加 `.gitkeep` 或占位实现；已经存在的文件以磁盘为准，实施状态见 [开发状态](./STATUS.md)。
 
 ```text
 memctl/
@@ -127,11 +127,12 @@ memctl/
     06-development-loop.md   # 开发过程与完成条件
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按需：平台或阶段验收报告
-  cmd/memctl/main.go         # 规划：进程入口与依赖装配
+  cmd/memctl/main.go         # 进程入口与依赖装配
   internal/
     cli/          # 子命令和参数到应用请求的映射
     app/          # 事务与入口编排
     config/       # 路径、环境变量、仓库配置
+    memerr/       # 契约错误码
     hookio/       # Hook 编解码
     lock/         # 平台文件锁
     state/        # 状态及恢复记录
