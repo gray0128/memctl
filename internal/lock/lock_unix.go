@@ -9,6 +9,7 @@ import (
 )
 
 // tryFlock takes a non-blocking exclusive flock on the open file description.
+// The lock is released by closing the descriptor; see Lock.Release.
 func tryFlock(file *os.File) (bool, error) {
 	err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 	switch {
@@ -19,8 +20,4 @@ func tryFlock(file *os.File) (bool, error) {
 	default:
 		return false, err
 	}
-}
-
-func unlockFile(file *os.File) error {
-	return unix.Flock(int(file.Fd()), unix.LOCK_UN)
 }

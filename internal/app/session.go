@@ -243,6 +243,15 @@ func (a *App) buildSessionBody(ctx context.Context, out *SessionOutcome) {
 
 	file, err := a.ReadFile(ctx, vault.EntryPointName)
 	if err != nil {
+		if code, ok := memerr.As(err); ok && code.Code == memerr.Busy {
+			// The lock is held by another memctl process. The host still gets
+			// the most recent complete entry file; the banner already reports
+			// sync=busy. A conflict or a pending transaction is not a lock
+			// contention and keeps refusing the read.
+			file, err = a.readEntryWithoutLock()
+		}
+	}
+	if err != nil {
 		if code, ok := memerr.As(err); ok && code.Code == memerr.LimitExceeded {
 			fmt.Fprintf(&b, "[agent-memory] %s exceeds the %d byte injection limit and was not included in full. Use `memctl read %s` for a bounded read.\n",
 				vault.EntryPointName, vault.MaxTextFileBytes, vault.EntryPointName)
@@ -264,6 +273,20 @@ func valueOrUnknown(value string) string {
 		return "unknown"
 	}
 	return value
+}
+
+// readEntryWithoutLock reads the context entry file for injection while the
+// repository lock is held elsewhere. The hook path must keep the local content
+// available in that case (docs/03-workflows-and-dataflows.md section 3), and
+// the busy sync state in the banner marks the content as the last readable
+// snapshot rather than a verified current revision.
+func (a *App) readEntryWithoutLock() (vault.FileRead, error) {
+	root, err := vault.OpenRoot(a.cfg.RepoPath)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	defer root.Close()
+	return root.ReadFile(vault.EntryPointName)
 }
 
 // readUserInstructions returns the optional $STATE/INSTRUCTIONS.md, bounded and

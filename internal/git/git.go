@@ -15,20 +15,6 @@ import (
 	"github.com/gray0128/memctl/internal/memerr"
 )
 
-// redirectedEnv lists variables that would silently point Git at another
-// repository, index or object store than the one bound by the caller.
-var redirectedEnv = map[string]bool{
-	"GIT_DIR":                          true,
-	"GIT_WORK_TREE":                    true,
-	"GIT_INDEX_FILE":                   true,
-	"GIT_OBJECT_DIRECTORY":             true,
-	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
-	"GIT_COMMON_DIR":                   true,
-	"GIT_NAMESPACE":                    true,
-	"GIT_PREFIX":                       true,
-	"GIT_CEILING_DIRECTORIES":          true,
-}
-
 var credentialURL = regexp.MustCompile(`://[^/@\s]*@`)
 
 // Available reports whether a Git executable can be found before any
@@ -265,18 +251,6 @@ func RequireIdentity(ctx context.Context, dir string) error {
 func runWithEnv(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
 	out, _, err := runGit(ctx, dir, Options{ExtraEnv: extra}, args...)
 	return out, err
-}
-
-func scrubEnv(env []string) []string {
-	kept := make([]string, 0, len(env))
-	for _, entry := range env {
-		name, _, ok := strings.Cut(entry, "=")
-		if ok && redirectedEnv[name] {
-			continue
-		}
-		kept = append(kept, entry)
-	}
-	return kept
 }
 
 func redact(text string) string {

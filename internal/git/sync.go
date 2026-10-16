@@ -77,6 +77,13 @@ func AddRemote(ctx context.Context, dir, name, url string) error {
 	return err
 }
 
+// RemoveRemote deletes a remote configuration. It rolls back a remote memctl
+// added before the connection could be validated.
+func RemoveRemote(ctx context.Context, dir, name string) error {
+	_, err := Run(ctx, dir, "remote", "remove", name)
+	return err
+}
+
 // LsRemote returns the refs advertised by a remote or URL. An empty result
 // means the remote exists but has no refs; a failure is an access problem and
 // must never be read as an empty remote.

@@ -16,6 +16,9 @@ import (
 // bytes instead of forcing an unbounded read.
 const MaxRevisionBytes = 8 << 20
 
+// memctlTempSuffix marks the atomic-write temporary file of one managed path.
+const memctlTempSuffix = ".memctl-tmp"
+
 // FileMeta describes one existing-or-absent managed path without reading the
 // whole file into the caller.
 type FileMeta struct {
@@ -65,7 +68,14 @@ func (r *Root) Stat(rel string) (FileMeta, error) {
 	if err != nil {
 		return FileMeta{}, err
 	}
-	meta.Revision = FileRevision(meta.Mode, content)
+	if int64(len(content)) < info.Size() {
+		// A large asset is hashed from its bounded prefix only, so the exact
+		// length is folded in as well; two files sharing a prefix must not
+		// share a revision.
+		meta.Revision = revisionWithLength(meta.Mode, info.Size(), content)
+	} else {
+		meta.Revision = FileRevision(meta.Mode, content)
+	}
 	return meta, nil
 }
 
@@ -88,6 +98,11 @@ func (r *Root) ListManaged() ([]string, error) {
 		for _, entry := range entries {
 			name := entry.Name()
 			if strings.EqualFold(name, ".git") {
+				continue
+			}
+			// A crash can leave a hidden atomic-write temporary file behind.
+			// It belongs to no transaction revision and is not managed memory.
+			if strings.HasSuffix(name, memctlTempSuffix) {
 				continue
 			}
 			rel := name
@@ -144,7 +159,7 @@ func (r *Root) WriteAtomic(rel string, content []byte, mode fs.FileMode) error {
 		}
 	}
 
-	tmpName := path.Join(parent, "."+path.Base(clean)+".memctl-tmp")
+	tmpName := path.Join(parent, "."+path.Base(clean)+memctlTempSuffix)
 	file, err := r.root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return memerr.Wrap(memerr.IOFailed, err, "cannot create a temporary file for %q", clean)
@@ -153,6 +168,14 @@ func (r *Root) WriteAtomic(rel string, content []byte, mode fs.FileMode) error {
 		file.Close()
 		_ = r.root.Remove(tmpName)
 		return memerr.Wrap(memerr.IOFailed, err, "cannot write %q", clean)
+	}
+	// The creation mode is masked by the process umask and a leftover
+	// temporary file would keep its old mode, so set the target mode explicitly
+	// before the rename publishes the file.
+	if err := file.Chmod(mode); err != nil {
+		file.Close()
+		_ = r.root.Remove(tmpName)
+		return memerr.Wrap(memerr.IOFailed, err, "cannot set the mode of %q", clean)
 	}
 	if err := file.Sync(); err != nil {
 		file.Close()

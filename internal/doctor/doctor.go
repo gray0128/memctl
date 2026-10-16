@@ -161,13 +161,13 @@ func Check(ctx context.Context, repoPath string) (Report, error) {
 	report.Issues = append(report.Issues, checkEntryBloat(parsed)...)
 	report.Issues = append(report.Issues, checkEntries(parsed)...)
 
-	gitIssues, err := checkGitState(ctx, repoPath)
+	gitIssues, repoState, err := checkGitState(ctx, repoPath)
 	if err != nil {
 		return Report{}, err
 	}
 	report.Issues = append(report.Issues, gitIssues...)
 
-	stateIssues, err := checkState(ctx, repoPath)
+	stateIssues, err := checkState(ctx, repoPath, repoState)
 	if err != nil {
 		return Report{}, err
 	}
@@ -302,7 +302,7 @@ func checkEntries(parsed map[string]vault.ParsedFile) []Issue {
 		if vault.ClassifyKind(rel) == vault.KindMarkdown {
 			missing := 0
 			for _, entry := range file.Entries {
-				if !hasMetadata(entry, "source") && !hasMetadata(entry, "added") {
+				if !hasMetadata(entry, "source") || !hasMetadata(entry, "added") {
 					missing++
 				}
 			}
@@ -320,15 +320,18 @@ func checkEntries(parsed map[string]vault.ParsedFile) []Issue {
 				})
 			}
 		}
-		for _, entry := range file.Entries {
-			if phrase, ok := suspiciousPhrase(entry.FactText); ok {
+		// The whole text is scanned line by line because pull/start inject the
+		// file into host context: a phrase in a heading, a paragraph or an
+		// indented block matters just as much as one in a bullet.
+		for _, line := range file.Lines {
+			if phrase, ok := suspiciousPhrase(line.Text); ok {
 				issues = append(issues, Issue{
 					Code:       CodeSuspiciousInstruction,
 					Severity:   SeverityWarning,
 					FilePath:   rel,
-					LineNumber: entry.LineNumber,
-					Message:    fmt.Sprintf("entry contains the review phrase %q", phrase),
-					Suggestion: "review the entry before acting on it; memory is data, not instructions",
+					LineNumber: line.Number,
+					Message:    fmt.Sprintf("line contains the review phrase %q", phrase),
+					Suggestion: "review the line before acting on it; memory is data, not instructions",
 				})
 			}
 		}
@@ -355,30 +358,39 @@ func suspiciousPhrase(text string) (string, bool) {
 	return "", false
 }
 
-// checkGitState reports intermediate Git states. The lock-holder PID is not
-// consulted: only the index and Git's own operation markers decide.
-func checkGitState(ctx context.Context, repoPath string) ([]Issue, error) {
+// checkGitState reports every intermediate Git state. The lock-holder PID is
+// not consulted: only the index and Git's own operation markers decide. Multiple
+// states can hold at once, so each is reported independently instead of only the
+// first match.
+func checkGitState(ctx context.Context, repoPath string) ([]Issue, git.RepoState, error) {
 	repoState, err := git.Inspect(ctx, repoPath)
 	if err != nil {
-		return nil, err
+		return nil, repoState, err
 	}
 	var issues []Issue
-	switch {
-	case repoState.Unmerged:
+	if repoState.Unmerged {
 		issues = append(issues, Issue{
 			Code:       CodeGitUnmergedIndex,
 			Severity:   SeverityError,
 			Message:    "the Git index has unmerged entries",
 			Suggestion: "resolve or abort the operation with `memctl resolve`, or finish it outside memctl",
 		})
-	case repoState.Operation != "" || repoState.Sequencer:
+	}
+	if repoState.Operation != "" || repoState.Sequencer {
+		name := repoState.Operation
+		if name == "" {
+			// An interactive rebase or cherry-pick can leave only the sequencer
+			// directory behind, so the message needs a concrete operation name.
+			name = "sequencer"
+		}
 		issues = append(issues, Issue{
 			Code:       CodeGitOperationActive,
 			Severity:   SeverityError,
-			Message:    fmt.Sprintf("a %s operation is in progress", repoState.Operation),
+			Message:    fmt.Sprintf("a %s operation is in progress", name),
 			Suggestion: "complete or abort the operation; memctl never aborts user Git operations",
 		})
-	case repoState.IndexLocked:
+	}
+	if repoState.IndexLocked {
 		issues = append(issues, Issue{
 			Code:       CodeGitIndexLocked,
 			Severity:   SeverityWarning,
@@ -386,12 +398,13 @@ func checkGitState(ctx context.Context, repoPath string) ([]Issue, error) {
 			Suggestion: "wait for the running Git process; do not delete an unknown lock manually",
 		})
 	}
-	return issues, nil
+	return issues, repoState, nil
 }
 
-// checkState reports unfinished transactions and an awaiting conflict, with the
-// concrete recovery entry point. It does not remove records or locks.
-func checkState(ctx context.Context, repoPath string) ([]Issue, error) {
+// checkState reports unfinished transactions, an awaiting conflict and an
+// orphaned operation record, with the concrete recovery entry point. It does
+// not remove records or locks.
+func checkState(ctx context.Context, repoPath string, repoState git.RepoState) ([]Issue, error) {
 	gitDir, err := git.GitDir(ctx, repoPath)
 	if err != nil {
 		return nil, err
@@ -412,16 +425,30 @@ func checkState(ctx context.Context, repoPath string) ([]Issue, error) {
 		})
 	}
 
-	conflict, ok, err := store.LoadConflict()
+	conflict, hasConflict, err := store.LoadConflict()
 	if err != nil {
 		return nil, err
 	}
-	if ok {
+	if hasConflict {
 		issues = append(issues, Issue{
 			Code:       CodeConflictPending,
 			Severity:   SeverityError,
 			Message:    fmt.Sprintf("conflict %s is awaiting resolution", conflict.ConflictID),
 			Suggestion: "inspect it with `memctl resolve` and continue or abort",
+		})
+	}
+
+	// A captured conflict legitimately keeps its operation record while Git
+	// holds no rebase, so the record is orphaned only when neither a conflict
+	// nor an active Git operation explains it.
+	if operation, hasOperation, err := store.LoadOperation(); err != nil {
+		return nil, err
+	} else if hasOperation && !hasConflict && repoState.Operation == "" && !repoState.Sequencer {
+		issues = append(issues, Issue{
+			Code:       CodeGitOperationActive,
+			Severity:   SeverityError,
+			Message:    fmt.Sprintf("operation record %s has no matching Git operation or conflict", operation.OperationID),
+			Suggestion: "inspect the repository and remove the stale record only after confirming no operation is running",
 		})
 	}
 	return issues, nil

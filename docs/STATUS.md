@@ -19,6 +19,7 @@
 - 已完成阶段 A-5 子任务 2（`T019`）：新增 `internal/hookio`、`internal/assets`、`internal/state/session.go` 与 `internal/app/session.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；提供 Hook JSON 有界读取与 SID 优先级解析、`injected` 与 `syncSucceeded` 分离的会话级去重、14 天缓存清理、内嵌默认指引与 envelope 编码，以及 `wrap` 的子进程退出码与信号透传；通过 H01–H06，并归档本机性能基线与宿主适配状态。
 - 已完成阶段 A-6（`T020`）：新增 `internal/doctor` 只读诊断与 `internal/app/doctor.go`、`internal/cli/doctor.go` 接线，把写入事务与诊断共用的仓库修订摘要抽到 `internal/vault.RepoRevision`；`doctor` 支持 `--json`，按契约以 error 返回退出码 `1`、仅 warning/info 返回 `0`，不改变记忆内容、Git 索引或 HEAD；通过 `F03`、`R04`、`R01` 的默认指引场景与 `R02` 的 Git/凭据场景。CLI `doctor --fix` 按阶段计划属 `C-1`，本轮显式返回 `UNSUPPORTED`。
 - 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --json` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
+- 已完成 `T022`：收口 [阶段 A 实现审查报告](./validation/stage-a-review.md) 记录的 `P1-1`–`P1-3`、`P2-1`–`P2-7`、`P3-1`–`P3-3` 共 13 项问题，只修复既有契约违背并补齐回归证据，未新增产品能力，详见 [T022 完成记录](#t022阶段-a-收口修复)。
 - 尚未实现前端工程与 Web UI、Dreaming 与正式安装流程；`--fix` 等确定性诊断修复属 `C-1`；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
@@ -46,6 +47,7 @@
 | T019 | 已完成 | 对应 A-5 子任务 2：Hook 协议、会话身份与宿主性能实测；依赖 T018 与目标宿主协议；[归档证据](./validation/stage-a.md#t019hook-协议会话身份与宿主性能实测a-5-子任务-2) |
 | T020 | 已完成 | 对应 A-6：只读 `doctor`、内嵌默认指引与隔离环境回归；依赖 A-1 至 A-5 的适用检查完成；[归档证据](./validation/stage-a.md#t020诊断与-cli-交付a-6) |
 | T021 | 已完成 | 适配 Orca 1.4.227 重构 `scripts/next-round.sh`，改用 `orca terminal create` + `wait` + `send` 完全交接流并支持 `--terminal` + `--retry-request` 重放；消除接续阻塞；[归档证据](./validation/stage-a.md#t021修复跨会话接续入口以适配-orca-14227) |
+| T022 | 已完成 | 收口 [阶段 A 实现审查](./validation/stage-a-review.md) 的 `P1-1`–`P1-3`、`P2-1`–`P2-7` 与 `P3-1`–`P3-3`（13 项）；依赖阶段 A 全部实现；[完成记录](#t022阶段-a-收口修复) |
 
 任务 ID 不代表执行顺序。阶段 A 的全部任务（`A-1`–`A-6`）已完成，当前无进行中任务与待开始任务，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户。后续在用户确认后按 `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
 
@@ -60,6 +62,15 @@
 - 未验证与遗留：`doctor` 仅在 macOS arm64 实机运行，Windows/Linux 的 Git 中间态、`index.lock` 与路径语义未运行；真实宿主注入未验证（安装属 `C-3`）；runner 场景按 05 留待 `D-1`。
 - 下一步：阶段 A 全部完成，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户；待用户确认后再登记并启动 `B-1`（本地 HTTP 安全框架与只读 API）。
 
+## T022：阶段 A 收口修复
+
+- 目标与范围：按 [阶段 A 实现审查报告](./validation/stage-a-review.md) 收口全部 13 项问题，不新增产品能力。`P1`/`P2` 行为修复包括：`resolve --apply` 在重启变基前完成冲突类型、路径覆盖、动作枚举、文件模式、大小与 UTF-8 的静态校验，并在失败时恢复 `captured` 阶段；持锁会话的全部 Git 子进程继承锁描述符；前台 Git 子进程改用单一凭据白名单；`ReadFile` 在锁忙、待恢复事务、待解决冲突与 Git 中间态时拒绝读取；`Classify` 保留 `NO_UPSTREAM` 等契约错误码且同步成功后清零 ahead/behind；本地提交在有远端时返回并记录 `pending`；`sync --capture` 解析 Agent/SID 并触发后台同步；`doctor` 并列报告多重 Git 状态、孤立操作记录、单词推荐元数据与全文可疑短语；`wrap` 向被包装进程转发终止信号；`init --remote` 不再删除调用方提供的空目录，克隆前校验远端默认分支，连接已有远端时校验全部 URL 并校验共同历史后才写入远端配置与批准记录。`P3` 收口包括 `WriteAtomic` 显式设置模式、`ListManaged` 过滤临时文件、`Stat` 在截断读取时把完整长度并入摘要、`Lock.Release` 只关闭描述符不做显式解锁、`SyncSummary` 补 `repoId`/`localState`，并把凭据超时用例的总预算从 2 秒放宽到 5 秒。
+- 契约：[凭据与信任边界](./01-architecture-and-modules.md#34-凭据与信任边界)、[写入不变量](./01-architecture-and-modules.md#23-写入不变量)、[中断与恢复](./03-workflows-and-dataflows.md#21-中断与恢复)、[Git 同步步骤](./03-workflows-and-dataflows.md#42-git-同步步骤)、[UI 与 CLI 共用的解决过程](./03-workflows-and-dataflows.md#52-ui-与-cli-共用的解决过程)、[初始化与远端接入](./03-workflows-and-dataflows.md#1-初始化与远端接入)、[审计、诊断、整理与接入](./02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[同步与恢复对象](./02-domain-models-and-contracts.md#22-同步与恢复)。本轮把 `01` §3.4 与 `03` §4.3 对前台凭据环境的表述统一为「前台与后台 Git 子进程使用同一份白名单」，并把身份覆盖变量并入该白名单；`G08.2` 用例改用标记文件而不是环境变量区分前后台凭据环境，以符合新的白名单边界。
+- 验证日期与环境：2026-10-16，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./... -count=1`、`make build` 全部通过。回归证据：`TestPlanResolvedValidatesBeforeTouchingTheRepository`、`TestA4ResolveRejectsInvalidInputCoversC01`、`TestA4ResolvePreservesFileModeCoversC02`（`C01`、`C03`）、`TestLocalGitChildrenInheritLockCoversL01`、`TestKilledWriteParentKeepsLockWithGitCoversL01`、`TestReleaseKeepsLockWhileInheritedDescriptorIsOpen`（`L01`）、`TestSyncEnvDropsRepositoryRedirectsAndUnknownVariables`、`TestA5BackgroundCredentialDifferenceCoversG08_2`（`G08.2`）、`TestReadFileRefusesProtectedStates`、`TestApplyReportsPendingRemoteState`、`TestA4LocalCommitReportsPendingAndResetsCountsCoversG02`（`G02`）、`TestA4InitRemoteBoundariesCoversG02G04`（`G02`、`G04`）、`TestCheckReportsEveryGitStateAndOrphanOperation`、`TestCheckScansWholeTextForSuspiciousPhrases`、`TestCheckFlagsEntryMissingOneRecommendedMetadata`（`F03`、`R04`）、`TestA5WrapForwardsTerminationSignalsCoversH05`（`H05`）、`TestWriteAtomicSetsModeDespiteUmask`、`TestListManagedSkipsAtomicTempFiles`（`W01`–`W07`）。
+- 未验证与遗留：审查报告 `P3-3` 写的 `sync_timeout_sec` 在当前测试中不存在，实际受限的是用例传入的总预算，已按报告意图放宽；严格凭据白名单的实测仅在 macOS arm64，Windows/Linux 的 Git 子进程环境与 `wrap` 信号转发位置未运行；`G05`/`G07` 仍沿用 A-3/A-4 用例，未新增专项；`doctor --fix` 仍属 `C-1`。
+- 下一步：阶段 A 已全部收口，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户；待用户确认后按 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 登记并启动 `B-1`（`internal/server` 只读 API 与 HTTP 安全框架）。
+
 ## 近期实施任务
 
-`A-6`（`T020`）已完成，阶段 A 全部任务结束。按 [停止条件](./06-development-loop.md#3-状态与推进)，本轮不自动创建下一轮会话；待用户确认后按 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 将 `B-1`（`internal/server` 只读 API 与 HTTP 安全框架）登记为下一轮任务，`B-2`、`B-3` 随后滚动登记。
+阶段 A 与 `T022` 收口均已完成，当前无进行中任务与待开始任务。按 [停止条件](./06-development-loop.md#3-状态与推进)，本轮不自动创建下一轮会话；待用户确认后按 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 将 `B-1`（`internal/server` 只读 API 与 HTTP 安全框架）登记为下一轮任务，`B-2`、`B-3` 随后滚动登记。

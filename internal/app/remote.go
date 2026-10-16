@@ -31,18 +31,28 @@ type InitOptions struct {
 // initWithNewRemote creates or clones the repository behind the given URL.
 // An empty remote receives a local first commit and the first push; a remote
 // with history is cloned. See docs/03-workflows-and-dataflows.md section 1.
-func (a *App) initWithNewRemote(ctx context.Context, repoPath string, opts InitOptions) (InitResult, error) {
-	advertised, err := git.LsRemote(ctx, repoPath, git.Options{Interactive: opts.Interactive}, opts.RemoteURL)
+func (a *App) initWithNewRemote(ctx context.Context, repoPath string, createdDir bool, opts InitOptions) (InitResult, error) {
+	gitOpts := git.Options{Interactive: opts.Interactive}
+	advertised, err := git.LsRemote(ctx, repoPath, gitOpts, opts.RemoteURL)
 	if err != nil {
-		_ = os.Remove(repoPath)
+		removeCreatedRepo(repoPath, createdDir)
 		return InitResult{RepoPath: repoPath}, remoteFailure(err)
 	}
 
 	if strings.TrimSpace(advertised) != "" {
-		if err := os.Remove(repoPath); err != nil {
-			return InitResult{RepoPath: repoPath}, memerr.Wrap(memerr.IOFailed, err, "cannot prepare the clone target %s", repoPath)
+		// A remote that advertises no directly checkable default branch must
+		// stop with a preparation message instead of cloning an empty checkout
+		// and reporting NO_REPO afterwards.
+		if _, err := git.RemoteDefaultBranch(ctx, repoPath, gitOpts, opts.RemoteURL); err != nil {
+			removeCreatedRepo(repoPath, createdDir)
+			return InitResult{RepoPath: repoPath}, err
 		}
-		if err := git.Clone(ctx, git.Options{Interactive: opts.Interactive}, opts.RemoteURL, repoPath); err != nil {
+		if createdDir {
+			if err := os.Remove(repoPath); err != nil {
+				return InitResult{RepoPath: repoPath}, memerr.Wrap(memerr.IOFailed, err, "cannot prepare the clone target %s", repoPath)
+			}
+		}
+		if err := git.Clone(ctx, gitOpts, opts.RemoteURL, repoPath); err != nil {
 			return InitResult{RepoPath: repoPath}, remoteFailure(err)
 		}
 		if err := verifyEntryFile(repoPath); err != nil {
@@ -84,27 +94,33 @@ func (a *App) initWithNewRemote(ctx context.Context, repoPath string, opts InitO
 
 // connectExistingRemote records an approval for an existing URL or attaches a
 // new remote to an existing local repository. It never repoints a remote whose
-// URL differs from the requested one.
+// URL differs from the requested one, and it never keeps a remote whose
+// history could not be validated. See
+// docs/03-workflows-and-dataflows.md section 1.
 func connectExistingRemote(ctx context.Context, repoPath string, opts InitOptions) (InitResult, error) {
 	result, err := existingResult(ctx, repoPath)
 	if err != nil {
 		return result, err
 	}
 
-	remotes, err := git.Remotes(ctx, repoPath)
+	remote, hasRemote, err := git.DefaultRemote(ctx, repoPath)
 	if err != nil {
 		return result, err
 	}
-
-	if len(remotes) > 0 {
-		urls, err := git.RemoteURLs(ctx, repoPath, remotes[0])
+	if hasRemote {
+		urls, err := git.RemoteURLs(ctx, repoPath, remote)
 		if err != nil {
 			return result, err
 		}
-		if !containsString(urls, opts.RemoteURL) {
-			return result, memerr.New(memerr.InvalidArgument,
-				"the repository already has remote %s with a different URL; change the Git remote explicitly, then re-run init %s --confirm-private",
-				remotes[0], opts.RemoteURL)
+		// The confirmation binds the complete fetch/push target set of the
+		// remote synchronization actually uses. An extra or different URL is a
+		// different repository and is never silently accepted.
+		for _, url := range urls {
+			if url != opts.RemoteURL {
+				return result, memerr.New(memerr.InvalidArgument,
+					"remote %s is configured with %s, not %s; change the Git remote explicitly, then re-run init --confirm-private",
+					remote, strings.Join(urls, ", "), opts.RemoteURL)
+			}
 		}
 		if err := recordApproval(ctx, repoPath); err != nil {
 			return result, err
@@ -120,36 +136,52 @@ func connectExistingRemote(ctx context.Context, repoPath string, opts InitOption
 	if err := git.AddRemote(ctx, repoPath, defaultRemoteName, opts.RemoteURL); err != nil {
 		return result, err
 	}
-	if err := recordApproval(ctx, repoPath); err != nil {
-		return result, err
-	}
 
 	if strings.TrimSpace(advertised) == "" {
 		if err := git.Push(ctx, repoPath, git.Options{Interactive: opts.Interactive}, defaultRemoteName, result.branch(), true); err != nil {
 			result.RemoteState = "pending"
 			return result, remoteFailure(err)
 		}
+		if err := recordApproval(ctx, repoPath); err != nil {
+			return result, err
+		}
 		result.RemoteState = "synced"
 		return result, nil
 	}
 
-	if err := git.Fetch(ctx, repoPath, git.Options{Interactive: opts.Interactive}, defaultRemoteName); err != nil {
-		return result, remoteFailure(err)
-	}
-	defaultBranch, err := git.RemoteDefaultBranch(ctx, repoPath, git.Options{Interactive: opts.Interactive}, defaultRemoteName)
-	if err != nil {
+	// Validate the fetched history before the remote and its approval are kept,
+	// so a refused connection leaves no confirmed target behind.
+	if err := connectExistingHistory(ctx, repoPath, result.branch(), opts); err != nil {
+		_ = git.RemoveRemote(ctx, repoPath, defaultRemoteName)
 		return result, err
 	}
-	remoteRef := defaultRemoteName + "/" + defaultBranch
-	if _, err := git.MergeBase(ctx, repoPath, "HEAD", remoteRef); err != nil {
-		return result, memerr.New(memerr.NoUpstream,
-			"%s has no common history with this repository; connecting it requires manual preparation", remoteRef)
-	}
-	if _, err := git.Run(ctx, repoPath, "branch", "--set-upstream-to", remoteRef, result.branch()); err != nil {
+	if err := recordApproval(ctx, repoPath); err != nil {
 		return result, err
 	}
 	result.RemoteState = "synced"
 	return result, nil
+}
+
+// connectExistingHistory fetches the newly added remote and attaches its
+// default branch as the upstream only after the histories share an ancestor.
+func connectExistingHistory(ctx context.Context, repoPath, branch string, opts InitOptions) error {
+	gitOpts := git.Options{Interactive: opts.Interactive}
+	if err := git.Fetch(ctx, repoPath, gitOpts, defaultRemoteName); err != nil {
+		return remoteFailure(err)
+	}
+	defaultBranch, err := git.RemoteDefaultBranch(ctx, repoPath, gitOpts, defaultRemoteName)
+	if err != nil {
+		return err
+	}
+	remoteRef := defaultRemoteName + "/" + defaultBranch
+	if _, err := git.MergeBase(ctx, repoPath, "HEAD", remoteRef); err != nil {
+		return memerr.New(memerr.NoUpstream,
+			"%s has no common history with this repository; connecting it requires manual preparation", remoteRef)
+	}
+	if _, err := git.Run(ctx, repoPath, "branch", "--set-upstream-to", remoteRef, branch); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r InitResult) branch() string {
@@ -207,6 +239,14 @@ func recordApproval(ctx context.Context, repoPath string) error {
 	return state.OpenStore(gitDir).SaveApproval(state.Approval{URLs: urls, ConfirmedAt: state.Now()})
 }
 
+// removeCreatedRepo deletes a repository directory memctl created itself after
+// a failed connection. A directory the caller provided is never removed.
+func removeCreatedRepo(repoPath string, created bool) {
+	if created {
+		_ = os.Remove(repoPath)
+	}
+}
+
 // remoteFailure maps a Git error to a stable remote code and message.
 func remoteFailure(err error) error {
 	code := syncer.Classify(err)
@@ -215,13 +255,4 @@ func remoteFailure(err error) error {
 		message = contractErr.Message
 	}
 	return memerr.New(code, "cannot reach the remote: %s", message)
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

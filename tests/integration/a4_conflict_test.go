@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,17 +87,26 @@ func (f *conflictFixture) conflictView(which int) map[string]any {
 
 func (f *conflictFixture) apply(which int, conflictID, baseRevision, content string) cliResult {
 	f.t.Helper()
-	payload := map[string]any{
+	return f.applyPath(which, conflictID, baseRevision, "MEMORY.md", content)
+}
+
+func (f *conflictFixture) applyPath(which int, conflictID, baseRevision, path, content string) cliResult {
+	f.t.Helper()
+	return f.resolvePayload(which, conflictID, map[string]any{
 		"baseRevision": baseRevision,
 		"resolvedFiles": []map[string]any{
-			{"path": "MEMORY.md", "action": "put", "rawContent": content},
+			{"path": path, "action": "put", "rawContent": content},
 		},
-	}
+	})
+}
+
+func (f *conflictFixture) resolvePayload(which int, conflictID string, payload map[string]any) cliResult {
+	f.t.Helper()
 	data, err := json.Marshal(payload)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	path := filepath.Join(f.root, "payload-"+conflictID+".json")
+	path := filepath.Join(f.root, fmt.Sprintf("payload-%s-%d.json", conflictID, len(data)))
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
@@ -435,5 +445,116 @@ func writeBinary(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestA4ResolveRejectsInvalidInputCoversC01 covers P1-1 and P2-5: a rejected
+// `resolve --apply` request must be refused before the captured rebase is
+// restarted, leaving the snapshot resolvable after the caller corrects it.
+func TestA4ResolveRejectsInvalidInputCoversC01(t *testing.T) {
+	f := newConflictFixture(t)
+	f.write(2, "# Memory\n\n## Index\n- two\n")
+	f.write(1, "# Memory\n\n## Index\n- one\n")
+	if result := f.sync(1); result.code != 0 {
+		t.Fatalf("device1 sync: code=%d stderr=%q", result.code, result.stderr)
+	}
+	if result := f.sync(2); result.code != 1 {
+		t.Fatalf("device2 sync: code=%d stderr=%q", result.code, result.stderr)
+	}
+
+	view := f.conflictView(2)
+	id := view["conflictId"].(string)
+	base := view["baseRevision"].(string)
+	headBefore := gitOutput(t, f.env2(), f.repo2, "rev-parse", "HEAD")
+
+	assertUntouched := func(label string) {
+		t.Helper()
+		if status := gitOutput(t, f.env2(), f.repo2, "status", "--porcelain"); status != "" {
+			t.Fatalf("%s left worktree changes: %q", label, status)
+		}
+		if head := gitOutput(t, f.env2(), f.repo2, "rev-parse", "HEAD"); head != headBefore {
+			t.Fatalf("%s moved HEAD: %s -> %s", label, headBefore, head)
+		}
+		again := f.conflictView(2)
+		if again["conflictId"] != id || again["phase"] != "captured" {
+			t.Fatalf("%s lost the captured stage: %v", label, again)
+		}
+	}
+
+	badAction := f.resolvePayload(2, id, map[string]any{
+		"baseRevision": base,
+		"resolvedFiles": []map[string]any{
+			{"path": "MEMORY.md", "action": "bogus", "rawContent": "x"},
+		},
+	})
+	if badAction.code != 1 || !strings.Contains(badAction.stderr, "INVALID_ARGUMENT") {
+		t.Fatalf("invalid action: code=%d stderr=%q, want INVALID_ARGUMENT", badAction.code, badAction.stderr)
+	}
+	assertUntouched("invalid action")
+
+	missingBase := f.resolvePayload(2, id, map[string]any{
+		"resolvedFiles": []map[string]any{
+			{"path": "MEMORY.md", "action": "put", "rawContent": "x"},
+		},
+	})
+	if missingBase.code != 1 || !strings.Contains(missingBase.stderr, "INVALID_ARGUMENT") {
+		t.Fatalf("missing baseRevision: code=%d stderr=%q, want INVALID_ARGUMENT", missingBase.code, missingBase.stderr)
+	}
+	assertUntouched("missing baseRevision")
+	if noConflict := f.resolve(2, "--apply", filepath.Join(f.root, "payload.json")); noConflict.code != 2 {
+		t.Fatalf("apply without --conflict: code=%d, want a usage error", noConflict.code)
+	}
+
+	// The corrected request resolves the same captured stage.
+	corrected := f.apply(2, id, base, "# Memory\n\n## Index\n- one\n")
+	if corrected.code != 0 || !strings.Contains(corrected.stdout, "remote: synced") {
+		t.Fatalf("corrected apply: code=%d stdout=%q stderr=%q", corrected.code, corrected.stdout, corrected.stderr)
+	}
+	if status := gitOutput(t, f.env2(), f.repo2, "status", "--porcelain"); status != "" {
+		t.Fatalf("worktree not clean after the corrected apply: %q", status)
+	}
+}
+
+// TestA4ResolvePreservesFileModeCoversC02 covers P2-5: the resolved content
+// keeps the file mode the conflicted path had before the replay.
+func TestA4ResolvePreservesFileModeCoversC02(t *testing.T) {
+	f := newConflictFixture(t)
+	script1 := filepath.Join(f.repo1, "run.sh")
+	if err := os.WriteFile(script1, []byte("#!/bin/sh\necho v1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if result := runMemctl(t, f.bin, f.home1, f.env1(), "sync", "--capture"); result.code != 0 {
+		t.Fatalf("capture executable: code=%d stderr=%q", result.code, result.stderr)
+	}
+	if result := f.sync(1); result.code != 0 {
+		t.Fatalf("device1 push: code=%d stderr=%q", result.code, result.stderr)
+	}
+	if result := f.sync(2); result.code != 0 {
+		t.Fatalf("device2 pull: code=%d stderr=%q", result.code, result.stderr)
+	}
+
+	a4WriteFile(t, f.bin, f.home1, f.repo1, f.env1(), "run.sh", "#!/bin/sh\necho v2\n")
+	if result := f.sync(1); result.code != 0 {
+		t.Fatalf("device1 second push: code=%d stderr=%q", result.code, result.stderr)
+	}
+	a4WriteFile(t, f.bin, f.home2, f.repo2, f.env2(), "run.sh", "#!/bin/sh\necho v3\n")
+	if result := f.sync(2); result.code != 1 {
+		t.Fatalf("device2 sync: code=%d stderr=%q, want a conflict", result.code, result.stderr)
+	}
+
+	view := f.conflictView(2)
+	result := f.applyPath(2, view["conflictId"].(string), view["baseRevision"].(string), "run.sh", "#!/bin/sh\necho resolved\n")
+	if result.code != 0 {
+		t.Fatalf("apply executable conflict: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
+	}
+	if entry := gitOutput(t, f.env2(), f.repo2, "ls-files", "-s", "run.sh"); !strings.HasPrefix(entry, "100755 ") {
+		t.Fatalf("index mode = %q, want 100755", entry)
+	}
+	info, err := os.Stat(filepath.Join(f.repo2, "run.sh"))
+	if err != nil {
+		t.Fatalf("stat run.sh: %v", err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("worktree mode = %v, want 0755", info.Mode().Perm())
 	}
 }

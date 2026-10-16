@@ -14,7 +14,9 @@ import (
 // SyncSummary is the persisted observability record of the last synchronization
 // attempt. It lives under $STATE/repos/<repoId>/cache and is rebuildable.
 type SyncSummary struct {
+	RepoID        string `json:"repoId"`
 	RemoteState   string `json:"remoteState"`
+	LocalState    string `json:"localState"`
 	ReasonCode    string `json:"reasonCode,omitempty"`
 	Branch        string `json:"branch,omitempty"`
 	Head          string `json:"head,omitempty"`

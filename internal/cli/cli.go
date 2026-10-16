@@ -373,10 +373,14 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
+	var payload hookio.Input
 	if useStdin {
-		if code := drainHookStdin("sync", stdin, stderr); code != ExitOK {
-			return code
+		input, err := hookio.ReadInput(stdin)
+		if err != nil {
+			fmt.Fprintf(stderr, "memctl sync: %v\n", err)
+			return ExitUsageError
 		}
+		payload = input
 	}
 
 	if !capture && !wait {
@@ -391,7 +395,12 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 
 	if capture {
-		result, err := service.Capture(ctx, agent, sid)
+		// The capture commit carries the same Agent/SID provenance as a
+		// managed write, using the documented SID priority including the
+		// session id in a --stdin Hook payload.
+		result, err := service.Capture(ctx,
+			hookio.ResolveAgent(agent, os.Getenv),
+			hookio.ResolveSID(sid, os.Getenv, payload))
 		if err != nil {
 			return fail(stderr, "sync", err)
 		}
@@ -400,6 +409,12 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		} else {
 			fmt.Fprintf(stdout, "transaction: %s\ncommit: %s\nrevision: %s\nchanged: %s\nsync: %s\n",
 				result.TransactionID, result.Commit, result.Revision, strings.Join(result.ChangedFiles, ", "), result.SyncState)
+			// A capture is a new local commit, so the automatic path gets the
+			// same best-effort background push as a managed write. An explicit
+			// --wait below performs the foreground sync instead.
+			if !wait && cfg.BackgroundSync {
+				_ = service.BeginBackgroundSync()
+			}
 		}
 	}
 
@@ -529,6 +544,9 @@ func runResolve(args []string, stdout, stderr io.Writer) int {
 	if abort && applyFile != "" {
 		return usageError(stderr, "resolve", "--abort and --apply are mutually exclusive")
 	}
+	if (abort || applyFile != "") && conflictID == "" {
+		return usageError(stderr, "resolve", "--apply and --abort require --conflict ID")
+	}
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -538,9 +556,6 @@ func runResolve(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 
 	if abort {
-		if conflictID == "" {
-			return usageError(stderr, "resolve", "--abort requires --conflict ID")
-		}
 		result, err := service.ResolveAbort(ctx, conflictID)
 		if asJSON {
 			if encodeErr := encodeJSON(stdout, resolveOutcome(result)); encodeErr != nil {

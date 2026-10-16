@@ -11,5 +11,3 @@ import (
 func tryFlock(file *os.File) (bool, error) {
 	return false, memerr.New(memerr.Unsupported, "repository locking is not implemented on this platform")
 }
-
-func unlockFile(file *os.File) error { return nil }

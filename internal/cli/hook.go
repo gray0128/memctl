@@ -275,7 +275,15 @@ func runWrap(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	child.Stderr = stderr
 	child.Env = wrappedEnv(cfg, agent, sid)
 
-	runErr := child.Run()
+	if err := child.Start(); err != nil {
+		fmt.Fprintf(stderr, "memctl wrap: cannot run %q: %v\n", cmdArgs[0], err)
+		return ExitError
+	}
+	// Termination signals sent to the wrapper are forwarded to the wrapped
+	// program so it can shut down itself; the wrapper then reports its status.
+	stopForwarding := forwardSignals(child.Process)
+	runErr := child.Wait()
+	stopForwarding()
 
 	// Post-run synchronization is best-effort and detached so it cannot change
 	// the wrapped program's exit status.

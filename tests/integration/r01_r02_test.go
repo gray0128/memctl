@@ -103,7 +103,7 @@ func TestR02MissingCredentialsAreTargeted(t *testing.T) {
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
 
-	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(""))
 	sshURL := "ssh://git@example.invalid" + url
 	env := a4Env(home, repo, "GIT_SSH_COMMAND="+proxy)
 	if result := runMemctl(t, bin, home, env, "init", sshURL, "--confirm-private"); result.code != 0 {

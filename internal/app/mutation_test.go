@@ -16,6 +16,7 @@ import (
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/lock"
 	"github.com/gray0128/memctl/internal/memerr"
+	"github.com/gray0128/memctl/internal/state"
 	"github.com/gray0128/memctl/internal/vault"
 )
 
@@ -822,5 +823,112 @@ func TestApplyRejectsStaleBaseRevision(t *testing.T) {
 	requireContractCode(t, err, memerr.RevisionMismatch)
 	if got := readTestFile(t, filepath.Join(repo, "MEMORY.md")); got != testInitialMemory {
 		t.Fatalf("stale-base write changed the file: %q", got)
+	}
+}
+
+// TestReadFileRefusesProtectedStates covers P2-1: a CLI read must not return
+// transaction-intermediate content. It reports busy while the lock is held,
+// recovery while an unfinished transaction exists, and the operation state
+// while a managed conflict or Git operation is active.
+func TestReadFileRefusesProtectedStates(t *testing.T) {
+	t.Run("lock busy", func(t *testing.T) {
+		service, repo := newTestService(t)
+		ctx := context.Background()
+		gitDir, err := git.GitDir(ctx, repo)
+		if err != nil {
+			t.Fatalf("git dir: %v", err)
+		}
+		held, ok, err := lock.TryAcquire(gitDir)
+		if err != nil || !ok {
+			t.Fatalf("TryAcquire: ok=%v err=%v", ok, err)
+		}
+		defer held.Release()
+
+		if _, err := service.ReadFile(ctx, "MEMORY.md"); err == nil {
+			t.Fatal("ReadFile returned while the repository lock was held")
+		} else {
+			requireContractCode(t, err, memerr.Busy)
+		}
+	})
+
+	t.Run("unfinished transaction", func(t *testing.T) {
+		service, repo := newTestService(t)
+		ctx := context.Background()
+		entry, err := service.ReadFile(ctx, "MEMORY.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.testFault = func(stage string) error {
+			if stage == "after-record" {
+				return errSimulatedCrash
+			}
+			return nil
+		}
+		if _, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+			Path: "MEMORY.md", ExpectedRevision: entry.FileRevision, Action: ActionPut, RawContent: "# Memory\n\n## Index\n- pending\n",
+		}}}); !errors.Is(err, errSimulatedCrash) {
+			t.Fatalf("apply err = %v, want simulated crash", err)
+		}
+		service.testFault = nil
+		if count := commitCount(t, repo); count != "1" {
+			t.Fatalf("the interrupted apply committed: %s", count)
+		}
+
+		if _, err := service.ReadFile(ctx, "MEMORY.md"); err == nil {
+			t.Fatal("ReadFile returned while a transaction needed recovery")
+		} else {
+			requireContractCode(t, err, memerr.RecoveryRequired)
+		}
+	})
+}
+
+// TestApplyReportsPendingRemoteState covers P2-3: a managed commit in a
+// repository with a remote is pending until a push succeeds, and the cached
+// sync summary records it. A local-only repository stays local_only.
+func TestApplyReportsPendingRemoteState(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+
+	local, err := service.ReadFile(ctx, "MEMORY.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+		Path: "MEMORY.md", ExpectedRevision: local.FileRevision, Action: ActionPut, RawContent: "# Memory\n\n## Index\n- local\n",
+	}}})
+	if err != nil {
+		t.Fatalf("local apply: %v", err)
+	}
+	if result.SyncState != "local_only" {
+		t.Fatalf("local-only sync state = %q, want local_only", result.SyncState)
+	}
+
+	if err := git.AddRemote(ctx, repo, "origin", "https://example.invalid/memory.git"); err != nil {
+		t.Fatalf("add remote: %v", err)
+	}
+	entry, err := service.ReadFile(ctx, "MEMORY.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+		Path: "MEMORY.md", ExpectedRevision: entry.FileRevision, Action: ActionPut, RawContent: "# Memory\n\n## Index\n- remote\n",
+	}}})
+	if err != nil {
+		t.Fatalf("remote apply: %v", err)
+	}
+	if result.SyncState != "pending" {
+		t.Fatalf("remote sync state = %q, want pending", result.SyncState)
+	}
+
+	repoID := config.RepoID(repo)
+	summary, ok, err := state.OpenCache(service.cfg.StateDir, repoID).LoadSync()
+	if err != nil {
+		t.Fatalf("load sync summary: %v", err)
+	}
+	if !ok || summary.RepoID != repoID || summary.RemoteState != "pending" || summary.LocalState != "clean" {
+		t.Fatalf("cached summary = %+v ok=%v, want a pending record for %s", summary, ok, repoID)
+	}
+	if summary.Head != result.Commit {
+		t.Fatalf("cached head = %q, want the new commit %q", summary.Head, result.Commit)
 	}
 }

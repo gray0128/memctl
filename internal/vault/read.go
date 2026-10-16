@@ -168,6 +168,19 @@ func FileRevision(gitMode string, content []byte) string {
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
+// revisionWithLength hashes the Git file mode, the exact file length and the
+// bytes read. Stat uses it when the bounded read could not include the whole
+// asset, so two assets sharing the first MaxRevisionBytes still differ.
+func revisionWithLength(gitMode string, size int64, content []byte) string {
+	hash := sha256.New()
+	writeField(hash, []byte(gitMode))
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(size))
+	writeField(hash, length[:])
+	writeField(hash, content)
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
+}
+
 // GitMode maps a filesystem mode to the mode Git would record.
 func GitMode(mode fs.FileMode) string {
 	if mode.Perm()&0o111 != 0 {

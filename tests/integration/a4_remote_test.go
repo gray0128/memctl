@@ -312,3 +312,134 @@ func a4AppendEntry(t *testing.T, bin, home, repo, label string) {
 		t.Fatalf("append entry write: code=%d stderr=%q", result.code, result.stderr)
 	}
 }
+
+// TestA4LocalCommitReportsPendingAndResetsCountsCoversG02 covers P2-2 and P2-3
+// end to end: a managed commit in a repository with a remote reports pending,
+// and a completed sync reports zero ahead and behind.
+func TestA4LocalCommitReportsPendingAndResetsCountsCoversG02(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	url := newBareRemote(t, root, "memory.git")
+	home := a4Home(t, root, "home")
+	repo := filepath.Join(home, "memory")
+	env := a4Env(home, repo)
+
+	if result := a4InitRemote(t, bin, home, repo, url); result.code != 0 {
+		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
+	}
+
+	baseline := readRevision(t, bin, home, repo, env, "MEMORY.md")
+	write := runMemctlStdin(t, bin, home, env, "# Memory\n\n## Index\n- pending\n", "write", "MEMORY.md", "--base", baseline.FileRevision, "--stdin")
+	if write.code != 0 {
+		t.Fatalf("write: code=%d stderr=%q", write.code, write.stderr)
+	}
+	if !strings.Contains(write.stdout, "sync: pending") {
+		t.Fatalf("write stdout = %q, want sync: pending", write.stdout)
+	}
+
+	synced := runMemctl(t, bin, home, env, "sync", "--wait")
+	if synced.code != 0 || !strings.Contains(synced.stdout, "remote: synced") {
+		t.Fatalf("sync: code=%d stdout=%q stderr=%q", synced.code, synced.stdout, synced.stderr)
+	}
+	if !strings.Contains(synced.stdout, "ahead: 0") || !strings.Contains(synced.stdout, "behind: 0") {
+		t.Fatalf("sync stdout = %q, want zero ahead and behind after a completed sync", synced.stdout)
+	}
+}
+
+// TestA4InitRemoteBoundariesCoversG02G04 covers P2-7: an init that fails must
+// not delete a directory the caller provided, a remote with unrelated history
+// must leave no approved remote behind, and a remote whose push URL differs
+// from the requested target is refused.
+func TestA4InitRemoteBoundariesCoversG02G04(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	url := newBareRemote(t, root, "memory.git")
+	home := a4Home(t, root, "home")
+	repo := filepath.Join(home, "memory")
+	env := a4Env(home, repo)
+
+	t.Run("caller-provided empty directory survives a failed connection", func(t *testing.T) {
+		other := a4Home(t, root, "home-empty")
+		emptyRepo := filepath.Join(other, "memory")
+		if err := os.MkdirAll(emptyRepo, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		result := a4InitRemote(t, bin, other, emptyRepo, filepath.Join(root, "missing.git"))
+		if result.code == 0 {
+			t.Fatalf("init with a missing remote succeeded: %q", result.stdout)
+		}
+		info, err := os.Stat(emptyRepo)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("the caller-provided directory was removed: info=%v err=%v", info, err)
+		}
+		if _, err := os.Stat(filepath.Join(emptyRepo, ".git")); !os.IsNotExist(err) {
+			t.Fatalf("failed init created a repository, stat err = %v", err)
+		}
+	})
+
+	t.Run("unrelated history keeps no remote or approval", func(t *testing.T) {
+		unrelated := newBareRemote(t, root, "unrelated.git")
+		seed := a4Home(t, root, "seed")
+		seedEnv := []string{
+			"HOME=" + seed,
+			"PATH=" + os.Getenv("PATH"),
+			"GIT_AUTHOR_NAME=Memctl Test",
+			"GIT_AUTHOR_EMAIL=memctl-test@example.invalid",
+			"GIT_COMMITTER_NAME=Memctl Test",
+			"GIT_COMMITTER_EMAIL=memctl-test@example.invalid",
+		}
+		gitOutput(t, seedEnv, seed, "init", "-q", "-b", "main")
+		if err := os.WriteFile(filepath.Join(seed, "MEMORY.md"), []byte("# Memory\n\n## Index\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitOutput(t, seedEnv, seed, "add", "MEMORY.md")
+		gitOutput(t, seedEnv, seed, "commit", "-qm", "init")
+		gitOutput(t, seedEnv, seed, "push", "-q", unrelated, "main")
+
+		if result := runMemctl(t, bin, home, env, "init"); result.code != 0 {
+			t.Fatalf("local init: code=%d stderr=%q", result.code, result.stderr)
+		}
+		result := a4InitRemote(t, bin, home, repo, unrelated)
+		if result.code != 1 || !strings.Contains(result.stderr, "NO_UPSTREAM") {
+			t.Fatalf("unrelated init: code=%d stderr=%q, want NO_UPSTREAM", result.code, result.stderr)
+		}
+		if remotes := gitOutput(t, env, repo, "remote"); remotes != "" {
+			t.Fatalf("a refused connection left the remote configured: %q", remotes)
+		}
+	})
+
+	t.Run("extra push url is refused", func(t *testing.T) {
+		if result := a4InitRemote(t, bin, home, repo, url); result.code != 0 {
+			t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
+		}
+		extra := newBareRemote(t, root, "extra.git")
+		gitOutput(t, env, repo, "remote", "set-url", "--add", "--push", "origin", extra)
+
+		result := a4InitRemote(t, bin, home, repo, url)
+		if result.code != 1 || !strings.Contains(result.stderr, "INVALID_ARGUMENT") {
+			t.Fatalf("extra push url: code=%d stderr=%q, want INVALID_ARGUMENT", result.code, result.stderr)
+		}
+		urls := gitOutput(t, env, repo, "remote", "get-url", "--push", "--all", "origin")
+		if !strings.Contains(urls, "extra.git") {
+			t.Fatalf("the refusal modified the remote URLs: %q", urls)
+		}
+	})
+
+	t.Run("caller-provided empty directory receives a clone", func(t *testing.T) {
+		cloneURL := newBareRemote(t, root, "clone-source.git")
+		seedHome := a4Home(t, root, "seed-clone")
+		if result := a4InitRemote(t, bin, seedHome, filepath.Join(seedHome, "memory"), cloneURL); result.code != 0 {
+			t.Fatalf("seed init: code=%d stderr=%q", result.code, result.stderr)
+		}
+
+		targetHome := a4Home(t, root, "home-clone")
+		targetRepo := filepath.Join(targetHome, "memory")
+		if err := os.MkdirAll(targetRepo, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		result := a4InitRemote(t, bin, targetHome, targetRepo, cloneURL)
+		if result.code != 0 || !strings.Contains(result.stdout, "state: cloned") {
+			t.Fatalf("clone into a caller-provided directory: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
+		}
+	})
+}

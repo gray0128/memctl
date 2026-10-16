@@ -91,14 +91,24 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return res, err
 	}
+	pushed := false
 	if !hasUpstream {
-		upstream, err = establishUpstream(ctx, repo, remote, branch, opts)
+		upstream, pushed, err = establishUpstream(ctx, repo, remote, branch, opts)
 		if err != nil {
-			code := Classify(err)
-			return failRemote(res, code, err)
+			return failRemote(res, Classify(err), err)
 		}
 	}
 	res.HasUpstream = true
+	if pushed {
+		// An empty remote received the first push with -u, so there is
+		// nothing left to fetch, replay or push.
+		if head, err := git.Head(ctx, repo); err == nil {
+			res.Head = head
+		}
+		res.Ahead, res.Behind = 0, 0
+		res.RemoteState = StateSynced
+		return res, nil
+	}
 
 	if err := git.Fetch(ctx, repo, opts, remote); err != nil {
 		return failRemote(res, Classify(err), err)
@@ -144,7 +154,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 
 	pushOpts := git.Options{Interactive: req.Interactive, NonInteractive: req.NonInteractive}
-	if err := git.Push(ctx, repo, pushOpts, remote, res.Branch, !res.HasUpstream); err != nil {
+	// Tracking is already established: either it existed before or
+	// establishUpstream set it, so this push must not set it again.
+	if err := git.Push(ctx, repo, pushOpts, remote, res.Branch, false); err != nil {
 		return failRemote(res, Classify(err), err)
 	}
 
@@ -152,6 +164,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		res.Head = head
 	}
 	res.HasUpstream = true
+	// A completed sync leaves nothing ahead or behind, whatever the counts
+	// were before the fast-forward, replay or push.
+	res.Ahead, res.Behind = 0, 0
 	res.RemoteState = StateSynced
 	res.ReasonCode = ""
 	return res, nil
@@ -159,35 +174,37 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 // establishUpstream implements the no-upstream branch of the initialization
 // protocol: an empty remote receives the first push, while a remote with
-// history must share a common ancestor and declare a default branch.
-func establishUpstream(ctx context.Context, repo, remote, branch string, opts git.Options) (string, error) {
+// history must share a common ancestor and declare a default branch. pushed
+// reports that the first push already published the branch, so the caller does
+// not repeat the sync.
+func establishUpstream(ctx context.Context, repo, remote, branch string, opts git.Options) (upstream string, pushed bool, err error) {
 	advertised, err := git.LsRemote(ctx, repo, opts, remote)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if strings.TrimSpace(advertised) == "" {
 		if err := git.Push(ctx, repo, opts, remote, branch, true); err != nil {
-			return "", err
+			return "", false, err
 		}
-		return remote + "/" + branch, nil
+		return remote + "/" + branch, true, nil
 	}
 
 	if err := git.Fetch(ctx, repo, opts, remote); err != nil {
-		return "", err
+		return "", false, err
 	}
 	defaultBranch, err := git.RemoteDefaultBranch(ctx, repo, opts, remote)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	remoteRef := remote + "/" + defaultBranch
 	if _, err := git.MergeBase(ctx, repo, "HEAD", remoteRef); err != nil {
-		return "", memerr.New(memerr.NoUpstream,
+		return "", false, memerr.New(memerr.NoUpstream,
 			"%s has no common history with this repository; connecting it requires manual preparation", remoteRef)
 	}
 	if _, err := git.Run(ctx, repo, "branch", "--set-upstream-to", remoteRef, branch); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return remoteRef, nil
+	return remoteRef, false, nil
 }
 
 // replay rebases the local branch onto upstream. A stopped rebase with
@@ -315,34 +332,41 @@ func chooseRemote(override, detected string) string {
 
 // Classify maps a Git failure to one of the internal error classes using the
 // recorded stderr. A deadline always wins because the exchange cannot be
-// proven complete. See docs/03-workflows-and-dataflows.md section 4.3.
+// proven complete. A contract error that already carries a specific code, such
+// as NO_UPSTREAM from the initialization protocol, keeps that code instead of
+// being flattened to GIT_FAILED. See docs/03-workflows-and-dataflows.md
+// section 4.3.
 func Classify(err error) memerr.Code {
 	var gitErr *git.Error
-	if !errors.As(err, &gitErr) {
-		return memerr.GitFailed
+	if errors.As(err, &gitErr) {
+		if gitErr.TimedOut {
+			return memerr.Timeout
+		}
+		text := strings.ToLower(gitErr.Stderr)
+		switch {
+		case containsAny(text,
+			"permission denied", "authentication failed", "could not read username",
+			"host key verification failed", "no such identity", "invalid credentials",
+			"terminal prompts disabled", "publickey", "access denied", "authentication required"):
+			return memerr.AuthFailed
+		case containsAny(text,
+			"non-fast-forward", "fetch first", "failed to push some refs"):
+			return memerr.NonFastForward
+		case containsAny(text,
+			"could not resolve host", "connection refused", "connection timed out",
+			"network is unreachable", "unable to access", "could not read from remote repository",
+			"operation timed out", "temporary failure in name resolution", "no route to host",
+			"connection reset", "ssl", "tls", "proxy"):
+			return memerr.NetworkUnavailable
+		default:
+			return memerr.GitFailed
+		}
 	}
-	if gitErr.TimedOut {
-		return memerr.Timeout
+	var contractErr *memerr.Error
+	if errors.As(err, &contractErr) {
+		return contractErr.Code
 	}
-	text := strings.ToLower(gitErr.Stderr)
-	switch {
-	case containsAny(text,
-		"permission denied", "authentication failed", "could not read username",
-		"host key verification failed", "no such identity", "invalid credentials",
-		"terminal prompts disabled", "publickey", "access denied", "authentication required"):
-		return memerr.AuthFailed
-	case containsAny(text,
-		"non-fast-forward", "fetch first", "failed to push some refs"):
-		return memerr.NonFastForward
-	case containsAny(text,
-		"could not resolve host", "connection refused", "connection timed out",
-		"network is unreachable", "unable to access", "could not read from remote repository",
-		"operation timed out", "temporary failure in name resolution", "no route to host",
-		"connection reset", "ssl", "tls", "proxy"):
-		return memerr.NetworkUnavailable
-	default:
-		return memerr.GitFailed
-	}
+	return memerr.GitFailed
 }
 
 func containsAny(text string, needles ...string) bool {

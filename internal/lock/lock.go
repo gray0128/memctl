@@ -103,18 +103,17 @@ func (l *Lock) Path() string {
 	return l.path
 }
 
-// Release drops the lock and closes the descriptor. Children that inherited the
-// descriptor keep the lock until they exit.
+// Release drops the lock by closing the descriptor. Children that inherited the
+// descriptor keep the lock until they exit, because flock locks belong to the
+// open file description: an explicit LOCK_UN before the close would release the
+// lock while an inherited descriptor is still running Git. See
+// docs/01-architecture-and-modules.md section 6.
 func (l *Lock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	unlockErr := unlockFile(l.file)
 	closeErr := l.file.Close()
 	l.file = nil
-	if unlockErr != nil {
-		return memerr.Wrap(memerr.IOFailed, unlockErr, "cannot release repository lock %s", l.path)
-	}
 	if closeErr != nil {
 		return memerr.Wrap(memerr.IOFailed, closeErr, "cannot close repository lock %s", l.path)
 	}

@@ -32,8 +32,14 @@ func TestA5BackgroundCredentialDifferenceCoversG08_2(t *testing.T) {
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
 
+	// The credential environment of the background worker differs from the
+	// foreground shell: the stub proxies only while the marker file exists, and
+	// the marker is removed before the background worker is triggered. A marker
+	// file replaces an environment variable because the whitelist deliberately
+	// drops arbitrary variables on every Git path.
+	marker := filepath.Join(root, "foreground-credential")
 	stub := writeStub(t, root, "ssh-conditional.sh", `
-if [ "$MEMCTL_TEST_FOREGROUND" = "1" ]; then
+if [ -f "`+marker+`" ]; then
   host=$1
   shift
   exec sh -c "$*"
@@ -43,7 +49,10 @@ exit 255
 `)
 	sshURL := "ssh://git@example.invalid" + url
 	baseEnv := a4Env(home, repo, "GIT_SSH_COMMAND="+stub)
-	foregroundEnv := envWith(baseEnv, "MEMCTL_TEST_FOREGROUND=1", "AGENT_MEMORY_BACKGROUND=1")
+	foregroundEnv := envWith(baseEnv, "AGENT_MEMORY_BACKGROUND=1")
+	if err := os.WriteFile(marker, []byte("foreground\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	if result := runMemctl(t, bin, home, foregroundEnv, "init", sshURL, "--confirm-private"); result.code != 0 {
 		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
@@ -57,7 +66,10 @@ exit 255
 	a4WriteFile(t, bin, home, repo, baseEnv, "MEMORY.md", "# Memory\n\n## Index\n- one\n- two\n")
 	localHead := gitOutput(t, baseEnv, repo, "rev-parse", "HEAD")
 
-	// The parent has the foreground marker; the whitelist snapshot does not.
+	// The background worker starts without the foreground credential marker.
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
 	if result := runMemctl(t, bin, home, foregroundEnv, "end", "--agent", "test", "--sid", "s1"); result.code != 0 {
 		t.Fatalf("end: code=%d stderr=%q", result.code, result.stderr)
 	}
@@ -73,7 +85,11 @@ exit 255
 	if status := gitOutput(t, baseEnv, repo, "status", "--porcelain"); status != "" {
 		t.Fatalf("worktree not clean after a failed background sync: %q", status)
 	}
-	// The lock must be free, so a foreground operation can run.
+	// The lock must be free, so a foreground operation can run. The foreground
+	// credential marker is restored for that run.
+	if err := os.WriteFile(marker, []byte("foreground\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if result := runMemctl(t, bin, home, foregroundEnv, "sync", "--wait"); result.code != 0 {
 		t.Fatalf("foreground recovery sync: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
 	}
@@ -92,7 +108,7 @@ func TestA5KilledParentKeepsLockWithGitCoversL01(t *testing.T) {
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
 
-	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(""))
 	sshURL := "ssh://git@example.invalid" + url
 	env := a4Env(home, repo, "GIT_SSH_COMMAND="+proxy)
 	if result := runMemctl(t, bin, home, env, "init", sshURL, "--confirm-private"); result.code != 0 {
@@ -162,7 +178,7 @@ func TestA5BackgroundStormKeepsStateCoversL02(t *testing.T) {
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
 
-	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	proxy := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(""))
 	sshURL := "ssh://git@example.invalid" + url
 	env := a4Env(home, repo, "GIT_SSH_COMMAND="+proxy)
 	if result := runMemctl(t, bin, home, env, "init", sshURL, "--confirm-private"); result.code != 0 {

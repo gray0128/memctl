@@ -9,30 +9,44 @@ import (
 	"github.com/gray0128/memctl/internal/config"
 )
 
-// TestScrubEnvDropsRepositoryRedirects guards the rule that memctl always
-// binds the repository it was configured with, never a redirected one.
-func TestScrubEnvDropsRepositoryRedirects(t *testing.T) {
+// TestSyncEnvDropsRepositoryRedirectsAndUnknownVariables guards the single
+// credential/network whitelist: repository redirects, process-redirection
+// variables and host secrets never reach a Git child, while the documented
+// credential and identity sources are kept.
+func TestSyncEnvDropsRepositoryRedirectsAndUnknownVariables(t *testing.T) {
 	env := []string{
 		"PATH=/usr/bin",
 		"HOME=/tmp/home",
+		"SSH_AUTH_SOCK=/tmp/agent.sock",
+		"GIT_AUTHOR_NAME=Memctl Test",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=credential.helper",
 		"GIT_DIR=/tmp/other/.git",
 		"GIT_WORK_TREE=/tmp/other",
 		"GIT_INDEX_FILE=/tmp/other/index",
 		"GIT_OBJECT_DIRECTORY=/tmp/other/objects",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES=/tmp/other/alt",
-		"GIT_COMMON_DIR=/tmp/other/common",
+		"GIT_EXEC_PATH=/tmp/other/libexec",
+		"GIT_EXTERNAL_DIFF=/tmp/other/diff",
+		"HOST_API_TOKEN=secret",
 	}
 
-	kept := scrubEnv(env)
+	kept := SyncEnv(env)
 	joined := strings.Join(kept, "\n")
-	for _, dropped := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_OBJECT_DIRECTORY="} {
+	for _, dropped := range []string{
+		"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_OBJECT_DIRECTORY=",
+		"GIT_EXEC_PATH=", "GIT_EXTERNAL_DIFF=", "HOST_API_TOKEN=",
+	} {
 		if strings.Contains(joined, dropped) {
-			t.Fatalf("scrubEnv kept %s: %v", dropped, kept)
+			t.Fatalf("SyncEnv kept %s: %v", dropped, kept)
 		}
 	}
-	for _, keptEntry := range []string{"PATH=/usr/bin", "HOME=/tmp/home"} {
+	for _, keptEntry := range []string{
+		"PATH=/usr/bin", "HOME=/tmp/home", "SSH_AUTH_SOCK=/tmp/agent.sock",
+		"GIT_AUTHOR_NAME=Memctl Test", "GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=credential.helper",
+	} {
 		if !strings.Contains(joined, keptEntry) {
-			t.Fatalf("scrubEnv dropped %s: %v", keptEntry, kept)
+			t.Fatalf("SyncEnv dropped %s: %v", keptEntry, kept)
 		}
 	}
 }

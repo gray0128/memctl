@@ -8,7 +8,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// tryFlock takes a non-blocking exclusive lock on the file handle.
+// tryFlock takes a non-blocking exclusive lock on the file handle. The lock is
+// released by closing the handle; see Lock.Release.
 func tryFlock(file *os.File) (bool, error) {
 	overlapped := new(windows.Overlapped)
 	err := windows.LockFileEx(windows.Handle(file.Fd()),
@@ -21,9 +22,4 @@ func tryFlock(file *os.File) (bool, error) {
 	default:
 		return false, err
 	}
-}
-
-func unlockFile(file *os.File) error {
-	overlapped := new(windows.Overlapped)
-	return windows.UnlockFileEx(windows.Handle(file.Fd()), 0, 1, 0, overlapped)
 }

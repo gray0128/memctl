@@ -24,15 +24,18 @@ import (
 // the foreground and the L01 foreground process cleanup. G08.2 (background
 // derivation) belongs to A-5.
 
-// sshProxyStub forwards a fake SSH invocation to the local Git transport so a
-// real push/clone can run without a network or a real SSH server.
-const sshProxyBody = `host=$1
-shift
-if [ -n "$MEMCTL_STUB_LOG" ]; then
-  echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$MEMCTL_STUB_LOG"
-fi
-exec sh -c "$*"
-`
+// sshProxyBody forwards a fake SSH invocation to the local Git transport so a
+// real push/clone can run without a network or a real SSH server. When logPath
+// is non-empty the inherited SSH_AUTH_SOCK is recorded there. The path is
+// embedded in the script because the Git child environment is restricted to the
+// documented credential whitelist and cannot carry an arbitrary test variable.
+func sshProxyBody(logPath string) string {
+	body := "host=$1\nshift\n"
+	if logPath != "" {
+		body += "echo \"SSH_AUTH_SOCK=$SSH_AUTH_SOCK\" >> \"" + logPath + "\"\n"
+	}
+	return body + "exec sh -c \"$*\"\n"
+}
 
 // TestA4SSHAgentForegroundCoversG08_1 covers the explicit foreground path with
 // an available agent: the sync succeeds, the agent socket reaches the child and
@@ -44,9 +47,9 @@ func TestA4SSHAgentForegroundCoversG08_1(t *testing.T) {
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
 	log := filepath.Join(root, "ssh.log")
-	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(log))
 	sshURL := "ssh://git@example.invalid" + url
-	env := a4Env(home, repo, "GIT_SSH_COMMAND="+stub, "SSH_AUTH_SOCK=/tmp/memctl-test-agent.sock", "MEMCTL_STUB_LOG="+log)
+	env := a4Env(home, repo, "GIT_SSH_COMMAND="+stub, "SSH_AUTH_SOCK=/tmp/memctl-test-agent.sock")
 
 	if result := runMemctl(t, bin, home, env, "init", sshURL, "--confirm-private"); result.code != 0 {
 		t.Fatalf("init over ssh: code=%d stderr=%q", result.code, result.stderr)
@@ -81,7 +84,7 @@ func TestA4AskpassSuppressedCoversG08_4(t *testing.T) {
 	url := newBareRemote(t, root, "memory.git")
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
-	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(""))
 	marker := filepath.Join(root, "askpass-called")
 	askpass := writeStub(t, root, "askpass.sh", "touch "+marker+"\necho secret\n")
 	sshURL := "ssh://git@example.invalid" + url
@@ -114,7 +117,7 @@ func TestA4CredentialTimeoutCleansUpCoversG08_5AndL01(t *testing.T) {
 	url := newBareRemote(t, root, "memory.git")
 	home := a4Home(t, root, "home")
 	repo := filepath.Join(home, "memory")
-	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody)
+	stub := writeStub(t, root, "ssh-proxy.sh", sshProxyBody(""))
 	sshURL := "ssh://git@example.invalid" + url
 	if result := runMemctl(t, bin, home, a4Env(home, repo, "GIT_SSH_COMMAND="+stub), "init", sshURL, "--confirm-private"); result.code != 0 {
 		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
@@ -140,7 +143,11 @@ func TestA4CredentialTimeoutCleansUpCoversG08_5AndL01(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// The remote budget must cover several Git process starts before fetch
+	// reaches the hanging transport stub. Under a parallel `go test ./...` run a
+	// 2 second budget could expire before the stub recorded its pid, so the
+	// budget here is deliberately larger than the product default used in tests.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	result, err := app.New(cfg).SyncWait(ctx, false)
 	if err == nil || !strings.Contains(err.Error(), "TIMEOUT") {

@@ -47,6 +47,7 @@ func (a *App) RecoverStatus(ctx context.Context) (RecoverStatus, error) {
 		return RecoverStatus{}, err
 	}
 	defer session.Close()
+	ctx = session.ctx
 
 	pending, err := session.store.Pending()
 	if err != nil {
@@ -74,6 +75,7 @@ func (a *App) RecoverRollback(ctx context.Context) (RecoverStatus, error) {
 		return RecoverStatus{}, err
 	}
 	defer session.Close()
+	ctx = session.ctx
 
 	pending, err := session.store.Pending()
 	if err != nil {

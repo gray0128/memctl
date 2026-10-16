@@ -103,11 +103,12 @@ func runGitRaw(ctx context.Context, dir string, opts Options, args ...string) (s
 	}
 }
 
-// childEnv builds the environment of one Git child: repository redirection
-// variables are always removed, and non-interactive callers additionally have
-// their prompting fallbacks suppressed.
+// childEnv builds the environment of one Git child from the single credential
+// and network whitelist in env.go: repository redirection variables and every
+// other caller variable are excluded, and non-interactive callers additionally
+// have their prompting fallbacks suppressed.
 func childEnv(opts Options) []string {
-	env := scrubEnv(os.Environ())
+	env := SyncEnv(os.Environ())
 	if opts.NonInteractive && !opts.Interactive {
 		env = suppressPrompts(env)
 	}

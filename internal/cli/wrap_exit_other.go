@@ -4,6 +4,7 @@ package cli
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 )
 
@@ -18,4 +19,10 @@ func wrappedExitCode(err error) (int, bool) {
 		return 0, false
 	}
 	return exitErr.ExitCode(), true
+}
+
+// forwardSignals has no portable equivalent on this platform, so the wrapper
+// keeps the documented stdio and exit-code behavior without signal relay.
+func forwardSignals(process *os.Process) func() {
+	return func() {}
 }

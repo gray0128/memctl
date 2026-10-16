@@ -99,12 +99,13 @@ func (a *App) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 	if err := ensureOutsideRepositories(repoPath); err != nil {
 		return InitResult{}, err
 	}
+	createdDir := errors.Is(statErr, fs.ErrNotExist)
 	if err := os.MkdirAll(repoPath, 0o700); err != nil {
 		return InitResult{}, memerr.Wrap(memerr.IOFailed, err, "cannot create %s", repoPath)
 	}
 
 	if opts.RemoteURL != "" {
-		return a.initWithNewRemote(ctx, repoPath, opts)
+		return a.initWithNewRemote(ctx, repoPath, createdDir, opts)
 	}
 
 	if err := git.Init(ctx, repoPath); err != nil {
@@ -119,18 +120,17 @@ func (a *App) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 	return result, nil
 }
 
-// ReadFile reads one managed text file and returns its revision baseline.
+// ReadFile reads one managed text file and returns its revision baseline. It
+// holds the repository lock without waiting and refuses to read while a
+// transaction, a conflict or a Git intermediate state is active, so the
+// returned content is never a transaction-intermediate tree.
 func (a *App) ReadFile(ctx context.Context, relPath string) (vault.FileRead, error) {
-	repoPath, err := a.requireRepo(ctx)
+	session, err := a.beginRead(ctx)
 	if err != nil {
 		return vault.FileRead{}, err
 	}
-	root, err := vault.OpenRoot(repoPath)
-	if err != nil {
-		return vault.FileRead{}, err
-	}
-	defer root.Close()
-	return root.ReadFile(relPath)
+	defer session.Close()
+	return session.root.ReadFile(relPath)
 }
 
 // initExisting handles a non-empty target directory: an existing memory

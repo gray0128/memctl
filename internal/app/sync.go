@@ -172,7 +172,7 @@ func (a *App) beginSync(ctx context.Context, background bool) (*writeSession, er
 		return nil, memerr.New(memerr.RecoveryRequired,
 			"transaction %s is unfinished; run `memctl recover --status`", pending[0].ID)
 	}
-	status, err := git.StatusPorcelain(ctx, session.repoPath)
+	status, err := git.StatusPorcelain(session.ctx, session.repoPath)
 	if err != nil {
 		session.Close()
 		return nil, err
@@ -212,6 +212,8 @@ func (a *App) persistSyncSummary(session *writeSession, summary SyncResult, succ
 		return
 	}
 	record := state.SyncSummary{
+		RepoID:      summary.RepoID,
+		LocalState:  summary.LocalState,
 		RemoteState: summary.RemoteState,
 		ReasonCode:  summary.ReasonCode,
 		Branch:      summary.Branch,

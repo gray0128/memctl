@@ -10,10 +10,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/lock"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/state"
+	"github.com/gray0128/memctl/internal/syncer"
 	"github.com/gray0128/memctl/internal/vault"
 )
 
@@ -101,6 +103,9 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		return MutationResult{}, err
 	}
 	defer session.Close()
+	// Every Git child of this session inherits the lock descriptor, so a
+	// killed parent cannot leave Git writing after the lock is released.
+	ctx = session.ctx
 
 	// A normal transaction requires a clean baseline so that it never stages
 	// content the caller did not plan. External edits are captured explicitly.
@@ -219,8 +224,9 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 		Revision:      revision,
 		Commit:        commit,
 		ChangedFiles:  paths,
-		SyncState:     "local_only",
+		SyncState:     session.remoteStateAfterCommit(ctx),
 	}
+	a.persistLocalCommit(session, result)
 	// Release the lock before triggering background sync so the worker can
 	// acquire it. The trigger is best-effort and does not change the result.
 	session.Close()
@@ -237,6 +243,7 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 		return MutationResult{}, err
 	}
 	defer session.Close()
+	ctx = session.ctx
 
 	if err := git.RequireIdentity(ctx, session.repoPath); err != nil {
 		return MutationResult{}, err
@@ -251,7 +258,7 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 		return MutationResult{}, err
 	}
 	if len(paths) == 0 {
-		return MutationResult{Revision: revision, SyncState: "local_only"}, nil
+		return MutationResult{Revision: revision, SyncState: syncer.StateLocalOnly}, nil
 	}
 	if len(paths) > MaxMutationFiles {
 		return MutationResult{}, memerr.New(memerr.LimitExceeded,
@@ -311,13 +318,15 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 	if err != nil {
 		return MutationResult{TransactionID: txID, Commit: commit}, err
 	}
-	return MutationResult{
+	result := MutationResult{
 		TransactionID: txID,
 		Revision:      revision,
 		Commit:        commit,
 		ChangedFiles:  paths,
-		SyncState:     "local_only",
-	}, nil
+		SyncState:     session.remoteStateAfterCommit(ctx),
+	}
+	a.persistLocalCommit(session, result)
+	return result, nil
 }
 
 // plannedChange is one validated, fully-resolved path change.
@@ -499,7 +508,22 @@ func (s *writeSession) restoreSelected(ctx context.Context, record state.Transac
 // beginWrite acquires the repository lock and refuses to start when Git is in
 // an intermediate state or an unfinished transaction still needs recovery.
 func (a *App) beginWrite(ctx context.Context) (*writeSession, error) {
-	session, err := a.beginLocked(ctx, true, false, false)
+	return a.beginProtected(ctx, true, false)
+}
+
+// beginRead takes the repository lock without waiting and refuses to read while
+// a managed transaction, an awaiting conflict or an active Git intermediate
+// state makes the on-disk content an inconsistent read. See
+// docs/03-workflows-and-dataflows.md section 2.1: a CLI read reports busy
+// instead of returning transaction-intermediate content. The entry file is not
+// required here so an unfinished transaction that removed it is still reported
+// as recovery, not as a missing repository.
+func (a *App) beginRead(ctx context.Context) (*writeSession, error) {
+	return a.beginProtected(ctx, false, true)
+}
+
+func (a *App) beginProtected(ctx context.Context, requireEntry, nonBlocking bool) (*writeSession, error) {
+	session, err := a.beginLocked(ctx, requireEntry, false, nonBlocking)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +576,7 @@ func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState 
 		}
 		if !ok {
 			return nil, memerr.New(memerr.Busy,
-				"repository lock %s is held by another process; background sync exits instead of queuing", filepath.Join(gitDir, lock.FileName))
+				"repository lock %s is held by another process; retry after it finishes", filepath.Join(gitDir, lock.FileName))
 		}
 		held = acquired
 	} else {
@@ -575,7 +599,7 @@ func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState 
 	}
 	session.root = root
 
-	repoState, err := git.Inspect(ctx, repoPath)
+	repoState, err := git.Inspect(session.ctx, repoPath)
 	if err != nil {
 		session.Close()
 		return nil, err
@@ -612,6 +636,45 @@ func planPaths(plans []plannedChange) []string {
 		paths = append(paths, plan.path)
 	}
 	return paths
+}
+
+// remoteStateAfterCommit reports the remote state of a fresh local commit: a
+// repository with a remote stays pending until a push succeeds, while a
+// local-only repository never claims a pending remote. See the
+// `Synced --> Pending: 新本地提交` transition in
+// docs/03-workflows-and-dataflows.md section 4.2.
+func (s *writeSession) remoteStateAfterCommit(ctx context.Context) string {
+	_, hasRemote, err := git.DefaultRemote(ctx, s.repoPath)
+	if err != nil || !hasRemote {
+		return syncer.StateLocalOnly
+	}
+	return syncer.StatePending
+}
+
+// persistLocalCommit marks the cached sync summary pending after a local commit
+// so a later read of the state does not report a stale synced state. Counts are
+// only refreshed when an upstream is already configured.
+func (a *App) persistLocalCommit(session *writeSession, result MutationResult) {
+	if result.SyncState != syncer.StatePending {
+		return
+	}
+	repoID := config.RepoID(session.repoPath)
+	cache := state.OpenCache(a.cfg.StateDir, repoID)
+	record, _, err := cache.LoadSync()
+	if err != nil {
+		return
+	}
+	record.RepoID = repoID
+	record.RemoteState = syncer.StatePending
+	record.ReasonCode = ""
+	record.Head = result.Commit
+	record.LocalState = "clean"
+	if upstream, ok, err := git.UpstreamRef(session.ctx, session.repoPath); err == nil && ok {
+		if ahead, behind, err := git.AheadBehind(session.ctx, session.repoPath, upstream); err == nil {
+			record.Ahead, record.Behind = ahead, behind
+		}
+	}
+	_ = cache.SaveSync(record)
 }
 
 func commitMessage(operation, agent, sessionID, txID string) string {

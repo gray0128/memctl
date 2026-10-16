@@ -3,6 +3,7 @@ package syncer
 import (
 	"os"
 
+	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
 )
 
@@ -33,7 +34,7 @@ func Spawn(req SpawnRequest) error {
 			return memerr.Wrap(memerr.IOFailed, err, "cannot locate the memctl executable for background sync")
 		}
 	}
-	env := SyncEnv(req.Env)
+	env := git.SyncEnv(req.Env)
 	env = append(env,
 		"AGENT_MEMORY_DIR="+req.RepoPath,
 		"AGENT_MEMORY_STATE="+req.StateDir,
