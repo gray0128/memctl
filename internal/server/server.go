@@ -18,6 +18,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/memerr"
+	"github.com/gray0128/memctl/internal/watcher"
 )
 
 // DefaultAddr is the documented UI address. The service only ever binds the
@@ -50,6 +51,12 @@ type Options struct {
 	Token string
 	// MaxRequestBytes bounds one request body. Zero uses DefaultMaxRequestBytes.
 	MaxRequestBytes int64
+	// Events is the invalidation fan-out used by GET /api/v1/events. A nil
+	// value creates a bus with DefaultSSEQueue. Tests inject a smaller queue.
+	Events *watcher.Bus
+	// SSEHeartbeat is the comment interval of the SSE stream. Zero uses
+	// DefaultSSEHeartbeat. Tests use a short interval.
+	SSEHeartbeat time.Duration
 }
 
 // Server holds the routes, session token and address policy.
@@ -61,6 +68,8 @@ type Server struct {
 	maxRequestBytes int64
 	allowedHosts    map[string]struct{}
 	allowedOrigins  map[string]struct{}
+	events          *watcher.Bus
+	sseHeartbeat    time.Duration
 	mux             *http.ServeMux
 }
 
@@ -88,6 +97,14 @@ func New(opts Options) (*Server, error) {
 	if maxRequestBytes <= 0 {
 		maxRequestBytes = DefaultMaxRequestBytes
 	}
+	events := opts.Events
+	if events == nil {
+		events = watcher.NewBus(DefaultSSEQueue)
+	}
+	sseHeartbeat := opts.SSEHeartbeat
+	if sseHeartbeat <= 0 {
+		sseHeartbeat = DefaultSSEHeartbeat
+	}
 
 	server := &Server{
 		app:             opts.App,
@@ -97,12 +114,24 @@ func New(opts Options) (*Server, error) {
 		maxRequestBytes: maxRequestBytes,
 		allowedHosts:    map[string]struct{}{},
 		allowedOrigins:  map[string]struct{}{},
+		events:          events,
+		sseHeartbeat:    sseHeartbeat,
 	}
 	for _, name := range []string{"127.0.0.1", "localhost"} {
 		server.allowedHosts[net.JoinHostPort(name, port)] = struct{}{}
 		server.allowedOrigins["http://"+net.JoinHostPort(name, port)] = struct{}{}
 	}
 	server.registerRoutes()
+	// A committed local write invalidates the client view immediately; the
+	// file watcher only covers external edits. See
+	// docs/02-domain-models-and-contracts.md section 5.
+	opts.App.SetMutationObserver(func(event app.MutationEvent) {
+		server.events.Publish(watcher.Invalidation{
+			Reason:       watcher.ReasonVaultUpdated,
+			ChangedFiles: event.ChangedFiles,
+			Revision:     event.Revision,
+		})
+	})
 	return server, nil
 }
 
@@ -154,6 +183,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleAudit)
 	s.mux.HandleFunc("GET /api/v1/doctor", s.handleDoctor)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)
+	s.mux.HandleFunc("GET /api/v1/events", s.handleEvents)
 }
 
 // security applies the HTTP security rules to every request in the documented

@@ -37,6 +37,21 @@ type InitResult struct {
 	RemoteState string
 }
 
+// MutationEvent describes a managed transaction that has committed locally.
+// It is an invalidation hint for the UI: the observer re-reads the snapshot
+// instead of trusting the payload. See docs/02-domain-models-and-contracts.md
+// section 5.
+type MutationEvent struct {
+	TransactionID string
+	Revision      string
+	Commit        string
+	ChangedFiles  []string
+}
+
+// MutationObserver receives one event after a managed transaction commits
+// locally. It must not block; the HTTP server publishes it to a bounded queue.
+type MutationObserver func(MutationEvent)
+
 // App binds the process to one repository and one state root.
 type App struct {
 	cfg config.Config
@@ -47,6 +62,9 @@ type App struct {
 	// managed write. It is off unless EnableBackgroundSync is called so unit
 	// tests never re-execute the test binary.
 	backgroundSync bool
+	// mutationObserver is set by the UI server so a committed local write
+	// invalidates the client view without waiting for the file watcher.
+	mutationObserver MutationObserver
 }
 
 // New builds the application service for the given configuration.
@@ -55,6 +73,25 @@ func New(cfg config.Config) *App { return &App{cfg: cfg} }
 // EnableBackgroundSync turns on best-effort background synchronization after a
 // managed write. The CLI enables it; direct library callers opt in explicitly.
 func (a *App) EnableBackgroundSync() { a.backgroundSync = true }
+
+// SetMutationObserver registers the single observer notified after a managed
+// transaction commits locally. The UI server owns this slot; passing nil
+// clears it. The observer must not block or mutate the repository.
+func (a *App) SetMutationObserver(observer MutationObserver) { a.mutationObserver = observer }
+
+// notifyMutation emits one invalidation hint for a committed local write. A
+// failed or rolled-back transaction is never reported.
+func (a *App) notifyMutation(result MutationResult) {
+	if a == nil || a.mutationObserver == nil || result.Commit == "" {
+		return
+	}
+	a.mutationObserver(MutationEvent{
+		TransactionID: result.TransactionID,
+		Revision:      result.Revision,
+		Commit:        result.Commit,
+		ChangedFiles:  append([]string(nil), result.ChangedFiles...),
+	})
+}
 
 // RepoPath returns the configured repository path.
 func (a *App) RepoPath() string { return a.cfg.RepoPath }

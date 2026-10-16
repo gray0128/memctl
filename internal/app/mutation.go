@@ -231,6 +231,8 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	// acquire it. The trigger is best-effort and does not change the result.
 	session.Close()
 	a.triggerBackgroundSync()
+	// The UI invalidates its snapshot only after the local commit exists.
+	a.notifyMutation(result)
 	return result, nil
 }
 
@@ -326,6 +328,7 @@ func (a *App) Capture(ctx context.Context, agent, sessionID string) (MutationRes
 		SyncState:     session.remoteStateAfterCommit(ctx),
 	}
 	a.persistLocalCommit(session, result)
+	a.notifyMutation(result)
 	return result, nil
 }
 
