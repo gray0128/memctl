@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gray0128/memctl/internal/memerr"
@@ -51,6 +52,7 @@ type FileRead struct {
 	// Mode is the filesystem permission bits, used to preserve the
 	// executable bit when the same file is rewritten.
 	Mode       fs.FileMode
+	ModTime    time.Time
 	Editable   bool
 	RawContent string
 }
@@ -129,6 +131,7 @@ func (r *Root) ReadFile(rel string) (FileRead, error) {
 		Kind:         ClassifyKind(clean),
 		SizeBytes:    int64(len(content)),
 		Mode:         info.Mode().Perm(),
+		ModTime:      info.ModTime(),
 		Editable:     true,
 		RawContent:   string(content),
 	}, nil
@@ -144,19 +147,31 @@ func RepoRevision(root *Root, repoPath, head string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.New()
-	writeField(hash, []byte(head))
-	writeField(hash, []byte(repoPath))
+	files := make([]FileMeta, 0, len(paths))
 	for _, rel := range paths {
 		meta, err := root.Stat(rel)
 		if err != nil {
 			return "", err
 		}
-		writeField(hash, []byte(rel))
+		files = append(files, meta)
+	}
+	return RepoRevisionFrom(head, repoPath, files), nil
+}
+
+// RepoRevisionFrom computes the same deterministic digest as RepoRevision from
+// already-collected per-file metadata. Callers that scanned every managed file
+// (for example the read-only snapshot) reuse it instead of reading each file a
+// second time.
+func RepoRevisionFrom(head, repoPath string, files []FileMeta) string {
+	hash := sha256.New()
+	writeField(hash, []byte(head))
+	writeField(hash, []byte(repoPath))
+	for _, meta := range files {
+		writeField(hash, []byte(meta.RelPath))
 		writeField(hash, []byte(meta.Mode))
 		writeField(hash, []byte(meta.Revision))
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 // FileRevision is the full SHA-256 of the Git file mode and the raw bytes,

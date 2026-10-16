@@ -348,14 +348,26 @@ func hasMetadata(entry vault.MemoryEntry, key string) bool {
 	return false
 }
 
-func suspiciousPhrase(text string) (string, bool) {
+// SuspiciousPhrases returns every conservative prompt-injection phrase found in
+// text. It is exported so the audit view reports the same clues as doctor
+// without duplicating the pattern list.
+func SuspiciousPhrases(text string) []string {
 	lower := strings.ToLower(text)
+	var found []string
 	for _, phrase := range suspiciousPatterns {
 		if strings.Contains(lower, phrase) {
-			return phrase, true
+			found = append(found, phrase)
 		}
 	}
-	return "", false
+	return found
+}
+
+func suspiciousPhrase(text string) (string, bool) {
+	found := SuspiciousPhrases(text)
+	if len(found) == 0 {
+		return "", false
+	}
+	return found[0], true
 }
 
 // checkGitState reports every intermediate Git state. The lock-holder PID is

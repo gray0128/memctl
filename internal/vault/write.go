@@ -7,6 +7,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gray0128/memctl/internal/memerr"
 )
@@ -28,6 +29,7 @@ type FileMeta struct {
 	Size     int64
 	Mode     string // Git file mode, "100644" or "100755"
 	FsMode   fs.FileMode
+	ModTime  time.Time
 	Revision string
 	// Links is the hard-link count of an existing regular file. A value
 	// greater than 1 means another name shares the content.
@@ -62,6 +64,7 @@ func (r *Root) Stat(rel string) (FileMeta, error) {
 		Size:    info.Size(),
 		Mode:    GitMode(info.Mode()),
 		FsMode:  info.Mode().Perm(),
+		ModTime: info.ModTime(),
 		Links:   hardLinkCount(info),
 	}
 	content, err := r.readBounded(clean, info.Size())
