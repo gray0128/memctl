@@ -2,6 +2,16 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## T008：记忆格式与链接解析
+
+- 目标与范围：完成 A-2 的解析部分，前置为 T003。新增 `internal/vault/parse.go` 与 `internal/vault/link.go`，实现行级无损解析（顶层 `- ` 条目、行尾保序元数据、同一行多个 `source`、未知键、根相对 `[[path]]`、代码围栏与行内代码排除）、`entryId` 与 `WikiLink` 标识，以及同名歧义、死链和非法路径诊断；不实现受管写入（T007）与链接重命名。
+- 契约：[修订标识与格式解析](../02-domain-models-and-contracts.md#1-修订标识与格式解析)、[领域对象](../02-domain-models-and-contracts.md#2-领域对象)。
+- 验证日期与环境：2026-10-16，macOS arm64（26.6.2），Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 核验结果：通过。`go test ./internal/vault/` 的 `TestParseFileCoversF01`、`TestParseFileLosslessLineEndings`、`TestParseFileAndResolveLinksCoversF02`、`TestResolveLinksDistinguishesEntryIDs` 全部通过，覆盖 `F01`（上游规范样例、无元数据条目、重复与多个 `source`、未知键、非法日期、代码围栏与行内代码）与 `F02`（根相对链接、`.md` 省略、`agent://` 来源解析、同名歧义不猜测、死链与非法路径诊断、Markdown/SQL/脚本/二进制分类）。`Raw()` 对空内容、无结尾换行、CRLF 与混合样例逐字节等于输入；`Root.Parse` 前后文件字节不变，确认解析不写入仓库。`go vet ./...`、`go test ./...` 全部通过，回归 T006 的读取测试。
+- 未运行：未实现或验证链接重命名的字节区间定点改写、图谱孤立判定与 HTTP/CLI 暴露；这些属于 T007、C-1 与后续阶段。
+- 遗留限制：条目仅识别行首 `- `，`*`/`+`、缩进与 Setext 标题按未知格式保留；同名歧义只覆盖扩展名省略（`[[name]]` 匹配 `name`、`name.md`、`name.markdown`），不做跨目录按文件名搜索。
+- 下一步：当时剩余已登记待办为 `T007`（A-3 受管写入与恢复）、`T002`（凭据契约）、`T011`（引号统一），其后依次推进 `A-4` 至 `D-2`；已完成，由 T007 接续。
+
 ## T016：跨会话自动接续入口（Orca 宿主）
 
 - 目标与范围：为 [接续的执行机制](../06-development-loop.md#61-接续的执行机制) 建立可执行的宿主入口，把四要素交接与接续前置条件变成拒绝式检查。新增 `scripts/next-round.sh`，在 `06` 第 6 节补充 6.1 接续的执行机制，在 `AGENTS.md` 补充 Orca 宿主入口说明；不改变第 6 节的所有权模型与停止条件。

@@ -7,11 +7,12 @@
 - 已完成阶段 A-1（`T003`）：建立 `go.mod`、`Makefile`、`cmd/memctl` 与 `internal/cli` 最小命令入口，支持 `version/help`、用法错误返回（退出码 `2`）及未实现子命令显式拒绝（退出码 `1`），通过 `R03` 验收（macOS arm64，Go 1.27.1）。
 - 已完成阶段 A-2 的初始化与读取部分（`T006`）：`init` 仅本地创建或复用记忆仓库，`read` 输出原文或 `{filePath, fileRevision, rawContent}`，读取经根句柄并有界；通过 `G01`、`G05` 的本地初始化场景、`F04`、`P01`、`P02` 的读取场景和 `P03` 的读取限额，`R03` 回归通过。
 - 已完成阶段 A-2 的解析部分（`T008`）：`internal/vault` 提供行级无损解析（顶层 `- ` 条目、行尾保序元数据、多个 `source`、未知键、根相对 `[[path]]`、代码围栏与行内代码排除）、`entryId` 与链接标识，以及同名歧义、死链和非法路径诊断；通过 `F01`、`F02` 的解析场景，未编辑内容逐字节保留且解析不写入仓库。
+- 已完成阶段 A-3（`T007`）：新增 `internal/lock`、`internal/state`、`internal/vault/write.go` 与 `internal/app` 事务服务，提供仓库排他锁、锁内 Git 状态与基线校验、多文件事务与恢复记录、`write`、`sync --capture` 与 `recover`；通过 `W01`、`W03`–`W07`、`G05`–`G07` 的本地保护场景、`P01`–`P03` 与 `L01` 的本地写入场景，回归 A-1、A-2。
 - 已完成 `T015`：建立 `STATUS.md` 热台账与 `docs/validation/` 按阶段冷归档的分离机制，将 `T001`–`T014` 完整历史验收记录移入 [阶段 A 归档](./validation/stage-a.md)。
 - 已完成 `T014`：更新 [开发循环规范](./06-development-loop.md)、[验收与交付](./05-validation-and-delivery.md#1-交付顺序) 与 [协作入口](../AGENTS.md)，将开发循环调整为「每个会话完成一轮任务、默认由主会话负责全流程并按需委派子智能体、验证通过后更新台账并提交推送、存在可执行任务时创建新会话自动接续」，并在 `05` 补齐阶段 A–D（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）完整计划。
 - 已完成 `T012`–`T013`：引入 `codegraph` 与 `zvec-grep` 代码检索工具并忽略 `/.codegraph/`、`/.zvec-grep/`、`/.commandcode/` 本地工具状态。
 - 已完成 `T016`：在 [开发循环规范](./06-development-loop.md#61-接续的执行机制) 第 6 节补充接续执行机制，并提供 Orca 宿主启动入口 `scripts/next-round.sh`，校验四要素交接与「已提交推送」前置条件后启动新会话。
-- 尚未实现受管写入与恢复（A-3，`T007`）、远端同步（A-4）、Hook（A-5）、前端工程或 Web UI；05 中其余产品验收场景仍待实现与验证。
+- 尚未实现远端同步（A-4）、Hook（A-5）、前端工程或 Web UI；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
 
@@ -23,8 +24,8 @@
 | T004 | 已完成 | 在 AGENTS 中明确文档工作必须使用 `tech-doc-style-chinese`；[归档证据](./validation/stage-a.md#t004文档-skill-使用要求) |
 | T005 | 已完成 | 补充阶段 A 的实施顺序、依赖、交付物和近期任务验收条件；[归档证据](./validation/stage-a.md#t005阶段-a-开发计划) |
 | T006 | 已完成 | 对应 A-2：本地初始化与读取；依赖 T003；[归档证据](./validation/stage-a.md#t006本地初始化与安全读取) |
-| T007 | 待开始 | 对应 A-3：受管写入与恢复；依赖 T006 |
-| T008 | 已完成 | 对应 A-2：记忆格式与链接解析；依赖 T003；证据见下文 |
+| T007 | 已完成 | 对应 A-3：受管写入与恢复；依赖 T006；证据见下文 |
+| T008 | 已完成 | 对应 A-2：记忆格式与链接解析；依赖 T003；[归档证据](./validation/stage-a.md#t008记忆格式与链接解析) |
 | T009 | 已完成 | 在 `06` 规定每轮验证由独立子智能体执行（已由 T014 替代）；[归档证据](./validation/stage-a.md#t009验证者规则) |
 | T010 | 已完成 | 更正台账中关于 `tech-doc-style-chinese` 可用性的错误表述，并登记 T011；[归档证据](./validation/stage-a.md#t010更正技能可用性记录) |
 | T011 | 待开始 | 统一 `docs/` 与根 `README.md` 的引号用法；依赖已可用的 `tech-doc-style-chinese` |
@@ -34,28 +35,31 @@
 | T015 | 已完成 | 建立台账冷热分离与按阶段归档规则，归档 `T001`–`T014` 历史记录；[归档证据](./validation/stage-a.md#t015台账冷热分离与阶段归档) |
 | T016 | 已完成 | 为 `06` 第 6 节的接续提供 Orca 宿主启动入口 `scripts/next-round.sh` 与四要素校验；[归档证据](./validation/stage-a.md#t016跨会话自动接续入口orca-宿主) |
 
-任务 ID 不代表执行顺序。近期已登记任务建议依次推进 `T007`，`T002` 在 `A-4` 开始前完成，`T011` 在确定引号基线后执行。后续阶段步骤按 `A-4` → `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系依次登记并推进。
+任务 ID 不代表执行顺序。近期已登记任务建议先完成 `T002`（在 `A-4` 开始前），`T011` 在确定引号基线后执行。后续阶段步骤按 `A-4` → `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系依次登记并推进。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），两者范围不重叠。
 
-## T008：记忆格式与链接解析
+## T007：受管写入与恢复
 
-- 目标与范围：完成 A-2 的解析部分，前置为 T003。新增 `internal/vault/parse.go` 与 `internal/vault/link.go`，实现行级无损解析（顶层 `- ` 条目、行尾保序元数据、同一行多个 `source`、未知键、根相对 `[[path]]`、代码围栏与行内代码排除）、`entryId` 与 `WikiLink` 标识，以及同名歧义、死链和非法路径诊断；不实现受管写入（T007）与链接重命名。
-- 契约：[修订标识与格式解析](./02-domain-models-and-contracts.md#1-修订标识与格式解析)、[领域对象](./02-domain-models-and-contracts.md#2-领域对象)。
+- 目标与范围：完成 A-3，前置为 T006。新增 `internal/lock`、`internal/state`、`internal/vault/write.go`、`internal/app/mutation.go`、`internal/app/recover.go` 及对应测试，实现仓库排他锁、锁内 Git 状态与基线校验、事务恢复记录、`write`、仅本地的 `sync --capture` 与 `recover`；不实现远端同步、Hook、UI、链接重命名与并发 UI 写入。
+- 契约：[写入模型](./01-architecture-and-modules.md#2-写入模型)、[受管写入事务](./03-workflows-and-dataflows.md#2-受管写入事务)、[修订标识](./02-domain-models-and-contracts.md#1-修订标识与格式解析)、[错误与部分成功](./02-domain-models-and-contracts.md#43-错误与部分成功)。
 - 验证日期与环境：2026-10-16，macOS arm64（26.6.2），Go 1.27.1，Git 2.54.0；执行者为主会话。
-- 核验结果：通过。`go test ./internal/vault/` 的 `TestParseFileCoversF01`、`TestParseFileLosslessLineEndings`、`TestParseFileAndResolveLinksCoversF02`、`TestResolveLinksDistinguishesEntryIDs` 全部通过，覆盖 `F01`（上游规范样例、无元数据条目、重复与多个 `source`、未知键、非法日期、代码围栏与行内代码）与 `F02`（根相对链接、`.md` 省略、`agent://` 来源解析、同名歧义不猜测、死链与非法路径诊断、Markdown/SQL/脚本/二进制分类）。`Raw()` 对空内容、无结尾换行、CRLF 与混合样例逐字节等于输入；`Root.Parse` 前后文件字节不变，确认解析不写入仓库。`go vet ./...`、`go test ./...` 全部通过，回归 T006 的读取测试。
-- 未运行：未实现或验证链接重命名的字节区间定点改写、图谱孤立判定与 HTTP/CLI 暴露；这些属于 T007、C-1 与后续阶段。
-- 遗留限制：条目仅识别行首 `- `，`*`/`+`、缩进与 Setext 标题按未知格式保留；同名歧义只覆盖扩展名省略（`[[name]]` 匹配 `name`、`name.md`、`name.markdown`），不做跨目录按文件名搜索。
-- 下一步：剩余已登记待办为 `T007`（A-3 受管写入与恢复）、`T002`（凭据契约）、`T011`（引号统一），其后依次推进 `A-4` 至 `D-2`；本轮按用户指示在完成后暂停，不发起下一轮会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build`、`make test` 全部通过；`bin/memctl` 在临时 `HOME` 与临时仓库下的 `init`、`read --json`、`write`、`sync --capture`、`recover` 手工闭环成功，本地流程不访问网络。
+- `W01`：`TestApplyPutAndRevisionMismatch` 与 `TestA3WriteCoversW01` 验证首个写入成功、旧 `fileRevision` 写入返回 `REVISION_MISMATCH`、首个写入内容不变且提交数不增加；`TestApplyRejectsStaleBaseRevision` 覆盖旧仓库 `baseRevision`。
+- `W03`：`TestApplyRejectsExternalChanges`、`TestCaptureCommitsExternalEdits` 与 `TestA3WriteCoversW03AndCapture` 验证存在 staged、unstaged 或 untracked 变化时普通写入返回 `EXTERNAL_CHANGES` 且不落盘；`sync --capture` 只提交冻结的变更清单并使工作树干净。
+- `W04`：`TestRecoverRollsBackInterruptedWrite` 在多文件写入第一个文件后注入中断，`recover --rollback` 将全部前镜像与 `HEAD` 恢复一致并删除记录。
+- `W05`：`TestRecoverRecognizesCommittedTransaction` 在提交成功后、完成标记前注入中断，恢复通过 `Memctl-Transaction` 标记识别既有提交，补充状态而不重复提交。
+- `W06`：`TestRecoverRefusesUserEditedFile` 在恢复前手工修改受影响文件，恢复拒绝覆盖该文件、仍恢复受控路径并在 `RECOVERY_REQUIRED` 中列出待人工处理路径。
+- `W07`：`TestApplyHookRejectionRollsBack` 验证 `pre-commit` 拒绝时写入返回 `GIT_FAILED`、前镜像与索引干净且无遗留记录；`TestApplyHookAddingOutOfPlanFileIsReported` 验证钩子夹带计划外文件时报告真实提交与越界路径，恢复识别该提交而不重复提交。
+- `G05`–`G07`（本地部分）：`TestA3WriteRequiresIdentity` 验证缺少 Git 身份时写入在修改文件前返回 `GIT_FAILED` 且不改全局配置；`TestApplyRejectsGitOperations/merge in progress` 与 `/unmerged index without rebase directory` 分别通过操作目录与 `git ls-files --unmerged` 拦截进行中的 merge 和无 rebase 目录的未合并索引，返回 `OPERATION_ACTIVE`。
+- `P01`–`P03`：`TestApplyRejectsLimitsAndBadPaths` 与 `TestA3WriteBoundaries` 验证逃逸路径、`.git`、设备名与反斜杠路径返回 `INVALID_PATH`，库外符号链接与多硬链接目标返回 `UNSUPPORTED` 且不修改库外内容，超过 2 MiB 的单文件与超过 100 个变更返回 `LIMIT_EXCEEDED`。
+- `L01`（本地写入部分）：`TestApplyReportsBusyWhileLockHeld` 验证仓库锁被占用时第二个写入在预算内返回 `BUSY`；`internal/lock` 使用 `gofrs/flock` 在 Git 目录固定文件上取排他锁，释放时不删除锁文件。
+- 回归：A-1 `R03` 与 A-2 的 `init`、`read`、格式解析集成与单元测试全部通过；`write` 从「未实现」改为实现后，`R03` 的占位成功检查改用仍未实现的 `resolve`。
+- 未运行：`W02`（CLI/UI 并发，属 C-1）、真实 `SIGKILL` 与父/子进程生命周期测试（属 A-4/A-5 的 `L01` 完整场景）、远端同步、Hook、UI、Windows/Linux 平台测试。
+- 遗留限制：中断由进程内故障注入模拟，未用真实 `SIGKILL` 验证 OS 锁释放；`capture` 不写恢复记录，中断后重新执行即可；新文件要求父目录已存在；`write` 仅支持单文件，多文件由应用服务测试覆盖；仓库修订对单个文件最多读取 8 MiB。
+- 下一步：剩余已登记待办为 `T002`（凭据契约）与 `T011`（引号统一），其后按 `A-4` → `D-2` 推进；本轮验证通过并提交推送后按 [接续的执行机制](./06-development-loop.md#61-接续的执行机制) 创建下一轮会话。
 
 ## 近期实施任务
-
-### T007：受管写入与恢复
-
-- 目标与依赖：完成 A-3，前置为 T006 完成；形成可验证的本地读写闭环。
-- 交付物：受管写入、仓库锁与版本校验、事务恢复记录、显式本地 capture、recover 和中断测试；多文件事务从应用服务验证，不提前实现 Web UI。
-- 契约：[写入模型](./01-architecture-and-modules.md#2-写入模型)、[事务与恢复](./03-workflows-and-dataflows.md#2-受管写入事务)。
-- 完成检查：A-3 对应场景通过并回归 A-1、A-2；在实际测试平台验证子进程生命周期。此结果不代表 W02 的 UI 并发或任何未测平台已通过。
 
 ### T002：凭据契约
 
