@@ -33,6 +33,22 @@
 
 协议层已在本机手工检查：在临时仓库执行 `printf '{"session_id":"manual-session","prompt":"secret prompt"}' | bin/memctl context --json --stdin --agent manual-agent`，退出码 0，stdout 为单个 `hookSpecificOutput` 对象，`hookEventName=UserPromptSubmit`，`additionalContext` 含仓库路径、来源标签、内嵌指引与 `MEMORY.md`；stdin 中的 `prompt` 未出现在 stdout 或 stderr，stderr 为空。
 
+## T019：Hook 协议、会话身份与宿主性能实测（A-5 子任务 2）
+
+- 目标与范围：完成 A-5 子任务 2，前置为 `T018`。新增 `internal/hookio`（有界 Hook JSON、SID 优先级、envelope 编码）、`internal/state/session.go`（`injected` 与 `syncSucceeded` 分离、14 天清理）、`internal/assets`（内嵌默认指引）、`internal/app/session.go` 与 `internal/cli/hook.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；`wrap` 透传子进程退出码与信号；不实现安装器与前端。
+- 契约：[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[环境变量与会话身份](../04-ui-and-cli-specification.md#2-环境变量与会话身份)、[Hook 输入输出与时限](../04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[会话开始与上下文注入](../03-workflows-and-dataflows.md#3-会话开始与上下文注入)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)。
+- 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；Hook 集成测试使用临时 HOME 与本地临时记忆仓库、`AGENT_MEMORY_BACKGROUND=0`，不访问网络或真实宿主配置。
+- `H01`：`TestA5SessionIDPriorityCoversH01` 覆盖 `--sid`、`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、stdin 的 `session_id`/`sessionId`/`sessionID` 优先级、空值跳过、非字符串返回 `INVALID_ARGUMENT`（退出码 2）与无稳定 SID 时不伪造来源。
+- `H02`：`TestA5ParallelSessionsDoNotCrossCoversH02` 让 alpha/sessA 与 beta/sessB 交替 `tag`/`write`，来源标签与提交元数据不串会话，`tag` 缺少 SID 返回 `NO_SESSION_ID`，未创建共享 last-sid 目录。
+- `H03`：`TestA5OnceSyncRetryCoversH03` 在锁被占用时首轮 `context --once` 仍注入本地正文并记 `sync=busy`，释放锁后同一会话重试同步成功且不重复输出正文；会话记录同时反映 `syncSucceeded` 与 `injected`。
+- `H04`：`TestA5HookOutputContractCoversH04` 校验 `start --json` 的 `SessionStart`、`context --json` 的 `UserPromptSubmit` envelope、纯文本 `start` 输出以及 `pull`/`sync` 的空 stdout，无 Git 输出混入 JSON。
+- `H05`：`TestA5WrapPassesThroughCoversH05` 校验 `wrap` 向子进程导出 SID、agent 与仓库路径，透传退出码 3、信号终止 `128+15=143`，并在前置同步 `BUSY` 时仍返回子进程状态 7。
+- `H06`：`TestA5NoRemoteMissingSIDAndOversizedEntryCoversH06` 在无远端时输出 `sync=local` 与本地正文，无稳定 SID 时每轮注入不去重，入口文件超过 2 MiB 时明确提示改用受管读取而不内联截断。
+- 性能与宿主：本地性能基线与宿主适配状态归档于 [阶段 A 性能与适配记录](#阶段-a-性能与适配记录)；`version` 的 p50 约 5.6ms，未达 `< 5ms` 优化目标；宿主 Hook 未安装，无真实注入验证。
+- 未验证与遗留：Windows/Linux 的 `wrap` 与锁路径未运行；未在真实宿主验证 `additionalContext` 是否被采纳；`T018` 记录已归档至 [T018 归档](#t018后台同步派生与进程生命周期a-5-子任务-1)。
+- 下一步：当时剩余已登记产品待办为 `A-6`（诊断与 CLI 交付，`T020`），后因 Orca 1.4.227 移除 `orca agent launch` 插入 `T021` 修复跨会话接续入口。
+
 ## T018：后台同步派生与进程生命周期（A-5 子任务 1）
 
 - 目标与范围：完成 A-5 子任务 1，前置为 A-4（`T017`）。新增 `internal/syncer/env.go`、`internal/syncer/spawn*.go`，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符、`unix.Flock`/`windows.LockFileEx`），并在 `internal/git`、`internal/app`、`internal/cli` 接入后台派生；实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、凭据白名单快照、锁忙立即退出与进程组/锁生命周期继承；不实现 Hook 会话身份（`T019`）。

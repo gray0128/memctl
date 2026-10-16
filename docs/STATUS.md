@@ -17,6 +17,7 @@
 - 已完成阶段 A-4（`T017`）：新增 `internal/syncer` 与 `internal/git`、`internal/state`、`internal/app`、`internal/cli` 的远端相关实现，提供空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类（`AUTH_FAILED`/`NETWORK_UNAVAILABLE`/`NON_FAST_FORWARD`/`TIMEOUT`/`NO_UPSTREAM`/`CONTENT_CONFLICT`）、非交互凭据抑制与 Git 进程组清理、CLI 多阶段 `resolve` 与不支持冲突类型拒绝；通过 `G02`–`G04`、`G06`、`C01`–`C04`、`L01` 前台 Git 子进程场景与 `G08.1`、`G08.3`–`G08.7`。
 - 已完成阶段 A-5 子任务 1（`T018`）：新增 `internal/syncer` 后台派生与凭据白名单快照，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符），实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、锁忙立即退出与进程组/锁生命周期继承；通过 `G08.2`、`L01` 后台与强杀场景、`L02`。
 - 已完成阶段 A-5 子任务 2（`T019`）：新增 `internal/hookio`、`internal/assets`、`internal/state/session.go` 与 `internal/app/session.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；提供 Hook JSON 有界读取与 SID 优先级解析、`injected` 与 `syncSucceeded` 分离的会话级去重、14 天缓存清理、内嵌默认指引与 envelope 编码，以及 `wrap` 的子进程退出码与信号透传；通过 H01–H06，并归档本机性能基线与宿主适配状态。
+- 已完成 `T021`：适配 Orca CLI 1.4.227 重构 `scripts/next-round.sh`，按 `orca-cli` 完全所有权交接规范改用 `orca terminal create` + `orca terminal wait --for tui-idle` + `orca terminal send --enter --wait-submit 10` 三步流程启动新会话并投递交接提示词，支持 `--terminal <handle> --retry-request <id>`（兼容别名 `--retry-launch`）对同一次提示词投递做幂等重放，并同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
 - 尚未实现前端工程与 Web UI、只读诊断、Dreaming 与正式安装流程；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
@@ -33,36 +34,34 @@
 | T008 | 已完成 | 对应 A-2：记忆格式与链接解析；依赖 T003；[归档证据](./validation/stage-a.md#t008记忆格式与链接解析) |
 | T009 | 已完成 | 在 `06` 规定每轮验证由独立子智能体执行（已由 T014 替代）；[归档证据](./validation/stage-a.md#t009验证者规则) |
 | T010 | 已完成 | 更正台账中关于 `tech-doc-style-chinese` 可用性的错误表述，并登记 T011；[归档证据](./validation/stage-a.md#t010更正技能可用性记录) |
-| T011 | 已完成 | 统一 `docs/` 与根 `README.md` 的引号用法；依赖已可用的 `tech-doc-style-chinese`；证据见下文 |
+| T011 | 已完成 | 统一 `docs/` 与根 `README.md` 的引号用法；依赖已可用的 `tech-doc-style-chinese`；[归档证据](./validation/stage-a.md#t011文档引号用法统一) |
 | T012 | 已完成 | 引入 codegraph 与 zvec-grep 代码检索工具并写入 `AGENTS.md`；[归档证据](./validation/stage-a.md#t012引入代码检索工具) |
 | T013 | 已完成 | 收尾 T010 记录的报告级措辞并忽略 `.commandcode/` 本地工具状态；[归档证据](./validation/stage-a.md#t013台账收尾与忽略本地工具状态) |
 | T014 | 已完成 | 优化 `06` 开发循环、补齐 `05` 阶段 A–D 完整计划并同步 `AGENTS.md`；[归档证据](./validation/stage-a.md#t014优化开发循环与补齐完整开发计划) |
 | T015 | 已完成 | 建立台账冷热分离与按阶段归档规则，归档 `T001`–`T014` 历史记录；[归档证据](./validation/stage-a.md#t015台账冷热分离与阶段归档) |
 | T016 | 已完成 | 为 `06` 第 6 节的接续提供 Orca 宿主启动入口 `scripts/next-round.sh` 与四要素校验；[归档证据](./validation/stage-a.md#t016跨会话自动接续入口orca-宿主) |
-| T017 | 已完成 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；证据见下文 |
+| T017 | 已完成 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；[归档证据](./validation/stage-a.md#t017前台远端同步a-4) |
 | T018 | 已完成 | 对应 A-5 子任务 1：后台同步派生与进程生命周期；依赖 A-4；[归档证据](./validation/stage-a.md#t018后台同步派生与进程生命周期a-5-子任务-1) |
-| T019 | 已完成 | 对应 A-5 子任务 2：Hook 协议、会话身份与宿主性能实测；依赖 T018 与目标宿主协议；证据见下文 |
+| T019 | 已完成 | 对应 A-5 子任务 2：Hook 协议、会话身份与宿主性能实测；依赖 T018 与目标宿主协议；[归档证据](./validation/stage-a.md#t019hook-协议会话身份与宿主性能实测a-5-子任务-2) |
 | T020 | 待开始 | 对应 A-6：只读 `doctor`、CLI 候选包与隔离环境回归；依赖 A-1 至 A-5 的适用检查完成；契约见 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) |
+| T021 | 已完成 | 适配 Orca 1.4.227 重构 `scripts/next-round.sh`，改用 `orca terminal create` + `wait` + `send` 完全交接流并支持 `--terminal` + `--retry-request` 重放；消除接续阻塞；证据见下文 |
 
-任务 ID 不代表执行顺序。`T019`（A-5 子任务 2：Hook 协议、会话身份与宿主性能实测）已完成；近期已登记任务为 `T020`（A-6：诊断与 CLI 交付）。后续阶段步骤按 `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
+任务 ID 不代表执行顺序。`T021`（修复 Orca 1.4.227 跨会话接续入口）已完成；当前无进行中任务，近期已登记待开始任务为 `T020`（A-6：诊断与 CLI 交付）。后续阶段步骤按 `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T019：Hook 协议、会话身份与宿主性能实测（A-5 子任务 2）
+## T021：修复跨会话接续入口以适配 Orca 1.4.227
 
-- 目标与范围：完成 A-5 子任务 2，前置为 `T018`。新增 `internal/hookio`（有界 Hook JSON、SID 优先级、envelope 编码）、`internal/state/session.go`（`injected` 与 `syncSucceeded` 分离、14 天清理）、`internal/assets`（内嵌默认指引）、`internal/app/session.go` 与 `internal/cli/hook.go`，接线 `start`/`context`/`pull`/`tag`/`wrap`；`wrap` 透传子进程退出码与信号；不实现安装器与前端。
-- 契约：[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[环境变量与会话身份](./04-ui-and-cli-specification.md#2-环境变量与会话身份)、[Hook 输入输出与时限](./04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[会话开始与上下文注入](./03-workflows-and-dataflows.md#3-会话开始与上下文注入)、[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)。
-- 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
-- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；Hook 集成测试使用临时 HOME 与本地临时记忆仓库、`AGENT_MEMORY_BACKGROUND=0`，不访问网络或真实宿主配置。
-- `H01`：`TestA5SessionIDPriorityCoversH01` 覆盖 `--sid`、`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、stdin 的 `session_id`/`sessionId`/`sessionID` 优先级、空值跳过、非字符串返回 `INVALID_ARGUMENT`（退出码 2）与无稳定 SID 时不伪造来源。
-- `H02`：`TestA5ParallelSessionsDoNotCrossCoversH02` 让 alpha/sessA 与 beta/sessB 交替 `tag`/`write`，来源标签与提交元数据不串会话，`tag` 缺少 SID 返回 `NO_SESSION_ID`，未创建共享 last-sid 目录。
-- `H03`：`TestA5OnceSyncRetryCoversH03` 在锁被占用时首轮 `context --once` 仍注入本地正文并记 `sync=busy`，释放锁后同一会话重试同步成功且不重复输出正文；会话记录同时反映 `syncSucceeded` 与 `injected`。
-- `H04`：`TestA5HookOutputContractCoversH04` 校验 `start --json` 的 `SessionStart`、`context --json` 的 `UserPromptSubmit` envelope、纯文本 `start` 输出以及 `pull`/`sync` 的空 stdout，无 Git 输出混入 JSON。
-- `H05`：`TestA5WrapPassesThroughCoversH05` 校验 `wrap` 向子进程导出 SID、agent 与仓库路径，透传退出码 3、信号终止 `128+15=143`，并在前置同步 `BUSY` 时仍返回子进程状态 7。
-- `H06`：`TestA5NoRemoteMissingSIDAndOversizedEntryCoversH06` 在无远端时输出 `sync=local` 与本地正文，无稳定 SID 时每轮注入不去重，入口文件超过 2 MiB 时明确提示改用受管读取而不内联截断。
-- 性能与宿主：本地性能基线与宿主适配状态归档于 [阶段 A 性能与适配记录](./validation/stage-a.md#阶段-a-性能与适配记录)；`version` 的 p50 约 5.6ms，未达 `< 5ms` 优化目标；宿主 Hook 未安装，无真实注入验证。
-- 未验证与遗留：Windows/Linux 的 `wrap` 与锁路径未运行；未在真实宿主验证 `additionalContext` 是否被采纳；`T018` 记录已归档至 [阶段 A 归档](./validation/stage-a.md#t018后台同步派生与进程生命周期a-5-子任务-1)。
-- 下一步：剩余 `A-6`（诊断与 CLI 交付，`T020`），再按 `B-1` → `D-2` 推进；阶段 A 在 `A-6` 完成后暂停自动接续并通知用户。
+- 目标与范围：Orca CLI 1.4.227 移除了 `orca agent launch` 子命令，导致 `scripts/next-round.sh` 启动失败且不返回可重放 ID。按 `orca-cli` Skill 的「Full Handoffs（完全所有权交接）」规范重构 `scripts/next-round.sh`，改用 `orca terminal create --worktree <worktree> --command=<agent_cmd> [--focus] --json`、`orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json`（超时则追加一次 120000ms 等待，仍未就绪则拒绝投递）与 `orca terminal send --terminal <handle> --text=<prompt_body> --enter --wait-submit 10 --json` 三步流程；支持 `--terminal <handle> --retry-request <id>`（保留 `--retry-launch <id>` 兼容别名）对同一次提示词投递做幂等重放，不重复创建终端；同步更新 `AGENTS.md` 与 [开发循环规范](./06-development-loop.md#61-接续的执行机制)。
+- 契约：[接续的执行机制](./06-development-loop.md#61-接续的执行机制)、[协作入口](../AGENTS.md)。
+- 验证日期与环境：2026-10-16，macOS arm64，Orca CLI 1.4.227（`terminal.prompt-delivery.v1`），Git 2.54.0；执行者为主会话。
+- 命令与结果：
+  - 语法与参数边界校验：`bash -n scripts/next-round.sh` 通过；缺少提示词、`--prompt` 与 `--prompt-file` 互斥、文件不存在、空提示词、缺少任一四要素小节、`--effort` 未配 `--model`、`--retry-request` 或 `--retry-launch` 未配 `--terminal`、`--terminal` 未配 `--retry-request`、未知参数、工作树不干净等 11 类拒绝分支均返回退出码 `1`。
+  - 预览与桩测试：`--dry-run` 在默认 `pi`、`--agent codex --model gpt-5.4 --effort high --focus` 及 `--terminal <handle> --retry-request <id>` 重放模式下输出符合预期；`--command=` 与 `--text=` 等号传参避免 `--` 开头内容被 Orca 参数解析器误判为选项；通过 `ORCA_CLI_COMMAND` 桩验证 `wait` 超时一次后重试成功、`wait` 连续超时拒绝投递、`send` 失败提取 `requestId` 给出重放指引，以及重放模式跳过工作树干净度前置检查。
+  - Orca 1.4.227 真实宿主实测：在干净工作树下调用 `scripts/next-round.sh --prompt-file <test-prompt> --agent pi`，成功创建终端 `term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e`、等待 `tui-idle` 并投递提示词（返回 `accepted: true`、`requestId: d3a3f928-657c-431d-94e3-ea2c206fa93b`、`mutation.replayed: false`）；随后执行 `scripts/next-round.sh --prompt-file <test-prompt> --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --retry-request d3a3f928-657c-431d-94e3-ea2c206fa93b`，Orca 返回 `ok: true` 且 `mutation.replayed: true`；最后执行 `orca terminal close --terminal term_e8e4c7e6-e8d8-4975-99e7-66b29d23cc9e --json` 清理测试终端（`ptyKilled: true`）。
+  - 文档与格式检查：全仓 Markdown 本地链接与锚点校验、`git diff --check`、行尾空白检查全部通过；`T019` 完整验收记录已归档至 [阶段 A 归档](./validation/stage-a.md#t019hook-协议会话身份与宿主性能实测a-5-子任务-2)。
+- 未验证与遗留：本轮仅修复跨会话接续工具链与规范文档，未变更 `memctl` Go 源码；按用户确认的范围，本轮提交推送后不自动触发 `T020` 会话，保留原 `/tmp/next-round.md` 供后续直接启动 `T020`。
+- 下一步：推进 `T020`（A-6：只读 `doctor`、CLI 候选包与隔离环境回归）；`A-6` 完成后阶段 A 全部完成，届时暂停自动接续并通知用户。
 
 ## 近期实施任务
 
@@ -71,10 +70,3 @@
 - 目标与依赖：完成 A-6，前置为 A-1 至 A-5 的适用检查完成。交付只读 `doctor`（`--json`、`--fix` 在当前基线上执行支持的确定性修复）、内嵌默认指引的包内可用性验证、CLI 候选包与隔离环境回归；列明未验证的平台与宿主。
 - 交付物：`internal/doctor` 诊断实现与对应测试，`doctor` 命令接线，按 [验收与交付](./05-validation-and-delivery.md#1-交付顺序) 复跑前序相关用例，并覆盖 `F03`、`R04`、`R01` 的默认指引与 `R02` 的 Git/凭据降级场景。
 - 完成检查：`doctor` 默认只读、Level 与退出码符合契约（error 返回 1，仅 warning/info 返回 0）；复制二进制到空 HOME 后内嵌指引可用；未验证的平台、宿主与降级路径如实记录于阶段报告。
-
-## 接续阻塞
-
-- 现象：`T019` 完成后按 [接续的执行机制](./06-development-loop.md#61-接续的执行机制) 执行 `scripts/next-round.sh --prompt-file /tmp/next-round.md`，Orca 启动失败（退出码 1），无 `operationId` 可重放。
-- 原因：脚本调用 `orca agent launch`，而当前安装的 Orca CLI `1.4.227`（`/Applications/Orca.app/Contents/Resources/bin/orca`）没有该子命令，只提供 `orca orchestration worker-start` 与 `orca terminal create`。属入口与 Orca 版本不匹配，非 `T019` 交付问题。
-- 影响：下一轮 `T020`（A-6）的交接提示词已保留在 `/tmp/next-round.md`，但无法通过当前入口自动启动新会话；阶段 A 仍未完成。
-- 解除条件：升级 Orca 到带 `agent launch` 的版本，或由用户确认后修改 `scripts/next-round.sh` 改用当前版本可用的启动命令，二者都需要用户决策。

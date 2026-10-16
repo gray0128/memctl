@@ -27,4 +27,4 @@ scripts/next-round.sh --prompt-file /tmp/next-round.md
 - 脚本在启动前校验两项前置条件：交接提示词以 Markdown 标题或加粗行给出「有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标」四个小节；工作树干净且 `HEAD` 与上游一致。任一不满足时拒绝启动，退出码 `1`。
 - 需要指定模型或切换标签页时追加 `--model <id>`、`--effort <level>`、`--focus`；只查看将执行的命令时追加 `--dry-run`。
 - 启动成功后，本轮会话立即停止开发，只向用户报告结果。脚本无法强制这一点。
-- 启动失败时保留交接提示词，读取失败输出中的 `operationId` 后用 `--retry-launch <operationId>` 重放同一次启动，不重新发起；不在本轮会话开始第二轮任务。
+- 启动失败时保留交接提示词；若终端已创建但提示词投递结果未知，读取输出中的终端句柄与 `requestId`（或 `orchestrationRequestId`），用 `--terminal <handle> --retry-request <id>` 重放同一次提示词投递，不重复创建终端，也不在本轮会话开始第二轮任务。
