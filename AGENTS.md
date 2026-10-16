@@ -15,3 +15,16 @@
 - `zg`（zvec-grep）：目标位置未知，或需要语义、模糊和跨文件检索时使用，入口为 `zg query "<问题>"`，索引位于 `.zvec-grep/`，状态用 `zg status` 查看。
 
 支持 MCP 的 Agent 可通过 `codegraph serve --mcp` 与 `zg server --stdio` 接入各自的 MCP 配置，获得原生工具调用。
+
+## 跨会话接续（Orca 宿主的启动入口）
+
+本项目当前在 Orca 工作区中开发。本轮验证通过、台账已更新且变更已提交推送后，用 `scripts/next-round.sh` 在当前工作区启动下一轮会话。规则、四要素交接要求与失败处置见 [接续的执行机制](docs/06-development-loop.md#61-接续的执行机制)。
+
+```bash
+scripts/next-round.sh --prompt-file /tmp/next-round.md
+```
+
+- 脚本在启动前校验两项前置条件：交接提示词以 Markdown 标题或加粗行给出「有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标」四个小节；工作树干净且 `HEAD` 与上游一致。任一不满足时拒绝启动，退出码 `1`。
+- 需要指定模型或切换标签页时追加 `--model <id>`、`--effort <level>`、`--focus`；只查看将执行的命令时追加 `--dry-run`。
+- 启动成功后，本轮会话立即停止开发，只向用户报告结果。脚本无法强制这一点。
+- 启动失败时保留交接提示词，读取失败输出中的 `operationId` 后用 `--retry-launch <operationId>` 重放同一次启动，不重新发起；不在本轮会话开始第二轮任务。
