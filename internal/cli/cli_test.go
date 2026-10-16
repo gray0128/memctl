@@ -197,8 +197,6 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
-		"start", "context", "pull",
-		"tag", "wrap",
 		"ui", "doctor", "dream", "install",
 	}
 

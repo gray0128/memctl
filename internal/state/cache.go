@@ -30,14 +30,15 @@ type SyncSummary struct {
 
 // Cache stores rebuildable runtime state for one repository.
 type Cache struct {
-	dir string
+	dir    string
+	repoID string
 }
 
 // OpenCache binds the cache root of one repository. The sha256: prefix is
 // stripped so the directory name stays valid on Windows.
 func OpenCache(stateDir, repoID string) *Cache {
 	key := strings.TrimPrefix(repoID, "sha256:")
-	return &Cache{dir: filepath.Join(stateDir, "repos", key, "cache")}
+	return &Cache{dir: filepath.Join(stateDir, "repos", key, "cache"), repoID: repoID}
 }
 
 // SaveSync persists the sync summary atomically.

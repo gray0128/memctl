@@ -10,6 +10,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -21,11 +22,6 @@ const (
 )
 
 var plannedSubcommands = map[string]string{
-	"start":   "synchronize and output session context at session start (planned in A-5)",
-	"context": "output session context with per-session sync deduplication (planned in A-5)",
-	"pull":    "synchronize repository silently for hook integrations (planned in A-5)",
-	"tag":     "print canonical agent://<device>/<agent>/<sid> source tag (planned in A-5)",
-	"wrap":    "run a command wrapped with session identity and pre/post sync (planned in A-5)",
 	"ui":      "start the embedded local Web UI server (planned in Stage B)",
 	"doctor":  "diagnose repository and state consistency (planned in A-6)",
 	"dream":   "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
@@ -45,15 +41,15 @@ Available Commands:
   sync                 Trigger best-effort background synchronization
   sync --capture       Capture serial external edits and commit them
   end                  Trigger background synchronization at session end
+  start                SessionStart hook: synchronize and output context (--stdin --json)
+  context              UserPromptSubmit hook: synchronize and output context (--once --json)
+  pull                 Silent hook synchronization (--once)
+  tag                  Print canonical session source URI (--agent NAME --sid ID)
+  wrap                 Wrap a command with session identity and sync (--agent NAME -- cmd...)
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
 
 Planned Commands (not yet enabled):
-  start                SessionStart hook synchronization and context output
-  context              UserPromptSubmit hook synchronization and context output (--once)
-  pull                 Silent hook synchronization (--once)
-  tag                  Output canonical session source URI (--agent NAME --sid ID)
-  wrap                 Wrap external command with pre/post sync (--agent NAME -- <cmd...>)
   doctor               Run repository diagnostics (--json --fix)
   ui                   Launch local Web UI (--port 18420 --no-open --readonly)
   install [agent...]   Manage host adapter configurations (--all --dry-run --status)
@@ -105,10 +101,25 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 		return runWrite(rest, stdin, stdout, stderr)
 
 	case "sync":
-		return runSync(rest, stdout, stderr)
+		return runSync(rest, stdin, stdout, stderr)
 
 	case "end":
-		return runEnd(rest, stdout, stderr)
+		return runEnd(rest, stdin, stdout, stderr)
+
+	case "start":
+		return runStart(rest, stdin, stdout, stderr)
+
+	case "context":
+		return runContext(rest, stdin, stdout, stderr)
+
+	case "pull":
+		return runPull(rest, stdin, stdout, stderr)
+
+	case "tag":
+		return runTag(rest, stdout, stderr)
+
+	case "wrap":
+		return runWrap(rest, stdin, stdout, stderr)
 
 	case "resolve":
 		return runResolve(rest, stdout, stderr)
@@ -311,8 +322,8 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Action:           app.ActionPut,
 			RawContent:       string(content),
 		}},
-		Agent:     agent,
-		SessionID: sid,
+		Agent:     hookio.ResolveAgent(agent, os.Getenv),
+		SessionID: hookio.ResolveSID(sid, os.Getenv, hookio.Input{}),
 	})
 	if err != nil {
 		return fail(stderr, "write", err)
@@ -325,9 +336,10 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // runSync implements `sync --wait` for foreground remote synchronization and
 // `sync --capture` for explicit serial external edits. The automatic Hook path
 // and background derivation belong to A-5.
-func runSync(args []string, stdout, stderr io.Writer) int {
+func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	capture := false
 	wait := false
+	useStdin := false
 	agent := ""
 	sid := ""
 
@@ -339,7 +351,7 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		case arg == "--wait":
 			wait = true
 		case arg == "--stdin":
-			// Accepted by the target contract; no prompt input is consumed.
+			useStdin = true
 		case arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "sync", arg+" requires a value")
@@ -356,6 +368,12 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 			sid = strings.TrimPrefix(arg, "--sid=")
 		default:
 			return usageError(stderr, "sync", fmt.Sprintf("unknown argument %q", arg))
+		}
+	}
+
+	if useStdin {
+		if code := drainHookStdin("sync", stdin, stderr); code != ExitOK {
+			return code
 		}
 	}
 
@@ -418,11 +436,13 @@ func runBackgroundSync(stdout, stderr io.Writer) int {
 }
 
 // runEnd implements `end --agent NAME --sid ID --stdin`, the SessionEnd hook.
-func runEnd(args []string, stdout, stderr io.Writer) int {
+func runEnd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	useStdin := false
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "--stdin":
+			useStdin = true
 		case arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "end", arg+" requires a value")
@@ -431,6 +451,11 @@ func runEnd(args []string, stdout, stderr io.Writer) int {
 		case strings.HasPrefix(arg, "--agent=") || strings.HasPrefix(arg, "--sid="):
 		default:
 			return usageError(stderr, "end", fmt.Sprintf("unknown argument %q", arg))
+		}
+	}
+	if useStdin {
+		if code := drainHookStdin("end", stdin, stderr); code != ExitOK {
+			return code
 		}
 	}
 	return runBackgroundSync(stdout, stderr)

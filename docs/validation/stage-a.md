@@ -2,6 +2,49 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## 阶段 A 性能与适配记录
+
+本节按 [性能与适配记录](../05-validation-and-delivery.md#3-性能与适配记录) 记录 `T019` 期间的本地性能基线与宿主适配状态。数值来自本机单次会话的临时环境，不是跨机承诺；未实测的宿主保持未验证。
+
+### 本地性能基线
+
+- 环境：macOS 26.6.2（Build 25G83），Apple M1 Pro（8 核），Go 1.27.1，Git 2.54.0，测量日期 2026-10-16。
+- 仓库：本地临时记忆仓库；受支持文件 41 个、正文合计 839 字节、提交 2 个；未配置 Git hooks，`commit.gpgsign` 未设置。
+- 方法：`bin/memctl` 由 `make build` 生成；每次调用使用独立进程并测量 wall-clock 毫秒；临时 HOME、`AGENT_MEMORY_BACKGROUND=0`、`GIT_CONFIG_NOSYSTEM=1`，不访问网络；测量脚本与临时仓库位于工作区外。
+- 结果：3 次会话的代表值，`p50` 取 3 次 `p50` 的中位；样本量为 `version` 30、其余路径 5–20 次。
+
+| 路径 | 命令 | p50 | p95 | max |
+| --- | --- | --- | --- | --- |
+| 冷进程启动 | `version` | 5.6ms | 7.3ms | 8.4ms |
+| 无变化 Hook（每轮注入） | `context --stdin` | 64ms | 210ms | 1034ms |
+| 无变化 Hook（`--once` 去重） | `context --once --stdin` | 24ms | 110ms | 387ms |
+| 受管写入 | `write MEMORY.md --base <rev> --stdin` | 393ms | 660ms | 1360ms |
+| 外部 capture | `sync --capture` | 323ms | 428ms | 531ms |
+| 锁竞争 Hook | 锁被占用时 `context --stdin` | 100ms | 126ms | 206ms |
+| 网络故障 | 认证失败桩下 `sync --wait` | 341ms | 787ms | 1204ms |
+
+- 结论：`version` 的 `p50` 约 5.6ms，略高于 `version/help < 5ms` 的待测优化目标；无竞争派生与 Hook 路径远低于 8 秒业务预算，网络故障路径在 30 秒预算内以明确原因码结束。
+- 清理：网络故障连续 5 次后 `pgrep -f <bin>` 无遗留进程；锁竞争路径不阻塞、不排队。清理耗时已包含在上表数值内，本轮未单独拆分。
+- 噪声：无变化 Hook 与网络故障的 `max` 明显高于 `p50`，来自本机后台负载与冷页；不把单次 `max` 当作性能承诺。
+
+### 宿主适配状态
+
+本轮未安装任何宿主 Hook（安装器属 `C-3`），因此所有候选宿主均为「未安装、未验证」：Claude Code、Codex、Grok、Antigravity、Command Code、OpenCode、pi、dsh。参考目录给出 pi 的目标映射（`user.prompt.submit` 读记忆、`session.idle` 同步、`session.deleted` 收尾），但本机 `pi-yaml-hooks` 未加载任何 hook，未进行真实注入验证；其余宿主的配置格式、事件映射、SID 来源、stdout 上限与 timeout 均待 `C-3` 探测后记录。
+
+协议层已在本机手工检查：在临时仓库执行 `printf '{"session_id":"manual-session","prompt":"secret prompt"}' | bin/memctl context --json --stdin --agent manual-agent`，退出码 0，stdout 为单个 `hookSpecificOutput` 对象，`hookEventName=UserPromptSubmit`，`additionalContext` 含仓库路径、来源标签、内嵌指引与 `MEMORY.md`；stdin 中的 `prompt` 未出现在 stdout 或 stderr，stderr 为空。
+
+## T018：后台同步派生与进程生命周期（A-5 子任务 1）
+
+- 目标与范围：完成 A-5 子任务 1，前置为 A-4（`T017`）。新增 `internal/syncer/env.go`、`internal/syncer/spawn*.go`，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符、`unix.Flock`/`windows.LockFileEx`），并在 `internal/git`、`internal/app`、`internal/cli` 接入后台派生；实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、凭据白名单快照、锁忙立即退出与进程组/锁生命周期继承；不实现 Hook 会话身份（`T019`）。
+- 契约：[写入模型](../01-architecture-and-modules.md#2-写入模型)、[仓库身份](../01-architecture-and-modules.md#31-仓库身份)、[平台与进程生命周期](../01-architecture-and-modules.md#6-平台与进程生命周期)、[前台行为](../03-workflows-and-dataflows.md#41-前台行为)、[凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[环境变量](../04-ui-and-cli-specification.md#2-环境变量与会话身份)。
+- 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；后台与生命周期测试使用临时 HOME、临时 bare 远端与受控 `GIT_SSH_COMMAND` 桩，并设置 `GIT_CONFIG_NOSYSTEM=1` 与受限 `GIT_ALLOW_PROTOCOL`，不访问真实网络或系统凭据库。
+- `G08.2`：`TestA5BackgroundCredentialDifferenceCoversG08_2` 让前台带可用凭据标记而后台白名单快照不含该标记，后台 worker 以 `AUTH_FAILED`/`remoteState=failed` 结束，本地提交保留、工作树干净、无遗留 memctl 进程、锁可再次获取，随后前台 `sync --wait` 成功补推。
+- `L01`：`TestA5KilledParentKeepsLockWithGitCoversL01` 在 Git fetch 挂起时强杀父进程，验证 Git 进程组仍持有可继承的锁描述符（第二个获取者失败），强杀该进程组后锁释放；`internal/lock` 单元测试覆盖 `TryAcquire` 互斥与 `File()`。
+- `L02`：`TestA5BackgroundStormKeepsStateCoversL02` 连续触发 15 次 `end` 且网络不可用，`TryAcquire` 让 worker 串行化（并发检测标记未出现），无后台进程堆积，本地提交与工作树保持不变。
+- 未验证与遗留：`G08.2` 的「终端认证成功」在前台显式路径复现，未在真实宿主终端验证；新增 `AGENT_MEMORY_BACKGROUND` 开关并同步到 04 §2、锁实现由 `gofrs/flock` 改为 `golang.org/x/sys` 并同步到 01；Windows/Linux 的 `LockFileEx`/`DETACHED_PROCESS` 未运行；真实宿主 Stop/end 风暴与宿主强杀留待 `T019` 宿主实测。
+- 下一步：`T019`（A-5 子任务 2：Hook 协议、会话身份与宿主性能实测），其后按 `A-6` → `D-2` 推进；本轮按用户指示暂停接续；已完成，由 `T019` 接续。
+
 ## T017：前台远端同步（A-4）
 
 - 目标与范围：完成 A-4，前置为 A-3 与 `T002`。新增 `internal/syncer`、`internal/git/exec.go`、`internal/git/sync.go`、`internal/git/proc_unix.go`、`internal/git/proc_other.go`、`internal/state/conflict.go`、`internal/state/cache.go`、`internal/app/remote.go`、`internal/app/sync.go`、`internal/app/resolve.go` 与 `internal/cli/tty_*.go`；实现空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类、非交互凭据抑制与进程组清理、CLI 多阶段 `resolve` 及冲突类型拒绝；不实现后台派生（A-5）、Hook、UI 与安装。
