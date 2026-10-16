@@ -43,10 +43,18 @@ type App struct {
 	// testFault injects interruption points in tests. It is always nil in
 	// production builds.
 	testFault func(stage string) error
+	// backgroundSync enables best-effort background synchronization after a
+	// managed write. It is off unless EnableBackgroundSync is called so unit
+	// tests never re-execute the test binary.
+	backgroundSync bool
 }
 
 // New builds the application service for the given configuration.
 func New(cfg config.Config) *App { return &App{cfg: cfg} }
+
+// EnableBackgroundSync turns on best-effort background synchronization after a
+// managed write. The CLI enables it; direct library callers opt in explicitly.
+func (a *App) EnableBackgroundSync() { a.backgroundSync = true }
 
 // RepoPath returns the configured repository path.
 func (a *App) RepoPath() string { return a.cfg.RepoPath }

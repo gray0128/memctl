@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
+	"strings"
 
 	"github.com/gray0128/memctl/internal/memerr"
 )
@@ -14,6 +15,9 @@ import (
 const (
 	EnvRepoDir  = "AGENT_MEMORY_DIR"
 	EnvStateDir = "AGENT_MEMORY_STATE"
+	// EnvBackground disables best-effort background synchronization when set
+	// to 0/false/off. It is on by default.
+	EnvBackground = "AGENT_MEMORY_BACKGROUND"
 
 	DefaultRepoDirName  = "memory"
 	DefaultStateDirName = ".agent-memory"
@@ -25,6 +29,9 @@ type Config struct {
 	RepoPath string
 	// StateDir is the canonical absolute path of the runtime state root.
 	StateDir string
+	// BackgroundSync enables best-effort background synchronization after a
+	// managed write and for the automatic Hook path.
+	BackgroundSync bool
 }
 
 // Load resolves the configuration from the given environment accessor
@@ -48,9 +55,21 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	return Config{
-		RepoPath: Canonical(repoPath),
-		StateDir: Canonical(stateDir),
+		RepoPath:       Canonical(repoPath),
+		StateDir:       Canonical(stateDir),
+		BackgroundSync: backgroundEnabled(getenv(EnvBackground)),
 	}, nil
+}
+
+// backgroundEnabled reports whether background synchronization is enabled.
+// Every value except an explicit false-like value keeps the default on.
+func backgroundEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
 }
 
 // Canonical returns an absolute, cleaned path with symbolic links resolved.

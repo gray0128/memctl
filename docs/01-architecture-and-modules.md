@@ -189,7 +189,7 @@ memctl/
 | 领域 | 选型 | 使用边界 |
 | --- | --- | --- |
 | 运行时 | Go、系统 Git | 使用实施时受支持的 Go 稳定版；路由采用 Go 1.22 引入的语法，安全文件访问按目标工具链验证 |
-| 锁 | `gofrs/flock` | Unix/Windows 分别测试；不删除并重建正在使用的锁文件 |
+| 锁 | `golang.org/x/sys`（`unix.Flock` / `windows.LockFileEx`） | Unix/Windows 分别测试；锁文件描述符可被子进程继承，父进程被强杀后锁不早于 Git 子进程释放；不删除并重建正在使用的锁文件 |
 | Markdown | `goldmark` 或保留字节区间的行级解析 | 优先无损定点修改，不整体重排文档；链接扩展需独立测试 |
 | 监听 | `fsnotify` | macOS 为 kqueue 等平台后端；递归目录监听由应用维护，不假设库自动递归 |
 | 前端 | Preact、Vite、Tailwind CSS | 只在构建期需要 Node.js；运行时资产全部内嵌 |

@@ -48,6 +48,7 @@ memctl <subcommand> [flags] [-- command...]
 | --- | --- |
 | `AGENT_MEMORY_DIR` | `~/memory`；规范化为绝对路径后绑定仓库 |
 | `AGENT_MEMORY_STATE` | `~/.agent-memory`；仅覆盖运行状态根，不改变仓库锁位置 |
+| `AGENT_MEMORY_BACKGROUND` | 默认开启；设为 `0`、`false` 或 `off` 时受管写入与自动 Hook 不派生后台同步 |
 | `AGENT_MEMORY_AGENT` | `unknown`；`--agent` 优先 |
 | `AGENT_MEMORY_DEVICE` | OS 主机名；探测失败使用 `unknown` 并提示 |
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |

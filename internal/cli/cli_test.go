@@ -52,14 +52,14 @@ func TestRunVersionAndHelp(t *testing.T) {
 			args:       []string{"--help"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-4):",
+			wantStdout: "Available Commands:",
 		},
 		{
 			name:       "help flag short",
 			args:       []string{"-h"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands (Stage A-4):",
+			wantStdout: "Available Commands:",
 		},
 	}
 
@@ -197,7 +197,7 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
 	planned := []string{
-		"start", "context", "pull", "end",
+		"start", "context", "pull",
 		"tag", "wrap",
 		"ui", "doctor", "dream", "install",
 	}

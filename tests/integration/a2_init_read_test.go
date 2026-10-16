@@ -57,6 +57,9 @@ func a2Env(home, repo string, withIdentity bool) []string {
 		"HOME=" + home,
 		"AGENT_MEMORY_DIR=" + repo,
 		"AGENT_MEMORY_STATE=" + filepath.Join(home, ".agent-memory"),
+		// Background synchronization is disabled for deterministic tests unless
+		// a test explicitly enables it.
+		"AGENT_MEMORY_BACKGROUND=0",
 		"PATH=" + os.Getenv("PATH"),
 		"GIT_CONFIG_GLOBAL=" + filepath.Join(home, "gitconfig"),
 		"GIT_CONFIG_SYSTEM=" + filepath.Join(home, "absent-system-gitconfig"),

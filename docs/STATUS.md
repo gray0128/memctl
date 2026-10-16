@@ -15,7 +15,8 @@
 - 已完成 `T016`：在 [开发循环规范](./06-development-loop.md#61-接续的执行机制) 第 6 节补充接续执行机制，并提供 Orca 宿主启动入口 `scripts/next-round.sh`，校验四要素交接与「已提交推送」前置条件后启动新会话。
 - 已完成 `T011`（文档引号用法统一）：按 `tech-doc-style-chinese` 默认基线将 `01`–`04` 与 `docs/README.md` 正文的弯引号统一为直角引号「」，并在 [方案索引](./README.md) 声明引号基线；未新增或改变产品契约，未修改源码与 `脚本化实现参考/`。
 - 已完成阶段 A-4（`T017`）：新增 `internal/syncer` 与 `internal/git`、`internal/state`、`internal/app`、`internal/cli` 的远端相关实现，提供空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类（`AUTH_FAILED`/`NETWORK_UNAVAILABLE`/`NON_FAST_FORWARD`/`TIMEOUT`/`NO_UPSTREAM`/`CONTENT_CONFLICT`）、非交互凭据抑制与 Git 进程组清理、CLI 多阶段 `resolve` 与不支持冲突类型拒绝；通过 `G02`–`G04`、`G06`、`C01`–`C04`、`L01` 前台 Git 子进程场景与 `G08.1`、`G08.3`–`G08.7`。
-- 尚未实现 Hook 与后台同步（A-5）、前端工程与 Web UI、诊断、Dreaming 与安装；`G05`/`G07` 未新增 A-4 专项用例，`G08.2`（后台派生凭据）属 A-5；05 中其余产品验收场景仍待实现与验证。
+- 已完成阶段 A-5 子任务 1（`T018`）：新增 `internal/syncer` 后台派生与凭据白名单快照，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符），实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、锁忙立即退出与进程组/锁生命周期继承；通过 `G08.2`、`L01` 后台与强杀场景、`L02`。
+- 尚未实现 Hook 会话身份与上下文注入（A-5 子任务 2）、前端工程与 Web UI、诊断、Dreaming 与安装；`G05`/`G07` 沿用 A-3/A-4 场景，未新增 A-5 专项用例；05 中其余产品验收场景仍待实现与验证。
 
 ## 任务
 
@@ -38,34 +39,26 @@
 | T015 | 已完成 | 建立台账冷热分离与按阶段归档规则，归档 `T001`–`T014` 历史记录；[归档证据](./validation/stage-a.md#t015台账冷热分离与阶段归档) |
 | T016 | 已完成 | 为 `06` 第 6 节的接续提供 Orca 宿主启动入口 `scripts/next-round.sh` 与四要素校验；[归档证据](./validation/stage-a.md#t016跨会话自动接续入口orca-宿主) |
 | T017 | 已完成 | 对应 A-4：前台远端同步；依赖 A-3 与 T002；证据见下文 |
-| T018 | 待开始 | 对应 A-5 子任务 1：后台同步派生与进程生命周期；依赖 A-4；契约见 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) |
+| T018 | 已完成 | 对应 A-5 子任务 1：后台同步派生与进程生命周期；依赖 A-4；证据见下文 |
 | T019 | 待开始 | 对应 A-5 子任务 2：Hook 协议、会话身份与宿主性能实测；依赖 T018 与目标宿主协议；契约见 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) |
 
-任务 ID 不代表执行顺序。`T017`（A-4 前台远端同步）已完成；近期已登记任务为 `T018`、`T019`（共同对应 `A-5` Hook 与后台）。后续阶段步骤按 `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
+任务 ID 不代表执行顺序。`T018`（A-5 子任务 1：后台同步派生与进程生命周期）已完成；近期已登记任务为 `T019`（A-5 子任务 2：Hook 协议、会话身份与宿主性能实测）。后续阶段步骤按 `A-5` → `A-6` → `B-1` → `B-2` → `B-3` → `C-1` → `C-2` / `C-3` → `D-1` → `D-2` 的依赖关系与 [阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分) 依次滚动登记并推进；每个阶段完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停并通知用户。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T017：前台远端同步（A-4）
+## T018：后台同步派生与进程生命周期（A-5 子任务 1）
 
-- 目标与范围：完成 A-4，前置为 A-3 与 `T002`。新增 `internal/syncer`、`internal/git/exec.go`、`internal/git/sync.go`、`internal/git/proc_unix.go`、`internal/git/proc_other.go`、`internal/state/conflict.go`、`internal/state/cache.go`、`internal/app/remote.go`、`internal/app/sync.go`、`internal/app/resolve.go` 与 `internal/cli/tty_*.go`；实现空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类、非交互凭据抑制与进程组清理、CLI 多阶段 `resolve` 及冲突类型拒绝；不实现后台派生（A-5）、Hook、UI 与安装。
-- 契约：[凭据与信任边界](./01-architecture-and-modules.md#34-凭据与信任边界)、[初始化与远端接入](./03-workflows-and-dataflows.md#1-初始化与远端接入)、[同步与后台任务](./03-workflows-and-dataflows.md#4-同步与后台任务)、[凭据环境继承与失败处理](./03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
+- 目标与范围：完成 A-5 子任务 1，前置为 A-4（`T017`）。新增 `internal/syncer/env.go`、`internal/syncer/spawn*.go`，重写 `internal/lock`（`TryAcquire`、可被 Git 子进程继承的锁描述符、`unix.Flock`/`windows.LockFileEx`），并在 `internal/git`、`internal/app`、`internal/cli` 接入后台派生；实现 `sync`/`end` 自动路径与受管 `write` 提交后的非交互后台同步、凭据白名单快照、锁忙立即退出与进程组/锁生命周期继承；不实现 Hook 会话身份（`T019`）。
+- 契约：[写入模型](./01-architecture-and-modules.md#2-写入模型)、[仓库身份](./01-architecture-and-modules.md#31-仓库身份)、[平台与进程生命周期](./01-architecture-and-modules.md#6-平台与进程生命周期)、[前台行为](./03-workflows-and-dataflows.md#41-前台行为)、[凭据环境继承与失败处理](./03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[环境变量](./04-ui-and-cli-specification.md#2-环境变量与会话身份)。
 - 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
-- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；远端集成测试使用临时 HOME、临时本地 bare 远端、受控 `GIT_SSH_COMMAND` 桩与本地 `git http-backend`，并设置 `GIT_CONFIG_NOSYSTEM=1` 与受限 `GIT_ALLOW_PROTOCOL`，不访问真实远端、网络或系统凭据库。
-- `G02`/`G03`：`TestA4PrivateRemoteRoundTripCoversG02` 验证空远端首推、第二设备克隆相同历史并建立 `origin/main` upstream、不产生独立根提交；`TestA4RemoteBoundaryAndErrors` 覆盖错误 URL 不当作空远端、SSH 认证失败分类为 `AUTH_FAILED`、无默认分支明确失败、取消 upstream 后按初始化协议重建。
-- `G04`/`G06`：`pre-push` 钩子在 fetch 后推进远端时 push 被拒返回 `NON_FAST_FORWARD` 且 `remoteState=pending`、本地提交保留；`TestA4ManualGitStatePausesSyncCoversG06` 在用户手工 merge 冲突下让 `sync --wait` 与受管 `write` 均返回 `OPERATION_ACTIVE`。
-- `C01`–`C04`：`TestA4ConflictTwoStagesCoversC01` 验证两个连续本地提交分别冲突时每阶段的三方快照与 `captured`→`resolving` 相位；`TestA4ConflictStaleCoversC02` 验证外部 HEAD 变化后旧结果返回 `CONFLICT_STALE` 且不覆盖新历史；`TestA4ConflictTypesCoversC03` 区分删除/修改、空文件与文本冲突并拒绝二进制与 rename 类型（`UNSUPPORTED`）；`TestA4ResolveAbortCoversC04` 验证跨进程读取持久化阶段并以 `--abort` 恢复原始 HEAD。
-- `G08`：`G08.1` 受控 SSH 桩成功同步并传递 `SSH_AUTH_SOCK`；`G08.3` 本地 HTTP + `git http-backend` 下非交互 `credential.helper` 认证成功且凭据不出现在输出；`G08.4` 无 TTY 时 `GIT_ASKPASS`/`SSH_ASKPASS` 未被调用；`G08.5` 挂起桩在总 deadline 到期后返回 `TIMEOUT`，进程组被终止且锁可重新获取；`G08.6` 主机密钥失败返回 `AUTH_FAILED` 且不写 `known_hosts`；`G08.7` 含凭据 URL 在诊断中被脱敏为 `://***@`。
-- `L01`（前台 Git 子进程）：`G08.5` 用例同时验证 deadline 到达后无遗留 Git 子进程且仓库锁可再次获取。
-- 未验证与遗留：`G08.2`（终端成功但后台凭据环境不同）依赖 A-5 后台派生，本轮未实现或验证，`G08` 作为复合项未整体标记通过；`G05`（签名与 hooks 拒绝）沿用 A-3 的缺失身份与 hook 拒绝场景，`G07` 沿用共享 `git.Inspect` 未合并索引检测，本轮未新增专项用例；真实 `SIGKILL` 父进程与宿主清理属 A-5 平台门槛；未覆盖 Windows/Linux。
-- 下一步：剩余已登记待办为 `T018`、`T019`（共同对应 `A-5` Hook 与后台），其后按 `A-6` → `D-2` 推进；本轮按用户指示暂停接续。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；后台与生命周期测试使用临时 HOME、临时 bare 远端与受控 `GIT_SSH_COMMAND` 桩，并设置 `GIT_CONFIG_NOSYSTEM=1` 与受限 `GIT_ALLOW_PROTOCOL`，不访问真实网络或系统凭据库。
+- `G08.2`：`TestA5BackgroundCredentialDifferenceCoversG08_2` 让前台带可用凭据标记而后台白名单快照不含该标记，后台 worker 以 `AUTH_FAILED`/`remoteState=failed` 结束，本地提交保留、工作树干净、无遗留 memctl 进程、锁可再次获取，随后前台 `sync --wait` 成功补推。
+- `L01`：`TestA5KilledParentKeepsLockWithGitCoversL01` 在 Git fetch 挂起时强杀父进程，验证 Git 进程组仍持有可继承的锁描述符（第二个获取者失败），强杀该进程组后锁释放；`internal/lock` 单元测试覆盖 `TryAcquire` 互斥与 `File()`。
+- `L02`：`TestA5BackgroundStormKeepsStateCoversL02` 连续触发 15 次 `end` 且网络不可用，`TryAcquire` 让 worker 串行化（并发检测标记未出现），无后台进程堆积，本地提交与工作树保持不变。
+- 未验证与遗留：`G08.2` 的「终端认证成功」在前台显式路径复现，未在真实宿主终端验证；新增 `AGENT_MEMORY_BACKGROUND` 开关并同步到 04 §2、锁实现由 `gofrs/flock` 改为 `golang.org/x/sys` 并同步到 01；Windows/Linux 的 `LockFileEx`/`DETACHED_PROCESS` 未运行；真实宿主 Stop/end 风暴与宿主强杀留待 `T019` 宿主实测。
+- 下一步：`T019`（A-5 子任务 2：Hook 协议、会话身份与宿主性能实测），其后按 `A-6` → `D-2` 推进；本轮按用户指示暂停接续。
 
 ## 近期实施任务
-
-### T018：后台同步派生与进程生命周期（A-5 子任务 1）
-
-- 目标与依赖：完成 A-5 的后台同步与进程生命周期部分，前置为 A-4（`T017`）。实现 `sync` / `end` 自动路径与受管 `write` 提交后的非交互后台同步派生、父进程凭据环境白名单快照传递、锁忙立即退出的防风暴机制，以及父进程/宿主/Git 子进程强杀后的进程组清理与锁释放；Hook 会话身份、`start`/`context`/`pull`/`tag`/`wrap` 留待 `T019`。
-- 交付物：后台派生与同步工作进程实现、`sync`（无 `--wait`/`--capture`）与 `end` 命令入口及对应集成测试；覆盖 `G08.2`、`L01`（后台与强杀场景）、`L02`。
-- 完成检查：后台凭据环境隔离与补推（`G08.2`）、强杀父进程/子进程后无无锁写仓库残留（`L01`）、连续触发 `sync`/`end` 且网络不可用时无后台进程无限排队（`L02`）全部通过。
 
 ### T019：Hook 协议、会话身份与宿主性能实测（A-5 子任务 2）
 

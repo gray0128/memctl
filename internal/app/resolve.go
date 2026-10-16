@@ -404,7 +404,7 @@ func (a *App) staleConflict(ctx context.Context, session *writeSession, conflict
 }
 
 func (a *App) beginResolve(ctx context.Context) (*writeSession, error) {
-	session, err := a.beginLocked(ctx, true, true)
+	session, err := a.beginLocked(ctx, true, true, false)
 	if err != nil {
 		return nil, err
 	}

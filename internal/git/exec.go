@@ -71,6 +71,9 @@ func runGitRaw(ctx context.Context, dir string, opts Options, args ...string) (s
 	} else {
 		cmd.Stdin = nil
 	}
+	if file := inheritedFile(ctx); file != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, file)
+	}
 
 	configureProcessGroup(cmd)
 

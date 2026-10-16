@@ -2,6 +2,20 @@
 
 本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 A 期间已完成任务的历史验收记录，完整保留原验收事实与更正说明。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
+## T017：前台远端同步（A-4）
+
+- 目标与范围：完成 A-4，前置为 A-3 与 `T002`。新增 `internal/syncer`、`internal/git/exec.go`、`internal/git/sync.go`、`internal/git/proc_unix.go`、`internal/git/proc_other.go`、`internal/state/conflict.go`、`internal/state/cache.go`、`internal/app/remote.go`、`internal/app/sync.go`、`internal/app/resolve.go` 与 `internal/cli/tty_*.go`；实现空远端与已有远端接入及远端审批、`sync --wait` 前台同步、错误分类、非交互凭据抑制与进程组清理、CLI 多阶段 `resolve` 及冲突类型拒绝；不实现后台派生（A-5）、Hook、UI 与安装。
+- 契约：[凭据与信任边界](../01-architecture-and-modules.md#34-凭据与信任边界)、[初始化与远端接入](../03-workflows-and-dataflows.md#1-初始化与远端接入)、[同步与后台任务](../03-workflows-and-dataflows.md#4-同步与后台任务)、[凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-16，macOS arm64，Go 1.27.1，Git 2.54.0；执行者为主会话。
+- 命令与结果：`go vet ./...`、`go test ./...`、`make build` 全部通过；远端集成测试使用临时 HOME、临时本地 bare 远端、受控 `GIT_SSH_COMMAND` 桩与本地 `git http-backend`，并设置 `GIT_CONFIG_NOSYSTEM=1` 与受限 `GIT_ALLOW_PROTOCOL`，不访问真实远端、网络或系统凭据库。
+- `G02`/`G03`：`TestA4PrivateRemoteRoundTripCoversG02` 验证空远端首推、第二设备克隆相同历史并建立 `origin/main` upstream、不产生独立根提交；`TestA4RemoteBoundaryAndErrors` 覆盖错误 URL 不当作空远端、SSH 认证失败分类为 `AUTH_FAILED`、无默认分支明确失败、取消 upstream 后按初始化协议重建。
+- `G04`/`G06`：`pre-push` 钧子在 fetch 后推进远端时 push 被拒返回 `NON_FAST_FORWARD` 且 `remoteState=pending`、本地提交保留；`TestA4ManualGitStatePausesSyncCoversG06` 在用户手工 merge 冲突下让 `sync --wait` 与受管 `write` 均返回 `OPERATION_ACTIVE`。
+- `C01`–`C04`：`TestA4ConflictTwoStagesCoversC01` 验证两个连续本地提交分别冲突时每阶段的三方快照与 `captured`→`resolving` 相位；`TestA4ConflictStaleCoversC02` 验证外部 HEAD 变化后旧结果返回 `CONFLICT_STALE` 且不覆盖新历史；`TestA4ConflictTypesCoversC03` 区分删除/修改、空文件与文本冲突并拒绝二进制与 rename 类型（`UNSUPPORTED`）；`TestA4ResolveAbortCoversC04` 验证跨进程读取持久化阶段并以 `--abort` 恢复原始 HEAD。
+- `G08`：`G08.1` 受控 SSH 桩成功同步并传递 `SSH_AUTH_SOCK`；`G08.3` 本地 HTTP + `git http-backend` 下非交互 `credential.helper` 认证成功且凭据不出现在输出；`G08.4` 无 TTY 时 `GIT_ASKPASS`/`SSH_ASKPASS` 未被调用；`G08.5` 挂起桩在总 deadline 到期后返回 `TIMEOUT`，进程组被终止且锁可重新获取；`G08.6` 主机密钥失败返回 `AUTH_FAILED` 且不写 `known_hosts`；`G08.7` 含凭据 URL 在诊断中被脱敏为 `://***@`。
+- `L01`（前台 Git 子进程）：`G08.5` 用例同时验证 deadline 到达后无遗留 Git 子进程且仓库锁可再次获取。
+- 未验证与遗留：`G08.2`（终端成功但后台凭据环境不同）属 A-5，本轮未实现或验证，`G08` 作为复合项未整体标记通过；`G05`（签名与 hooks 拒绝）沿用 A-3 的缺失身份与 hook 拒绝场景，`G07` 沿用共享 `git.Inspect` 未合并索引检测，本轮未新增专项用例；真实 `SIGKILL` 父进程与宿主清理属 A-5 平台门槛；未覆盖 Windows/Linux。
+- 下一步：当时剩余已登记待办为 `T018`、`T019`（共同对应 `A-5`），其后按 `A-6` → `D-2` 推进；已完成，由 `T018` 接续。
+
 ## T011：文档引号用法统一
 
 - 目标与范围：在 `tech-doc-style-chinese` 默认规则下确定 `docs/` 与根 `README.md` 的引号基线，并把 `01`–`04` 与 `docs/README.md` 正文的弯引号改为直角引号「」，使全仓正文口径一致；只改引号与在 [方案索引](../README.md) 增加一行基线声明，不改事实、条件、机器可读内容与产品契约。

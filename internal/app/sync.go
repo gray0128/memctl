@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/gray0128/memctl/internal/config"
@@ -33,38 +34,54 @@ type SyncResult struct {
 	OperationID   string
 }
 
+// SyncOptions controls one synchronization attempt.
+type SyncOptions struct {
+	// Interactive allows Git and SSH native prompts when the caller has a
+	// terminal. Hook and background callers leave it false.
+	Interactive bool
+	// Background takes the repository lock without waiting so a burst of hook
+	// invocations exits immediately instead of queuing.
+	Background bool
+}
+
 // SyncWait performs one foreground synchronization under the repository lock.
 // It returns a Result for both success and classified failure. A content
 // conflict is persisted and reported as CONTENT_CONFLICT.
 func (a *App) SyncWait(ctx context.Context, interactive bool) (SyncResult, error) {
-	session, err := a.beginSync(ctx)
+	return a.SyncWithOptions(ctx, SyncOptions{Interactive: interactive})
+}
+
+// SyncWithOptions performs one synchronization attempt with explicit options.
+func (a *App) SyncWithOptions(ctx context.Context, opts SyncOptions) (SyncResult, error) {
+	session, err := a.beginSync(ctx, opts.Background)
 	if err != nil {
 		return SyncResult{}, err
 	}
 	defer session.Close()
 
-	remote, hasRemote, err := git.DefaultRemote(ctx, session.repoPath)
+	syncCtx := session.ctx
+	remote, hasRemote, err := git.DefaultRemote(syncCtx, session.repoPath)
 	if err != nil {
 		return SyncResult{}, err
 	}
 	if hasRemote {
-		if err := requireRemoteApproval(ctx, session, remote); err != nil {
+		if err := requireRemoteApproval(syncCtx, session, remote); err != nil {
 			return SyncResult{}, err
 		}
 	}
 
-	if _, ok := ctx.Deadline(); !ok {
+	if _, ok := syncCtx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultSyncBudget)
+		syncCtx, cancel = context.WithTimeout(syncCtx, defaultSyncBudget)
 		defer cancel()
 	}
 
-	run, runErr := syncer.Run(ctx, syncer.Request{
+	run, runErr := syncer.Run(syncCtx, syncer.Request{
 		RepoPath:       session.repoPath,
 		RepoID:         config.RepoID(session.repoPath),
 		Remote:         remote,
-		Interactive:    interactive,
-		NonInteractive: !interactive,
+		Interactive:    opts.Interactive,
+		NonInteractive: !opts.Interactive,
 	})
 
 	summary := SyncResult{
@@ -81,7 +98,7 @@ func (a *App) SyncWait(ctx context.Context, interactive bool) (SyncResult, error
 	}
 
 	if run.Conflict != nil {
-		revision, err := a.repoRevision(ctx, session)
+		revision, err := a.repoRevision(syncCtx, session)
 		if err != nil {
 			return summary, err
 		}
@@ -106,11 +123,34 @@ func (a *App) SyncWait(ctx context.Context, interactive bool) (SyncResult, error
 	return summary, nil
 }
 
+// triggerBackgroundSync best-effort starts one detached synchronization worker
+// after a managed write. It never blocks or fails the write.
+func (a *App) triggerBackgroundSync() {
+	if a == nil || !a.backgroundSync {
+		return
+	}
+	_ = syncer.Spawn(syncer.SpawnRequest{
+		RepoPath: a.cfg.RepoPath,
+		StateDir: a.cfg.StateDir,
+		Env:      os.Environ(),
+	})
+}
+
+// BeginBackgroundSync starts the detached worker for the automatic Hook path.
+// It is best-effort; the caller reports success regardless.
+func (a *App) BeginBackgroundSync() error {
+	return syncer.Spawn(syncer.SpawnRequest{
+		RepoPath: a.cfg.RepoPath,
+		StateDir: a.cfg.StateDir,
+		Env:      os.Environ(),
+	})
+}
+
 // beginSync acquires the lock and validates the conditions shared by remote
 // synchronization: no unfinished transaction, no owned conflict, no active Git
 // operation and a clean worktree and index.
-func (a *App) beginSync(ctx context.Context) (*writeSession, error) {
-	session, err := a.beginLocked(ctx, true, false)
+func (a *App) beginSync(ctx context.Context, background bool) (*writeSession, error) {
+	session, err := a.beginLocked(ctx, true, false, background)
 	if err != nil {
 		return nil, err
 	}

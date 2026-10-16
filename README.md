@@ -2,7 +2,7 @@
 
 `memctl` 计划以 Go 单文件二进制实现 [Agent Memory Repo](https://github.com/AgentMemoryRepo/agentmemoryrepo) 的记忆管理工作流：用 Markdown 保存知识，用 Git 保留历史和同步变更，向 Agent 提供上下文，并内嵌本地 Web UI。
 
-**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复，以及阶段 A-4 的前台远端同步与冲突解决（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`resolve`、`recover`）；尚未实现 Hook 与后台同步、Web UI、诊断、Dreaming 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
+**当前已完成阶段 A-1 的 Go 工程与命令入口、阶段 A-2 的本地仓库初始化、安全读取与格式解析、阶段 A-3 的本地受管写入、显式 capture 与事务恢复、阶段 A-4 的前台远端同步与冲突解决，以及阶段 A-5 子任务 1 的后台同步派生与进程生命周期（`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`resolve`、`recover`）；尚未实现 Hook 会话身份与上下文注入、Web UI、诊断、Dreaming 或正式安装流程。** 实施进度、验收证据和下一项任务统一记录在 [开发状态](./docs/STATUS.md)，不以方案中的功能描述代表整体实现完成。
 
 ## 从哪里开始
 
@@ -34,16 +34,16 @@ memctl/
   Makefile              # 阶段 A 的 CLI 构建、测试与清理入口
   go.mod                # Go 模块定义（Go 1.27.1）
   cmd/memctl/           # CLI 进程入口与版本注入
-  internal/cli/         # 命令分发、init/read/write/sync/resolve/recover、参数错误边界与终端检测
+  internal/cli/         # 命令分发、init/read/write/sync/end/resolve/recover、参数错误边界与终端检测
   internal/config/      # 仓库与状态路径解析、repoId
   internal/git/         # Git 调用、状态检查、环境清理、失败分类与同步原语
-  internal/syncer/      # 前台同步编排、错误分类与冲突快照
-  internal/lock/        # 仓库排他文件锁
+  internal/syncer/      # 前台同步编排、错误分类、冲突快照与后台派生
+  internal/lock/        # 仓库排他锁；锁描述符可被 Git 子进程继承
   internal/state/       # 事务恢复记录、冲突/操作记录、远端审批与同步摘要
   internal/vault/       # 根相对路径边界、有界读取、格式解析与受管文件写入
   internal/app/         # 初始化、读取、受管写入、capture、远端同步与冲突解决
   internal/memerr/      # 契约错误码
-  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3、A-4）
+  tests/integration/    # 跨模块与 CLI 二进制集成测试（R03、A-2、A-3、A-4、A-5）
   docs/                 # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/         # 只读参考，不作为新实现或发布入口
 ```
@@ -88,7 +88,7 @@ printf '# Memory\n\n## Index\n- new entry\n' | ./bin/memctl write MEMORY.md --ba
 ./bin/memctl resolve --abort --conflict <conflictId>
 ```
 
-当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`resolve` 与 `recover` 可用。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。`sync` 不带 `--capture`/`--wait` 以及 Hook 类子命令仍返回未实现错误（退出码 `1`）；未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
+当前 `version`、`help`、`init`、`read`、`write`、`sync --capture`、`sync --wait`、`sync`/`end` 后台派生、`resolve` 与 `recover` 可用。`init` 带 URL 时必须同时提供 `--confirm-private`，且不会自动改向已有 remote 的不同 URL；未接入远端时 `sync --wait` 返回 `remote: local_only`。受管 `write` 与自动 `sync`/`end` 会尽力派生一个非交互后台同步工作进程；设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭该行为。`start`/`context`/`pull`/`tag`/`wrap` 等 Hook 子命令仍返回未实现错误（退出码 `1`）；未知命令或参数返回用法错误（退出码 `2`）。前端工程与完整打包目标将在对应阶段落地后再接入 `Makefile`。
 
 ## 上游与参考
 

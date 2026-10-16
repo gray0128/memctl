@@ -76,6 +76,9 @@ type writeSession struct {
 	gitDir   string
 	store    *state.Store
 	lock     *lock.Lock
+	// ctx carries the lock descriptor so Git children inherit the lock for
+	// their lifetime. See docs/01-architecture-and-modules.md section 6.
+	ctx context.Context
 }
 
 func (s *writeSession) Close() {
@@ -84,9 +87,11 @@ func (s *writeSession) Close() {
 	}
 	if s.root != nil {
 		_ = s.root.Close()
+		s.root = nil
 	}
 	if s.lock != nil {
 		_ = s.lock.Release()
+		s.lock = nil
 	}
 }
 
@@ -212,13 +217,18 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	if err != nil {
 		return MutationResult{TransactionID: txID, Commit: commit}, err
 	}
-	return MutationResult{
+	result := MutationResult{
 		TransactionID: txID,
 		Revision:      revision,
 		Commit:        commit,
 		ChangedFiles:  paths,
 		SyncState:     "local_only",
-	}, nil
+	}
+	// Release the lock before triggering background sync so the worker can
+	// acquire it. The trigger is best-effort and does not change the result.
+	session.Close()
+	a.triggerBackgroundSync()
+	return result, nil
 }
 
 // Capture accepts serial external edits explicitly. It freezes the changed path
@@ -492,7 +502,7 @@ func (s *writeSession) restoreSelected(ctx context.Context, record state.Transac
 // beginWrite acquires the repository lock and refuses to start when Git is in
 // an intermediate state or an unfinished transaction still needs recovery.
 func (a *App) beginWrite(ctx context.Context) (*writeSession, error) {
-	session, err := a.beginLocked(ctx, true, false)
+	session, err := a.beginLocked(ctx, true, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -521,8 +531,9 @@ func (a *App) beginWrite(ctx context.Context) (*writeSession, error) {
 // Git operation. It deliberately allows unfinished transactions so recovery
 // can run. requireEntry is false for recovery, which must work when an
 // interrupted transaction deleted the entry file. allowGitState lets the
-// conflict resolver continue an operation memctl owns.
-func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState bool) (*writeSession, error) {
+// conflict resolver continue an operation memctl owns. When background is set
+// the lock is taken without waiting so a burst of hook calls exits at once.
+func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState bool, background bool) (*writeSession, error) {
 	repoPath, err := a.requireRepoRoot(ctx)
 	if err != nil {
 		return nil, err
@@ -536,15 +547,29 @@ func (a *App) beginLocked(ctx context.Context, requireEntry bool, allowGitState 
 	if err != nil {
 		return nil, err
 	}
-	held, err := lock.Acquire(ctx, gitDir)
-	if err != nil {
-		return nil, err
+	var held *lock.Lock
+	if background {
+		acquired, ok, err := lock.TryAcquire(gitDir)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, memerr.New(memerr.Busy,
+				"repository lock %s is held by another process; background sync exits instead of queuing", filepath.Join(gitDir, lock.FileName))
+		}
+		held = acquired
+	} else {
+		held, err = lock.Acquire(ctx, gitDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	session := &writeSession{
 		repoPath: repoPath,
 		gitDir:   gitDir,
 		store:    state.OpenStore(gitDir),
 		lock:     held,
+		ctx:      git.WithInheritedFile(ctx, held.File()),
 	}
 	root, err := vault.OpenRoot(repoPath)
 	if err != nil {

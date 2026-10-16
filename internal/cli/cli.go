@@ -24,7 +24,6 @@ var plannedSubcommands = map[string]string{
 	"start":   "synchronize and output session context at session start (planned in A-5)",
 	"context": "output session context with per-session sync deduplication (planned in A-5)",
 	"pull":    "synchronize repository silently for hook integrations (planned in A-5)",
-	"end":     "trigger background sync at session end (planned in A-5)",
 	"tag":     "print canonical agent://<device>/<agent>/<sid> source tag (planned in A-5)",
 	"wrap":    "run a command wrapped with session identity and pre/post sync (planned in A-5)",
 	"ui":      "start the embedded local Web UI server (planned in Stage B)",
@@ -36,14 +35,16 @@ var plannedSubcommands = map[string]string{
 const usageText = `Usage:
   memctl <subcommand> [flags] [-- command...]
 
-Available Commands (Stage A-4):
+Available Commands:
   version              Print memctl version information
   help                 Show this help message
   init [remote-url]    Initialize a local memory repository (--confirm-private)
   read <path>          Read a memory file or structured revision (--json)
   write <path>         Write a memory file with a baseline check (--base REV --stdin)
   sync --wait          Foreground remote synchronization
+  sync                 Trigger best-effort background synchronization
   sync --capture       Capture serial external edits and commit them
+  end                  Trigger background synchronization at session end
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
 
@@ -51,7 +52,6 @@ Planned Commands (not yet enabled):
   start                SessionStart hook synchronization and context output
   context              UserPromptSubmit hook synchronization and context output (--once)
   pull                 Silent hook synchronization (--once)
-  end                  SessionEnd hook background synchronization
   tag                  Output canonical session source URI (--agent NAME --sid ID)
   wrap                 Wrap external command with pre/post sync (--agent NAME -- <cmd...>)
   doctor               Run repository diagnostics (--json --fix)
@@ -106,6 +106,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	case "sync":
 		return runSync(rest, stdout, stderr)
+
+	case "end":
+		return runEnd(rest, stdout, stderr)
 
 	case "resolve":
 		return runResolve(rest, stdout, stderr)
@@ -297,7 +300,11 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "write", err)
 	}
-	result, err := app.New(cfg).Apply(context.Background(), app.MutationRequest{
+	service := app.New(cfg)
+	if cfg.BackgroundSync {
+		service.EnableBackgroundSync()
+	}
+	result, err := service.Apply(context.Background(), app.MutationRequest{
 		Changes: []app.FileChange{{
 			Path:             relPath,
 			ExpectedRevision: base,
@@ -353,8 +360,7 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if !capture && !wait {
-		return fail(stderr, "sync", memerr.New(memerr.Unsupported,
-			"automatic Hook synchronization and background derivation are implemented in A-5; use `memctl sync --wait` for foreground remote sync or `memctl sync --capture` for serial external edits"))
+		return runBackgroundSync(stdout, stderr)
 	}
 
 	cfg, err := loadConfig()
@@ -378,13 +384,56 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if wait {
-		result, err := service.SyncWait(ctx, hasTerminal())
-		printSyncResult(stdout, result)
+		background := os.Getenv("MEMCTL_SYNC_BACKGROUND") == "1"
+		result, err := service.SyncWithOptions(ctx, app.SyncOptions{Interactive: hasTerminal(), Background: background})
+		if !background {
+			printSyncResult(stdout, result)
+		}
 		if err != nil {
+			if background {
+				// A detached worker must not surface a failure to the hook caller.
+				return ExitOK
+			}
 			return fail(stderr, "sync", err)
 		}
 	}
 	return ExitOK
+}
+
+// runBackgroundSync implements the automatic `sync` and `end` Hook path: it
+// starts a detached worker and returns immediately. Hook callers always get
+// exit code 0 so a busy or offline repository does not block the host.
+func runBackgroundSync(stdout, stderr io.Writer) int {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail(stderr, "sync", err)
+	}
+	if !cfg.BackgroundSync {
+		return ExitOK
+	}
+	if err := app.New(cfg).BeginBackgroundSync(); err != nil {
+		fmt.Fprintf(stderr, "memctl sync: background sync was not started: %v\n", err)
+	}
+	return ExitOK
+}
+
+// runEnd implements `end --agent NAME --sid ID --stdin`, the SessionEnd hook.
+func runEnd(args []string, stdout, stderr io.Writer) int {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--stdin":
+		case arg == "--agent" || arg == "--sid":
+			if index+1 >= len(args) {
+				return usageError(stderr, "end", arg+" requires a value")
+			}
+			index++
+		case strings.HasPrefix(arg, "--agent=") || strings.HasPrefix(arg, "--sid="):
+		default:
+			return usageError(stderr, "end", fmt.Sprintf("unknown argument %q", arg))
+		}
+	}
+	return runBackgroundSync(stdout, stderr)
 }
 
 func printSyncResult(stdout io.Writer, result app.SyncResult) {

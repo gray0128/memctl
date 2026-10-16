@@ -146,10 +146,11 @@ func TestA3WriteCoversW03AndCapture(t *testing.T) {
 		t.Fatalf("capture must stay local, found remote %q", remote)
 	}
 
-	// `sync` without --capture is still the A-4/A-5 remote path.
+	// `sync` without --capture is the automatic Hook path. Background sync is
+	// disabled in this test environment, so it is a silent exit 0.
 	plain := runMemctl(t, bin, home, env, "sync")
-	if plain.code != 1 || !strings.Contains(plain.stderr, "UNSUPPORTED") {
-		t.Fatalf("plain sync: code=%d stderr=%q, want UNSUPPORTED", plain.code, plain.stderr)
+	if plain.code != 0 || plain.stdout != "" || plain.stderr != "" {
+		t.Fatalf("plain sync: code=%d stdout=%q stderr=%q, want a silent 0", plain.code, plain.stdout, plain.stderr)
 	}
 }
 
