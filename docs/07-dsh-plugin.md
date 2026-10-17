@@ -116,7 +116,7 @@
 4. **独立 GitHub 仓库**：粘贴仓库根 URL，例如 `https://github.com/<owner>/memctl-dsh`；仓库根必须有 `package.json`、bundle patch 和预构建入口，不能依赖 `prepare` 构建。
 5. **本地目录（开发或 tarball 被拒绝时的回退）**：粘贴绝对目录路径；DSH 会以 link 依赖安装，目录不能移动或删除。
 
-如果某个 DSH 小版本拒绝 tarball 输入，回退为本地目录路径：`memctl dsh plugin-dir` 把同一 bundle 写到 `$STATE/dsh/<version>/` 并输出绝对目录，用户粘贴该目录；DSH 以 link 安装，目录必须长期保留。这仍然不需要 npm，也不要求 GitHub 仓库。tarball 输入在 DSH 0.2.1-rc.1 的 Host 解析器中可用，但对话框文案没有把它列为正式选项，因此需要按 [§8.3](#83-真实宿主测试) 做一次界面实测。
+如果某个 DSH 小版本拒绝 tarball 输入，回退为本地目录路径：`memctl dsh plugin-dir` 把同一 bundle 写到 `$STATE/dsh/<version>/` 并输出绝对目录，用户粘贴该目录；DSH 以 link 安装，目录必须长期保留。这仍然不需要 npm，也不要求 GitHub 仓库。tarball 输入在 DSH 0.2.1-rc.1 的 Host 解析器中可用，但对话框文案没有把它列为正式选项。2026-10-17 已在 DSH 0.2.1-rc.2 的隔离 profile 中通过「插件 → 添加插件」用绝对 tarball 完成安装并启用，见 [T052 验证记录](./validation/t052-dsh-real-session.md)；npm 包名与绝对目录仍未做界面实测。
 
 #### 4.4.1 安装失败与恢复
 
@@ -540,10 +540,10 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
 - `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.3.0` Release 已附带 `memctl-dsh-0.3.0.tgz`。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
-- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.2.0`；`v0.3.0` 已发布，但本机插件尚未升级。
+- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.3.0` 已发布，`desktop` profile 的 `memctl-dsh` 已升级到 `0.3.0`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；`--session-id` 恢复会重新执行 `start` 且不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`agent/disposed` 事件本身仍未在真实宿主观察到。
 
 未验证：
 
-- 真实 DSH 会话中的 `agent/disposed` 收尾、恢复、失败路径与界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证。2026-10-17 20:05 的退出应用探针没有观察到 `end`；插件卸载兜底已由单元测试覆盖，但仍需真实退出复验，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
+- 真实 DSH 会话中的 `agent/disposed` 事件路径、恢复后的实际上下文注入、锁忙/断网降级，以及 npm 包名与绝对目录的界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证。`0.3.0` 的正常退出已确认由插件卸载兜底触发一次 `end`，绝对 tarball 已通过界面安装；`agent/disposed` 仍只有单元测试覆盖，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
 - npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。
