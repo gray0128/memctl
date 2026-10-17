@@ -1,7 +1,16 @@
 {
   "name": "memctl-dsh",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Loads memctl memory at DSH session start and synchronizes it after each turn.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gray0128/memctl.git",
+    "directory": "plugins/dsh"
+  },
+  "homepage": "https://github.com/gray0128/memctl/tree/main/plugins/dsh",
+  "bugs": {
+    "url": "https://github.com/gray0128/memctl/issues"
+  },
   "license": "MIT",
   "type": "module",
   "exports": {

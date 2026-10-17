@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理。
 
-当前版本 `v0.5.0`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。阶段 F 的 `memctl-pi` 随 `v0.5.0` 发布并在 npm 发布 `0.5.1`，在 pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.5.1`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。阶段 F 的 `memctl-pi` 与 `memctl-dsh` 随 `v0.5.1` 发布并在 npm 发布 `0.5.1`，在 pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -74,7 +74,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 | 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理接入 7 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
-| DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；只写状态目录，不修改 DSH profile |
+| DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.1`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
 | 整理提案 | `dream --runner`、`dream --show`、`dream --apply` | 隔离生成带固定 Diff 的提案，人工确认后按受管事务应用；应用不重新调用模型 |

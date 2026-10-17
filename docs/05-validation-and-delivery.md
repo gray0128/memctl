@@ -214,7 +214,7 @@
 - 文档中的命令、参数、状态字段和 REST 路由与实现一致；契约测试覆盖全部路由和错误类别。
 - 帮助目录覆盖全部命令；`R06` 在无仓库、空 `PATH` 的隔离环境通过，中英文与 JSON 输出和 [CLI 契约](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n) 一致。
 - 同步与写入测试不接触真实用户配置或公网远端；真实宿主验证使用明确隔离的测试账户或目录。
-- 单文件包包含默认指引、模板、`memctl-dsh` 与 `memctl-pi` 源文件，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和、第三方许可证、`memctl-dsh-<version>.tgz` 与 `memctl-pi-<version>.tgz`（后者只用于 npm 发布和审计，不作为 pi 安装输入）。
+- 单文件包包含默认指引、模板、`memctl-dsh` 与 `memctl-pi` 源文件，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和、第三方许可证、`memctl-dsh-<version>.tgz` 与 `memctl-pi-<version>.tgz`（两个插件包均已发布到 npm；tarball 用于审计，不作为 pi 安装输入）。
 - `--readonly`、无 remote、无 runner、无 GUI 浏览器等降级路径都有明确结果。
 - 事务与配置安装恢复演练通过；不以手工删除锁或强制重置仓库作为测试通过条件。
 - 视觉 UI/UX 验证仅在明确安排时开展，不用本方案的静态检查代替浏览器实际效果验证。
