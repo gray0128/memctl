@@ -2,6 +2,15 @@
   "name": "memctl-pi",
   "version": "0.5.0",
   "description": "Loads memctl memory at pi session start and synchronizes it after each agent run.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gray0128/memctl.git",
+    "directory": "plugins/pi"
+  },
+  "homepage": "https://github.com/gray0128/memctl/tree/main/plugins/pi",
+  "bugs": {
+    "url": "https://github.com/gray0128/memctl/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "./index.js",

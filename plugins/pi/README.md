@@ -1,6 +1,6 @@
 # memctl-pi
 
-pi 扩展：会话开始时读取 memctl 记忆并注入上下文，agent run 结束后同步，会话结束时收尾。插件只做宿主生命周期桥接；记忆存储、锁、Git 提交、冲突处理与远端同步仍由 `memctl` 二进制负责。设计见 [docs/08-pi-plugin.md](../../docs/08-pi-plugin.md)。
+pi 扩展：会话开始时读取 memctl 记忆并注入上下文，agent run 结束后同步，会话结束时收尾。插件只做宿主生命周期桥接；记忆存储、锁、Git 提交、冲突处理与远端同步仍由 `memctl` 二进制负责。设计与验收见 [docs/08-pi-plugin.md](https://github.com/gray0128/memctl/blob/main/docs/08-pi-plugin.md)。
 
 ## 安装
 
@@ -63,8 +63,14 @@ pi remove /absolute/path/printed/by/the/command
 
 ## 验证
 
+在源码仓库中运行：
+
 ```sh
-node --test plugins/pi/test/*.test.js
+make pi-plugin-test
 ```
 
-包内只包含 `index.js` 与 `README.md`，没有运行时依赖和安装脚本。
+包内只包含 `index.js`、`README.md`、`LICENSE` 与 `package.json`，没有运行时依赖和安装脚本。
+
+## 许可证
+
+MIT。
