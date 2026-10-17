@@ -21,68 +21,47 @@ const (
 	ExitUsageError = 2
 )
 
-const usageText = `Usage:
-  memctl <subcommand> [flags] [-- command...]
-
-Available Commands:
-  version              Print memctl version information
-  help                 Show this help message
-  init [remote-url]    Initialize a local memory repository (--confirm-private)
-  read <path>          Read a memory file or structured revision (--json)
-  write <path>         Write a memory file with a baseline check (--base REV --stdin)
-  sync --wait          Foreground remote synchronization
-  sync                 Trigger best-effort background synchronization
-  sync --capture       Capture serial external edits and commit them
-  end                  Trigger background synchronization at session end
-  start                SessionStart hook: synchronize and output context (--stdin --json)
-  context              UserPromptSubmit hook: synchronize and output context (--once --json)
-  pull                 Silent hook synchronization (--once)
-  tag                  Print canonical session source URI (--agent NAME --sid ID)
-  wrap                 Wrap a command with session identity and sync (--agent NAME -- cmd...)
-  resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
-  recover              Inspect or rollback incomplete transactions (--status | --rollback)
-  doctor               Run read-only repository diagnostics (--json)
-  dream                Generate, inspect or apply Dreaming proposals (--runner NAME | --show ID | --apply ID --patch-hash HASH)
-  install [agent...]   Inspect or install agent adapter configurations (--all --dry-run --status)
-  dsh plugin-path      Print the absolute path of the embedded memctl-dsh tarball
-  dsh plugin-dir       Print the absolute path of the embedded memctl-dsh directory
-  update               Update memctl from GitHub Releases (--check)
-  ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
-
-Run "memctl help" for usage details.
-`
-
 // Run executes the CLI command and returns an exit code per docs/04-ui-and-cli-specification.md.
 // version and help never access the memory repository, state directory, Git, or Node.js.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
+	lang, args, err := resolveHelpLanguage(os.Getenv, args)
+	if err != nil {
+		fmt.Fprintf(stderr, "memctl: %v\n", err)
+		fmt.Fprintln(stderr, `Run "memctl help" for usage.`)
+		return ExitUsageError
+	}
+
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "memctl: missing subcommand")
-		fmt.Fprint(stderr, usageText)
+		fmt.Fprint(stderr, renderRootHelp(lang))
 		return ExitUsageError
 	}
 
 	sub := args[0]
 	rest := args[1:]
 
+	// Help is available without touching the repository. `help` and the
+	// top-level flags open the overview; `<command> --help` opens that command
+	// page. A --help after `--` belongs to a wrapped command.
+	if sub == "help" || sub == "--help" || sub == "-h" {
+		return runHelp(rest, lang, stdout, stderr)
+	}
+	if command, known := lookupHelpCommand(sub); known {
+		if wantsHelp, wantsJSON := helpRequest(rest); wantsHelp {
+			return printCommandHelp(command, lang, wantsJSON, stdout, stderr)
+		}
+	}
+
 	switch sub {
 	case "version", "--version", "-v":
 		if len(rest) > 0 {
-			fmt.Fprintf(stderr, "memctl version: unexpected arguments: %s\n", strings.Join(rest, " "))
-			return ExitUsageError
+			return usageError(stderr, "version", fmt.Sprintf("unexpected arguments: %s", strings.Join(rest, " ")))
 		}
 		v := strings.TrimSpace(version)
 		if v == "" {
 			v = "v2.0.0-dev"
 		}
 		fmt.Fprintf(stdout, "memctl %s\n", v)
-		return ExitOK
-
-	case "help", "--help", "-h":
-		if len(rest) > 0 {
-			fmt.Fprintf(stderr, "memctl help: unexpected arguments: %s\n", strings.Join(rest, " "))
-			return ExitUsageError
-		}
-		fmt.Fprint(stdout, usageText)
 		return ExitOK
 
 	case "init":
@@ -142,12 +121,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	if strings.HasPrefix(sub, "-") {
 		fmt.Fprintf(stderr, "memctl: unknown flag %q\n", sub)
-		fmt.Fprint(stderr, usageText)
+		fmt.Fprint(stderr, renderRootHelp(lang))
 		return ExitUsageError
 	}
 
 	fmt.Fprintf(stderr, "memctl: unknown command %q\n", sub)
-	fmt.Fprint(stderr, usageText)
+	fmt.Fprint(stderr, renderRootHelp(lang))
 	return ExitUsageError
 }
 
@@ -780,6 +759,9 @@ func loadConfig() (config.Config, error) {
 }
 func usageError(stderr io.Writer, cmd, message string) int {
 	fmt.Fprintf(stderr, "memctl %s: %s\n", cmd, message)
+	if _, ok := lookupHelpCommand(cmd); ok {
+		fmt.Fprintf(stderr, "Run \"memctl help %s\" for usage.\n", cmd)
+	}
 	return ExitUsageError
 }
 

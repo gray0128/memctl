@@ -29,7 +29,8 @@ memctl <subcommand> [flags] [-- command...]
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
-| `version` / `help` | 无 | 不访问记忆库、不初始化图谱 |
+| `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
+| `version` | 无 | 不访问记忆库、不初始化图谱 |
 
 同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成、查看、应用互斥；`install --status` 不写文件。
 
@@ -59,17 +60,67 @@ dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只�
 - **平台差异**：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED` 并给出下载地址，`update --check` 仍可只读报告；其他已支持平台在目标目录不可写时返回 `IO_FAILED`，不请求提权。
 - **输出与退出码**：`--check` 只输出 `current:`、`latest:` 与 `up to date`/`update available`；`update` 替换成功后输出 `updated:` 和重启提示。成功或已最新返回 `0`，网络、完整性、权限或不支持平台返回 `1`，未知参数返回 `2`。
 
+### 1.3 面向 Agent 的帮助与中英 i18n
+
+帮助是 CLI 的可用性契约，不是命令表的副本。目标是无仓库、无 Git、无 Node.js、无网络的干净环境里，Agent 仅凭 `memctl help`、`memctl help <command>` 或 `memctl <command> --help` 就能确定命令的前置条件、必填参数、输入格式、输出字段、退出码和恢复动作。
+
+- **概览**：`memctl help` 输出用途、快速开始、使用规则、命令分组、环境变量、退出码、语言选择和机器可读入口。概览必须给出从初始化到受管读写的可执行步骤，并明确受管写入、串行 capture、前台与后台同步的边界。
+- **单命令页**：每个可由 `Run` 分发的命令都有且只有一个帮助条目，包含用法、说明、参数、选项（标明必填或可选）、输入、输出、退出码、示例、注意事项和相关命令。`memctl help <command>` 与 `memctl <command> --help`/`-h` 输出同一页面；`--` 之后的 `--help` 属于被包装命令，不得拦截。
+- **错误边界**：未知帮助主题、未知帮助参数或无效 `--lang` 返回 `2`，stdout 为空；已知命令页返回 `0`。帮助路径不得访问记忆仓库、状态目录、Git、Node.js 或网络，也不得读取 stdin。
+- **参数错误提示**：命令参数错误返回 `2`；能定位到具体命令时，stderr 追加 `Run "memctl help <command>" for usage.`，让调用方无需额外查询即可定位帮助页。该提示保持英文，与稳定错误码一致。
+- **语言选择**：优先级为 `--lang` → `MEMCTL_LANG` → 第一个非空的 `LC_ALL`、`LC_MESSAGES`、`LANG` → 英文。`--lang` 可在任意命令的 `--` 之前使用并从参数中移除；无效值返回 `2`。`MEMCTL_LANG` 接受带可选地区或编码的 `en`/`zh`，无效值回退到 locale。locale 以 `zh` 开头选择中文，其他非空 locale（包括 `C`、`POSIX` 和不支持的语言）选择英文。
+- **本地化边界**：只本地化帮助文本。命令输出键、JSON 字段名、稳定错误码和退出码保持英文，避免同一脚本因语言变化而无法解析。帮助文本不使用 ANSI 颜色、不探测终端宽度，输出只由语言和内容决定。
+- **机器可读目录**：`memctl help --json` 输出单个 JSON 对象：
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "tool": "memctl",
+    "language": "en",
+    "title": "memctl - manage the agent memory repository",
+    "summary": "...",
+    "usage": ["..."],
+    "quickStart": [{"command": "...", "note": "..."}],
+    "rules": ["..."],
+    "commands": [
+      {
+        "name": "write",
+        "summary": "...",
+        "usage": ["..."],
+        "description": "...",
+        "arguments": [{"name": "<path>", "required": true, "description": "..."}],
+        "flags": [{"name": "--base", "value": "REV", "required": true, "description": "..."}],
+        "input": ["..."],
+        "output": ["..."],
+        "exitCodes": [{"code": 0, "meaning": "..."}],
+        "examples": [{"command": "...", "note": "..."}],
+        "notes": ["..."],
+        "related": ["read", "sync"]
+      }
+    ],
+    "environment": [{"name": "AGENT_MEMORY_DIR", "default": "~/memory", "description": "..."}],
+    "exitCodes": [{"code": 0, "meaning": "..."}],
+    "languageHelp": "...",
+    "moreHelp": "..."
+  }
+  ```
+
+  `memctl help <command> --json` 使用相同 envelope，`commands` 只含一个条目，不重复输出概览专属字段；`memctl <command> --help --json` 等价。`schemaVersion` 只在字段语义发生不兼容变化时递增。JSON 只写入 stdout，诊断写入 stderr。
+
+帮助目录与命令分发必须同步：新增、重命名或删除命令时，同时更新帮助目录、分组和回归测试。命令行为变化时先改本契约和帮助内容，再改实现；帮助文本与实现不一致时以本契约为准。
+
 ## 2. 环境变量与会话身份
 
 | 变量 | 默认值与语义 |
 | --- | --- |
 | `AGENT_MEMORY_DIR` | `~/memory`；规范化为绝对路径后绑定仓库 |
 | `AGENT_MEMORY_STATE` | `~/.agent-memory`；仅覆盖运行状态根，不改变仓库锁位置 |
-| `AGENT_MEMORY_BACKGROUND` | 默认开启；设为 `0`、`false` 或 `off` 时受管写入与自动 Hook 不派生后台同步 |
+| `AGENT_MEMORY_BACKGROUND` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时受管写入与自动 Hook 不派生后台同步 |
 | `AGENT_MEMORY_AGENT` | `unknown`；`--agent` 优先 |
 | `AGENT_MEMORY_DEVICE` | OS 主机名；探测失败使用 `unknown` 并提示 |
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
 | `DSH_HOOK_SESSION_ID` | dsh 的兼容身份来源 |
+| `MEMCTL_LANG` | 无默认值；帮助语言 `en` 或 `zh`，接受带地区或编码的写法；优先于 `LC_ALL`/`LC_MESSAGES`/`LANG`，仅影响帮助文本 |
 
 SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如 pi 的 `PI_SESSION_ID`。
 

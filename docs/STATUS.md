@@ -5,8 +5,8 @@
 ## 当前事实
 
 - 版本：`v0.3.0` 为当前发布版本（2026-10-17 发布）。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.3.0.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话中的注入与每轮同步已在本机 `desktop` 验证，收尾仍待复验。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`update`、`dream`、`ui`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–07 为准。
-- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射；`T055` 发布 `v0.2.1`；`T056` 新增 `update`/`update --check` 自更新；`T057` 发布 `v0.3.0`。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051) 与 [阶段 E 归档](./validation/stage-e.md)。
+- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话中的注入与每轮同步已在本机 `desktop` 验证，收尾仍待复验。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–07 为准。
+- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射；`T055` 发布 `v0.2.1`；`T056` 新增 `update`/`update --check` 自更新；`T057` 发布 `v0.3.0`；`T058` 新增面向 Agent 的 CLI 帮助体系、中英 i18n 与 `help --json` 目录。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051) 与 [阶段 E 归档](./validation/stage-e.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。DSH 0.2.1-rc.2 已通过隔离 profile 安装 `memctl-dsh`，并在本机 `desktop` 真实会话确认 `[agent-memory]` 注入、`turn/end` 后同步与子代理跳过；`T054` 已补插件卸载时对仍 live 会话的 `end` 兜底，真实退出复验、恢复与失败路径仍未验证。
 - 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `agent/disposed` 收尾、恢复与界面安装；Codex `SessionEnd`、OpenCode `session.deleted` 与 DSH 插件卸载兜底均未在真实会话结束路径复验；`systemPrompt.context` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步已在真实会话验证，失败降级仅覆盖模型凭据缺失；`update` 仅在 darwin/arm64 真实执行，其他平台为交叉编译与单元测试；本机 `~/.agent-memory` 中的 memctl 已升级到 `v0.3.0`，`memctl-dsh` 仍为 `0.2.0`。
@@ -73,24 +73,25 @@
 | T054 | 已完成 | 统一宿主会话结束映射：补 Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补回归与契约；[归档记录](./validation/stage-e.md#t054宿主会话结束映射与-dsh-收尾兜底) |
 | T055 | 已完成 | 发布 `v0.2.1`（含 `T054`）：插件版本提升到 `0.2.1`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t055发布-v021) |
 | T056 | 已完成 | 新增 CLI `update` 命令：查询 GitHub Releases 最新版本，按平台下载并校验 SHA-256 后原子替换当前二进制，`--check` 只报告；[归档记录](./validation/stage-e.md#t056新增-update-命令) |
-| T057 | 已完成 | 发布 `v0.3.0`（含 `T056`）：插件版本同步到 `0.3.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[完成记录](#t057发布-v030) |
+| T057 | 已完成 | 发布 `v0.3.0`（含 `T056`）：插件版本同步到 `0.3.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t057发布-v030) |
+| T058 | 已完成 | 面向 Agent 的 CLI 帮助与中英 i18n：`help <command>`、`<command> --help`、`help --json`、`--lang`/`MEMCTL_LANG`/locale 选择；补 `R06`；[完成记录](#t058面向-agent-的-cli-帮助与中英-i18n) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T057：发布 v0.3.0
+## T058：面向 Agent 的 CLI 帮助与中英 i18n
 
-- 目标与范围：把 `T056` 的 `update`/`update --check` 作为 `v0.3.0` 发布；插件包版本同步到 `0.3.0`，运行全量测试与 `make release`，校验四个候选二进制、插件 tarball 与校验和，推送 tag 触发 GitHub Release。不改变 `update` 的行为或新增 CLI 能力。
-- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](./07-dsh-plugin.md)。
-- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.3.0` 指向 `6fc3f11`；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
-- 命令与结果：`VERSION=v0.3.0 make release` 全量测试通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 315.5 秒），生成四个平台候选二进制、`memctl-dsh-0.3.0.tgz` 与三个元数据文件；`dist/SHA256SUMS` 五个产物全部 `OK`，`dist/memctl-darwin-arm64` 与 `memctl-darwin-amd64 version` 均输出 `memctl v0.3.0`，插件 tarball 版本为 `0.3.0`。tag 推送后 [GitHub Actions 运行 39038459741](https://github.com/gray0128/memctl/actions/runs/39038459741) 在 4 分 20 秒内通过并创建 [Release v0.3.0](https://github.com/gray0128/memctl/releases/tag/v0.3.0)；附件含四个平台二进制、`memctl-dsh-0.3.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 Release 附件后按发布 `SHA256SUMS` 校验，五个产物全部 `OK`；下载的 `memctl-darwin-arm64` 输出 `memctl v0.3.0`，`update --check` 输出 `up to date`。以当前代码构建 `v0.2.1` 临时二进制后执行 `update`，从新 Release 下载并校验 `memctl-darwin-arm64`，替换后 `version` 输出 `memctl v0.3.0`，退出码 `0`，无临时文件残留。
-- 验收：`make test` 全量通过；本地与下载的 Release 附件校验全部 `OK`；tag `v0.3.0` 的 CI Release 成功；`R05` 的真实更新路径在发布后复验通过。
-- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；发布时本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.3.0`；真实 DSH 会话退出收尾等 `T052` 项仍未验证。
-- 下一步：`T052` 安装 `v0.3.0` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。
+- 目标与范围：把 `help` 从单页命令列表扩展为 Agent 可直接使用的帮助体系。概览包含快速开始、使用规则、命令分组、环境变量、退出码和语言选择；每个命令页包含用法、说明、参数、选项（标明必填或可选）、输入、输出、退出码、示例、注意事项和相关命令。新增 `help <command>`、`<command> --help`/`-h`、`help --json`、`<command> --help --json`、`--lang`/`MEMCTL_LANG`/locale 的中英选择，以及命令参数错误时的帮助入口提示。不改变既有命令的业务输出、错误码和退出码。
+- 契约：[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[面向 Agent 的帮助与中英 i18n](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)、[验收 R06](./05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1；临时 HOME、不存在的记忆仓库与状态目录、空 `PATH` 的隔离环境；`GOCACHE` 指向工作区外可写目录。当前宿主未提供 Dreaming 所需的 macOS sandbox 执行权限。
+- 命令与结果：`go test ./internal/cli -count=1` 通过（帮助目录完整性、语言优先级、单命令页、JSON、错误边界与无仓库访问）；`go test ./tests/integration -run 'TestR03BuildAndCLIEntry|TestR06AgentHelpI18n' -count=1` 通过；`go vet ./internal/cli ./tests/integration` 通过。`TestR06AgentHelpI18n` 用真实二进制覆盖 20 个命令的 `help <command>` 与 `<command> --help`、`help --json`、`MEMCTL_LANG=zh` 与 `--lang zh`、未知主题和非法语言，并确认未创建仓库或状态目录。全量 `go test ./... -count=1` 中 `internal/...` 与 `plugins/dsh` 全部通过；`tests/integration` 除既有 D1/D2 Dreaming 用例外通过，Dreaming 用例因当前宿主 sandbox 不可用使 runner 以 `71` 退出，与帮助路径无关。`GOOS=linux GOARCH=amd64`、`GOOS=windows GOARCH=amd64` 与 `GOOS=darwin GOARCH=amd64` 交叉编译通过。
+- 验收：`R03` 回归通过；`R06` 通过。帮助路径不访问仓库、Git、Node.js 或网络；只本地化帮助文本，JSON 字段、输出键和错误码保持英文；未知主题或非法 `--lang` 返回 `2`，已知命令页返回 `0`。
+- 未验证与遗留：Linux 与 Windows 的 locale 探测和中文终端显示未在实机验证；全量集成测试中的 Dreaming sandbox 用例未通过，原因是当前宿主缺少 macOS sandbox 执行权限（runner 退出 `71`），需在具备该权限的受控环境复跑；帮助内容只覆盖当前 20 个命令，后续新增命令时必须同步帮助目录、分组和回归测试；`help --json` 的 `schemaVersion` 目前为 1，字段语义变化时需要递增。
+- 下一步：`T052` 仍进行中，继续真实 DSH 会话的 `agent/disposed`、恢复、失败路径与界面安装验证；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 ## 近期实施任务
 
-`T057` 已完成：`v0.3.0` 已发布，Release 与 CI 均通过。`T056` 已完成：`update` 与 `update --check` 已实现，真实 Release 下载、校验与原子替换在本机验证通过。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，`T054` 的卸载兜底已随 `v0.2.1` 发布，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+`T058` 已完成：面向 Agent 的 CLI 帮助、中英 i18n 与 `help --json` 目录已交付，`R06` 在无仓库、空 `PATH` 的隔离环境通过。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，`T054` 的卸载兜底已随 `v0.2.1` 发布，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

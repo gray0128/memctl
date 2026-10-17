@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunVersionAndHelp(t *testing.T) {
+	t.Setenv("MEMCTL_LANG", "en")
 	tests := []struct {
 		name       string
 		args       []string
@@ -52,14 +53,14 @@ func TestRunVersionAndHelp(t *testing.T) {
 			args:       []string{"--help"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands:",
+			wantStdout: "Commands:",
 		},
 		{
 			name:       "help flag short",
 			args:       []string{"-h"},
 			version:    "v2.0.0-dev",
 			wantCode:   cli.ExitOK,
-			wantStdout: "Available Commands:",
+			wantStdout: "Commands:",
 		},
 	}
 
@@ -81,6 +82,7 @@ func TestRunVersionAndHelp(t *testing.T) {
 }
 
 func TestRunUsageErrors(t *testing.T) {
+	t.Setenv("MEMCTL_LANG", "en")
 	tests := []struct {
 		name       string
 		args       []string
@@ -109,7 +111,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{
 			name:       "help with extra argument",
 			args:       []string{"help", "extra"},
-			wantStderr: "unexpected arguments",
+			wantStderr: "unknown command",
 		},
 		{
 			name:       "read without path",

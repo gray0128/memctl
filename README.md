@@ -35,6 +35,20 @@ DSH 使用专用 Host 插件 `memctl-dsh`，插件随二进制内嵌，不需要
 
 `memctl install --status` 只探测 `memctl-dsh` 与旧 `dsh-hooks-plugin`，不会修改 DSH profile，也不会在原生插件存在时写入 `hooks.json`。安装、升级与卸载由 DSH Plugin Manager 完成，详见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 
+## 帮助
+
+`memctl help` 输出面向 Agent 的概览：快速开始、使用规则、命令分组、环境变量、退出码和语言选择。单命令页包含用法、参数、输入、输出、退出码、示例和相关命令：
+
+```bash
+./bin/memctl help                 # 概览
+./bin/memctl help write           # 单命令页
+./bin/memctl write --help         # 等价写法
+./bin/memctl help --json          # schemaVersion 1 的机器可读目录
+MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
+```
+
+帮助语言按 `--lang` → `MEMCTL_LANG` → 第一个非空的 `LC_ALL`/`LC_MESSAGES`/`LANG` → 英文选择。只本地化帮助文本，JSON 字段、命令输出键和错误码保持英文。帮助不访问记忆仓库、Git、Node.js 或网络。完整契约见 [面向 Agent 的帮助与中英 i18n](./docs/04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)。
+
 ## 能做什么
 
 | 能力 | 命令 | 说明 |
@@ -112,6 +126,7 @@ make build
 make test
 ./bin/memctl version
 ./bin/memctl help
+./bin/memctl help write
 ```
 
 `version` 与 `help` 不访问仓库，不要求 Git 或 Node.js。`make test` 同时运行前端测试、`plugins/dsh/test/` 的 Node 单元测试与 Go 测试。
