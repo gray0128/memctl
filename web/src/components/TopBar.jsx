@@ -1,3 +1,6 @@
+import { useEffect, useRef } from 'preact/hooks'
+import { formatTimestamp } from '../time.js'
+
 const CONNECTION_CONFIG = {
   live: {
     dot: 'bg-emerald-500 ring-emerald-500/30',
@@ -61,10 +64,31 @@ function aheadBehind(sync) {
 }
 
 export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy, syncMessage }) {
+  const headerRef = useRef(null)
   const sync = snapshot ? snapshot.syncState : null
   const localState = snapshot ? sync.localState : error ? '不可用' : '读取中'
   const remoteState = snapshot ? sync.remoteState : error ? '不可用' : '读取中'
-  const lastSync = snapshot && sync.lastSuccessAt ? sync.lastSuccessAt : '未知'
+  const lastSync = snapshot && sync.lastSuccessAt ? formatTimestamp(sync.lastSuccessAt) : '未知'
+
+  // The header height changes when the sync banner or a snapshot error is
+  // shown. The sticky nav reads the measured height so it never slides under
+  // the header; see docs/04-ui-and-cli-specification.md section 4.
+  useEffect(() => {
+    const element = headerRef.current
+    if (!element) return undefined
+    const apply = () => {
+      const height = Math.ceil(element.getBoundingClientRect().height)
+      document.documentElement.style.setProperty('--memctl-header-height', `${height}px`)
+    }
+    apply()
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply)
+    if (observer) observer.observe(element)
+    return () => {
+      if (observer) observer.disconnect()
+      document.documentElement.style.removeProperty('--memctl-header-height')
+    }
+  }, [])
 
   const SYNC_TONES = {
     ok: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
@@ -73,7 +97,7 @@ export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs">
+    <header ref={headerRef} className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         {/* Brand & Connection State */}
         <div className="flex items-center gap-3">

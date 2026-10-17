@@ -95,7 +95,10 @@ code, pre, kbd, samp {
 }
 
 .diff-preview .d2h-code-line {
-  padding: 2px 8px;
+  /* Diff2Html positions the line numbers absolutely in a 7.5em column and
+     reserves that space with 8em horizontal padding. Only the vertical
+     padding is customized here. */
+  padding: 2px 8em;
   font-family: ui-monospace, monospace;
   font-size: 0.75rem;
   line-height: 1.4;

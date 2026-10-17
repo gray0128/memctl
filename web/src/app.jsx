@@ -132,6 +132,9 @@ export function App() {
   // revert use it because they change history without always emitting a
   // vault.updated event.
   async function refreshSnapshot() {
+    // A resolved conflict or an applied revert changes the sync summary, so
+    // the banner from the previous sync attempt is stale by definition.
+    setSyncMessage(null)
     try {
       const next = await loadFreshSnapshot(api)
       setSnapshot(next)
@@ -202,7 +205,7 @@ export function App() {
       />
 
       {/* Floating Segmented Navigation Bar */}
-      <nav className="border-b border-slate-200/70 bg-white/70 backdrop-blur-sm px-4 sm:px-6 dark:border-slate-800/70 dark:bg-slate-900/60 sticky top-[57px] z-20">
+      <nav className="border-b border-slate-200/70 bg-white/70 backdrop-blur-sm px-4 sm:px-6 dark:border-slate-800/70 dark:bg-slate-900/60 sticky top-[var(--memctl-header-height,57px)] z-20">
         <div className="mx-auto flex max-w-7xl items-center gap-1.5 overflow-x-auto py-2 scrollbar-none">
           {VIEWS.map((item) => {
             const active = view === item.id

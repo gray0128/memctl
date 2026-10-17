@@ -7,6 +7,7 @@
 // docs/04-ui-and-cli-specification.md section 5.
 
 import { buildQuery } from './queries.js'
+import { retryBusy } from './retry.js'
 import { encodeFilePath, ifMatchHeader, putFileHeaders } from './writes.js'
 
 function metaContent(name) {
@@ -46,12 +47,19 @@ export function createApi(options = {}) {
       : metaContent('memctl-dream-sandbox') === 'available'
 
   async function request(path, init = {}) {
-    const headers = { Accept: 'application/json', ...(init.headers || {}), 'X-Memctl-Token': token }
-    if (init.body !== undefined) headers['Content-Type'] = 'application/json'
-    const response = await fetchImpl(path, { ...init, headers })
-    if (!response.ok) throw await toApiError(response)
-    if (response.status === 204) return null
-    return response.json()
+    const send = async () => {
+      const headers = { Accept: 'application/json', ...(init.headers || {}), 'X-Memctl-Token': token }
+      if (init.body !== undefined) headers['Content-Type'] = 'application/json'
+      const response = await fetchImpl(path, { ...init, headers })
+      if (!response.ok) throw await toApiError(response)
+      if (response.status === 204) return null
+      return response.json()
+    }
+    // Reads are idempotent, so a BUSY answer races a lock held for a moment by
+    // a sync or a managed write. Writes keep their single attempt: replaying a
+    // mutation is the caller's decision, not the transport's.
+    const method = (init.method || 'GET').toUpperCase()
+    return method === 'GET' ? retryBusy(send) : send()
   }
 
   function writeJSON(path, method, payload) {

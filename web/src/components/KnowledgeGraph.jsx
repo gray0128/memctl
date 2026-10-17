@@ -20,8 +20,11 @@ const STYLE = [
       color: '#475569',
       'text-valign': 'bottom',
       'text-margin-y': 5,
+      // Long file names are truncated instead of growing into a wide line
+      // that overlaps the neighbouring label; the selection panel keeps the
+      // full path.
       'text-wrap': 'ellipsis',
-      'text-max-width': 130,
+      'text-max-width': 120,
       'text-justification': 'center',
       width: 20,
       height: 20,
@@ -144,11 +147,14 @@ export function KnowledgeGraph({ api, snapshot, refreshKey }) {
           animate: false,
           fit: true,
           padding: 40,
-          nodeRepulsion: 18000,
+          // Labels sit under their nodes and grow with the zoom, so the
+          // layout spreads nodes further apart than the label width instead
+          // of letting adjacent file names collide.
+          nodeRepulsion: 400000,
           idealEdgeLength: 120,
-          nodeOverlap: 28,
-          componentSpacing: 90,
-          gravity: 0.3,
+          nodeOverlap: 120,
+          componentSpacing: 200,
+          gravity: 0.2,
         },
       })
       cyInstance.current = cy

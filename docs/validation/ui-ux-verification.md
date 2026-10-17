@@ -75,6 +75,8 @@
 | `R2-P3-3` | P3 | 顶栏「最近同步」显示原始 UTC 时间串（`2026-10-17T09:39:32Z`） | 直接渲染 `lastSuccessAt`，未按本地时区格式化 |
 | `R2-P3-4` | P3 | 知识图谱标签在部分布局下仍互相压盖（`cli-release-e2e.md` 与 `MEMORY.md`、`missing-file` 与长文件名） | 沿用 `T039` 的已知限制：cose 布局未按标签宽度扩张间距；重新布局后消失 |
 
+以上问题已由 `T044` 收口，复验见第 6 节。
+
 ### 5.4 未覆盖
 
 - 图谱节点拆分：画布节点难以稳定命中，本轮只验证图谱渲染与布局，拆分流程沿用自动化测试。
@@ -82,3 +84,20 @@
 - 非 macOS arm64 平台。
 
 截图保存在会话临时目录，未提交；长期可复核证据仍为第 3 节与 `STATUS.md` 指向的自动化回归。
+
+## 6. 第二轮问题的收口与复验（T044）
+
+按第二轮验证的 6 项问题修复，代码变更只涉及 `web/src`，并在 [Web UI](../04-ui-and-cli-specification.md#4-web-ui) 补充时间格式与 `BUSY` 重试说明；不改 REST 契约、状态字段或写入流程。
+
+- `R2-P2-1`：`.diff-preview .d2h-code-line` 恢复 8em 水平内边距。复验：Diff 文本左边界 x=426，行号列右边界 x=414，文本不再被行号列覆盖。
+- `R2-P2-2`：`TopBar` 用 `ResizeObserver` 把实际 header 高度写入 `--memctl-header-height`，导航栏改为 `sticky top-[var(--memctl-header-height,57px)]`。复验：横幅显示且滚动 500 px 后 header 占 0–103、导航占 103–148，导航项命中测试返回按钮内 span；390 px 下 header 234、导航 top 234，无横向溢出。
+- `R2-P3-1`：`refreshSnapshot` 清除旧的 `syncMessage`。复验：冲突解决成功后顶部不再显示「sync stopped on conflict」横幅，顶栏显示 `synced`。
+- `R2-P3-2`：新增 `web/src/retry.js`，GET 读取遇 `BUSY` 做 4 次有界指数退避；耗尽后返回「仓库正忙（可能正在同步），请稍后重试」。复验：锁被占用 0.6 秒时查询无错误；占用 9 秒时约 1.4 秒后显示友好提示且不泄漏绝对路径，锁释放后重新查询恢复。
+- `R2-P3-3`：新增 `web/src/time.js`，顶栏「最近同步」按本地时区显示 `YYYY-MM-DD HH:mm`。复验：显示 `2026-10-17 17:54`。
+- `R2-P3-4`：知识图谱提高节点斥力与间距（`nodeRepulsion: 400000`、`idealEdgeLength: 120`、`nodeOverlap: 120`、`componentSpacing: 200`），标签保持文件名截断（`text-max-width: 120`）。复验：1784 px 下连续 3 次重新布局未出现标签互相压盖；更密集的图谱仍可能拥挤，属已知限制。
+
+回归：
+
+- `cd web && npx vitest run`：16 个文件 85 项通过（新增 `retry.test.js` 3 项、`time.test.js` 3 项）。
+- `npm run build` 成功；`go build -o bin/memctl ./cmd/memctl` 成功；`gofmt -l cmd internal tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过。
+- ego-browser 回归覆盖审计 Diff、同步横幅下的粘性导航、冲突解决横幅、BUSY 重试、时间格式、图谱布局、只读模式、深色模式与 390 px 窄屏。未重跑 `go test ./...`（本轮无 Go 代码变更）。
