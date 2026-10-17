@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-- 版本：`v0.2.0` 为当前发布版本（2026-10-17 发布）。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.2.0.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
+- 版本：`v0.2.1` 为当前发布版本（2026-10-17 发布）。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.2.1.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
 - 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话中的注入与每轮同步已在本机 `desktop` 验证，收尾仍待复验。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`dream`、`ui`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–07 为准。
-- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`，将插件版本同步到 `0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051) 与 [阶段 E 归档](./validation/stage-e.md)。
+- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射；`T055` 发布 `v0.2.1`。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051) 与 [阶段 E 归档](./validation/stage-e.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。DSH 0.2.1-rc.2 已通过隔离 profile 安装 `memctl-dsh`，并在本机 `desktop` 真实会话确认 `[agent-memory]` 注入、`turn/end` 后同步与子代理跳过；`T054` 已补插件卸载时对仍 live 会话的 `end` 兜底，真实退出复验、恢复与失败路径仍未验证。
 - 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `agent/disposed` 收尾、恢复与界面安装；Codex `SessionEnd`、OpenCode `session.deleted` 与 DSH 插件卸载兜底均未在真实会话结束路径复验；`systemPrompt.context` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步已在真实会话验证，失败降级仅覆盖模型凭据缺失。
@@ -70,31 +70,25 @@
 | T051 | 已完成 | 收口 README 建议项：补齐 Web UI 视图表的概览与诊断、修复 4 处失效链接、对本机快速开始做 smoke 验证；不改产品代码；[归档记录](./validation/stage-d.md#t051readme-建议项收口) |
 | T052 | 进行中 | 对应阶段 E 的 `E-5`：真实 DSH 会话验证；已确认 `[agent-memory]` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步，待验证 `agent/disposed`、恢复、更多失败降级与界面安装；[验证记录](./validation/t052-dsh-real-session.md) |
 | T053 | 已完成 | 发布 `v0.2.0`（含 `T048`）：插件版本同步到 `0.2.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t053发布-v020) |
-| T054 | 已完成 | 统一宿主会话结束映射：补 Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补回归与契约；[完成记录](#t054宿主会话结束映射与-dsh-收尾兜底) |
-| T055 | 进行中 | 发布 `v0.2.1`（含 `T054`）：将插件版本提升到 `0.2.1`，运行全量测试与四平台候选包，校验产物并推送 tag；[本轮定义](#t055发布-v021) |
+| T054 | 已完成 | 统一宿主会话结束映射：补 Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补回归与契约；[归档记录](./validation/stage-e.md#t054宿主会话结束映射与-dsh-收尾兜底) |
+| T055 | 已完成 | 发布 `v0.2.1`（含 `T054`）：插件版本提升到 `0.2.1`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[完成记录](#t055发布-v021) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
-
-## T054：宿主会话结束映射与 DSH 收尾兜底
-
-- 目标与范围：把回合结束、压缩与会话结束的边界写入 Hook 契约；补齐 Codex 的 `SessionEnd`/`PreCompact`、OpenCode 的 `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补对应模板与回归测试。不改变 `end` 的 CLI 语义，不新增 adapter capability 字段。
-- 契约：[Hook 生命周期事件映射](./04-ui-and-cli-specification.md#32-宿主生命周期事件映射)、[Agent 配置安装](./03-workflows-and-dataflows.md#7-agent-配置安装)、[dsh 同步与收尾](./07-dsh-plugin.md#54-同步与收尾)。
-- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；Codex 0.160.0、OpenCode 2.0.26、DSH 0.2.1-rc.2 的模板与假宿主测试环境；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
-- 命令与结果：`make test` 全量通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 248.0 秒）。其中 `TestC3EmbeddedTemplatesCoverR01` 覆盖 Codex `SessionEnd`/`PreCompact` 与 OpenCode `session.deleted`/`session.compacted` 的安装结果，`TestT048DshPluginTarballInstall` 通过。`TestRegistryHostProtocols` 固定 Codex 与 OpenCode 命令形状；DSH 插件测试 14 项覆盖 `agent/disposed` 一次 `end`、卸载兜底一次 `end`，以及已 disposed 后不重复。
-- 验收：`H11` 在模板与假宿主层面通过；`H07`、`H10`、`I01` 回归通过。真实 Codex 与 OpenCode 会话结束事件、真实 DSH 退出兜底未执行。
-- 未验证与遗留：真实会话结束路径；Claude Code `StopFailure`/`PreCompact` 与 Grok `StopFailure`/`PreCompact` 未补；Antigravity `Stop` 语义待确认；Command Code 无 `SessionEnd`；插件版本未提升，未重新构建发布 tarball。
-- 下一步：`T052` 重新安装插件并正常退出 DSH，确认恰好一次 `end`；再评估补齐 Claude Code 与 Grok 的缺失事件与发布补丁版本。
 
 ## T055：发布 v0.2.1
 
 - 目标与范围：把 `T054` 的宿主会话结束映射作为 `v0.2.1` 发布；插件包版本提升到 `0.2.1`，运行全量测试与 `make release`，校验四个候选二进制和插件 tarball，推送 tag 触发 GitHub Release。不改变 `end` 的 CLI 语义或新增 adapter 能力。
 - 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](./07-dsh-plugin.md)。
-- 验收：`make test` 全量通过；`dist/SHA256SUMS` 校验全部 `OK`；tag `v0.2.1` 推送后 GitHub Actions 创建 Release。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.2.1` 指向 `9c136e1`；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
+- 命令与结果：`VERSION=v0.2.1 make release` 全量测试通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 246.5 秒），生成四个平台候选二进制、`memctl-dsh-0.2.1.tgz` 与三个元数据文件；`dist/SHA256SUMS` 五个产物全部 `OK`，`dist/memctl-darwin-arm64` 与 `memctl-darwin-amd64 version` 均输出 `memctl v0.2.1`，插件 tarball 版本为 `0.2.1` 且包含卸载兜底代码。tag 推送后 [GitHub Actions 运行 39034737007](https://github.com/gray0128/memctl/actions/runs/39034737007) 在 3 分 1 秒内通过并创建 [Release v0.2.1](https://github.com/gray0128/memctl/releases/tag/v0.2.1)；Release 附件含四个平台二进制、`memctl-dsh-0.2.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。
+- 验收：`make test` 全量通过；`dist/SHA256SUMS` 校验全部 `OK`；tag `v0.2.1` 的 CI Release 成功；`T054` 的 `H11`、`H07`、`H10`、`I01` 回归包含在发布前测试中。
+- 未验证与遗留：真实 DSH 退出兜底、真实 Codex `SessionEnd` 与 OpenCode `session.deleted` 仍未执行；macOS amd64、Linux 与 Windows 仅交叉编译；本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.2.1`。
+- 下一步：`T052` 安装 `v0.2.1` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。
 
 ## 近期实施任务
 
-`T055` 进行中：把 `T054` 的宿主会话结束映射发布为 `v0.2.1`。`T054` 已完成：Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 卸载兜底已实现并通过回归。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+`T055` 已完成：`v0.2.1` 已发布，Release 与 CI 均通过。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，`T054` 的卸载兜底已随 `v0.2.1` 发布，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

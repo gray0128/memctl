@@ -20,3 +20,13 @@
 - 命令与结果：`make test` 全量通过（前端 16 文件 85 项；插件 Node 13 项；Go 含 `tests/integration` 243.2 秒）。tag 推送后 [GitHub Actions 运行 39030270763](https://github.com/gray0128/memctl/actions/runs/39030270763) 在 2 分 56 秒内通过并创建 [Release v0.2.0](https://github.com/gray0128/memctl/releases/tag/v0.2.0)；附件含四个平台二进制、`memctl-dsh-0.2.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 `memctl-darwin-arm64` 与插件 tarball 后，按发布 `SHA256SUMS` 校验两者 `OK`；`memctl-darwin-arm64 version` 输出 `memctl v0.2.0`；安装到 `~/.agent-memory/bin/memctl` 后 SHA-256 为 `49c061c3…a012dac9`，与发布校验和一致；`memctl dsh plugin-path` 输出 `~/.agent-memory/dsh/memctl-dsh-0.2.0.tgz`，其常规文件清单与发布 tarball 一致，运行时打包的 SHA-256 为 `972a1f46…c1d06d2c`，与 npm pack 产物的 `8d71b7ab…afc9089d` 不同，符合设计不要求字节一致。旧二进制备份为 `~/.agent-memory/bin/memctl.v0.1.2`，不进入仓库。
 - 未验证与遗留：真实 DSH 会话中的注入已在本机 `desktop` 确认，每轮同步、收尾、恢复与子代理由 `T052` 跟踪；macOS amd64、Linux 与 Windows 仍只交叉编译；npm、独立 GitHub 仓库与 Discover 索引未发布。
 - 下一步：`T052` 进行中，注入、每轮同步与子代理跳过已确认，剩余 `agent/disposed`、恢复、失败路径与界面安装；按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
+## T054：宿主会话结束映射与 DSH 收尾兜底
+
+- 目标与范围：把回合结束、压缩与会话结束的边界写入 Hook 契约；补齐 Codex 的 `SessionEnd`/`PreCompact`、OpenCode 的 `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补对应模板与回归测试。不改变 `end` 的 CLI 语义，不新增 adapter capability 字段。
+- 契约：[Hook 生命周期事件映射](../04-ui-and-cli-specification.md#32-宿主生命周期事件映射)、[Agent 配置安装](../03-workflows-and-dataflows.md#7-agent-配置安装)、[dsh 同步与收尾](../07-dsh-plugin.md#54-同步与收尾)。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；Codex 0.160.0、OpenCode 2.0.26、DSH 0.2.1-rc.2 的模板与假宿主测试环境；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
+- 命令与结果：`make test` 全量通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 248.0 秒）。其中 `TestC3EmbeddedTemplatesCoverR01` 覆盖 Codex `SessionEnd`/`PreCompact` 与 OpenCode `session.deleted`/`session.compacted` 的安装结果，`TestT048DshPluginTarballInstall` 通过。`TestRegistryHostProtocols` 固定 Codex 与 OpenCode 命令形状；DSH 插件测试 14 项覆盖 `agent/disposed` 一次 `end`、卸载兜底一次 `end`，以及已 disposed 后不重复。
+- 验收：`H11` 在模板与假宿主层面通过；`H07`、`H10`、`I01` 回归通过。真实 Codex 与 OpenCode 会话结束事件、真实 DSH 退出兜底未执行。
+- 未验证与遗留：真实会话结束路径；Claude Code `StopFailure`/`PreCompact` 与 Grok `StopFailure`/`PreCompact` 未补；Antigravity `Stop` 语义待确认；Command Code 无 `SessionEnd`；插件版本未提升，未重新构建发布 tarball。
+- 下一步：`T052` 重新安装插件并正常退出 DSH，确认恰好一次 `end`；再评估补齐 Claude Code 与 Grok 的缺失事件与发布补丁版本。

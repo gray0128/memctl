@@ -77,7 +77,7 @@ dsh --profile t052 "只回复 OK，不要调用工具。"
 
 `SingletonLock` 在 20:05:35 指向新 PID 4685，旧会话在 20:05:38 被 resume（`start` 与 `session/end-seed`），说明这次操作是退出并重启 DSH，不是关闭单个会话。旧 agent 随旧 host 退出，日志中没有 `end`。这只能说明当前插件在 host 退出路径上没有产生可观察的收尾调用，不能判定 `agent/disposed` 失败，也不能记为通过。
 
-`T054` 已把插件卸载路径改为对仍 live 的 state 触发一次 detached `end`，已 disposed 的不重复，见 [T054 记录](../STATUS.md#t054宿主会话结束映射与-dsh-收尾兜底)。该改动由插件单元测试覆盖；真实退出仍需重新安装插件后复验。
+`T054` 已把插件卸载路径改为对仍 live 的 state 触发一次 detached `end`，已 disposed 的不重复，并随 `v0.2.1` 发布，见 [T054 记录](./stage-e.md#t054宿主会话结束映射与-dsh-收尾兜底) 与 [T055 发布记录](../STATUS.md#t055发布-v021)。该改动由插件单元测试覆盖；真实退出仍需重新安装 `memctl-dsh@0.2.1` 后复验。
 
 ## 未验证
 
