@@ -89,6 +89,15 @@ func (a *App) RecoverRollback(ctx context.Context) (RecoverStatus, error) {
 			return status, err
 		}
 		if described.Resolved {
+			if record.ProposalID != "" {
+				// A Dreaming apply keeps its completed record until the proposal
+				// status is written. If the user runs recovery first, record the
+				// applied commit on the proposal instead of destroying the only
+				// proof that the commit belongs to that proposal.
+				if err := a.dreamService().MarkApplied(ctx, record.ProposalID, described.Commit); err != nil {
+					return status, err
+				}
+			}
 			if err := session.store.Delete(record.ID); err != nil {
 				return status, err
 			}

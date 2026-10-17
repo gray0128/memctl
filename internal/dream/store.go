@@ -103,5 +103,12 @@ func writeFileAtomic(dir, name string, data []byte) error {
 	if err := os.Rename(tmpName, filepath.Join(dir, name)); err != nil {
 		return memerr.Wrap(memerr.IOFailed, err, "cannot replace %s", filepath.Join(dir, name))
 	}
+	// Flush the directory entry so a proposal survives a system restart, as
+	// docs/02-domain-models-and-contracts.md section 2.3 requires. A failure
+	// here does not corrupt the already-renamed record.
+	if handle, err := os.Open(dir); err == nil {
+		_ = handle.Sync()
+		_ = handle.Close()
+	}
 	return nil
 }

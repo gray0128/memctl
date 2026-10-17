@@ -96,6 +96,29 @@ describe('createEventStream', () => {
     expect(states[states.length - 1]).toBe('stopped')
   })
 
+  it('treats a dream.updated hint as an invalidation', async () => {
+    const invalidations = []
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body: streamFrom(
+        ['event: dream.updated\ndata: {"proposalId":"dp-1","status":"ready"}\n\n'],
+        false,
+      ),
+    }))
+    const stream = createEventStream({
+      token: 't',
+      fetchImpl,
+      onInvalidate: (reason) => invalidations.push(reason),
+      reconnectBaseMs: 1,
+      reconnectMaxMs: 2,
+    })
+    stream.start()
+
+    await vi.waitFor(() => expect(invalidations).toEqual(['connect', 'dream.updated']))
+    stream.stop()
+  })
+
   it('retries with a reconnect state after a failed connection', async () => {
     let calls = 0
     const invalidations = []

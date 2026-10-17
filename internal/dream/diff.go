@@ -45,6 +45,7 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 	sort.Strings(paths)
 
 	changes := make([]Change, 0, len(paths))
+	var modeWarnings []string
 	total := 0
 	for _, rel := range paths {
 		old, hasOld := base.files[rel]
@@ -58,6 +59,26 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 		}
 		new, _ := work[rel]
 
+		// A managed apply preserves the baseline mode and creates files as
+		// 100644, so a runner mode change cannot be committed. Normalize it away
+		// and warn instead of producing a ready proposal that apply would reject.
+		plannedMode := "100644"
+		if hasOld {
+			plannedMode = old.gitMode
+		}
+		if hasNew && !hasOld {
+			if wanted := vault.GitMode(new.fsMode); wanted != plannedMode {
+				modeWarnings = append(modeWarnings, fmt.Sprintf(
+					"the proposal marks %s executable; a managed apply creates it as 100644", rel))
+			}
+		}
+		if hasOld && hasNew {
+			if wanted := vault.GitMode(new.fsMode); wanted != plannedMode {
+				modeWarnings = append(modeWarnings, fmt.Sprintf(
+					"the proposal changes the file mode of %s; a managed apply keeps %s", rel, plannedMode))
+			}
+		}
+
 		change := Change{Path: rel}
 		switch {
 		case hasOld && !hasNew:
@@ -68,15 +89,15 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 		case !hasOld && hasNew:
 			change.Action = ChangeCreate
 			change.BaseRevision = vault.AbsentRevision
-			change.PlannedRevision = vault.FileRevision(vault.GitMode(new.fsMode), new.content)
+			change.PlannedRevision = vault.FileRevision(plannedMode, new.content)
 			change.Patch = unifiedDiff("/dev/null", "b/"+rel, "", string(new.content))
 		default:
-			if bytes.Equal(old.content, new.content) && old.fsMode == new.fsMode {
+			if bytes.Equal(old.content, new.content) && plannedMode == old.gitMode {
 				continue
 			}
 			change.Action = ChangeUpdate
 			change.BaseRevision = old.revision
-			change.PlannedRevision = vault.FileRevision(vault.GitMode(new.fsMode), new.content)
+			change.PlannedRevision = vault.FileRevision(plannedMode, new.content)
 			change.Patch = unifiedDiff("a/"+rel, "b/"+rel, string(old.content), string(new.content))
 		}
 		changes = append(changes, change)
@@ -94,7 +115,7 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 	}
 
 	if len(changes) == 0 {
-		return changes, "", []string{"the runner made no changes"}, nil
+		return changes, "", append(modeWarnings, "the runner made no changes"), nil
 	}
 
 	var diff strings.Builder
@@ -106,7 +127,8 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 		diff.WriteString(change.Patch)
 	}
 
-	return changes, diff.String(), linkWarnings(work, changes), nil
+	warnings := append(modeWarnings, linkWarnings(work, changes)...)
+	return changes, diff.String(), warnings, nil
 }
 
 // linkWarnings parses the changed files against the resulting file set and
@@ -189,8 +211,18 @@ func scanWorkTree(workDir string) (map[string]workFile, error) {
 	return files, nil
 }
 
-// readWorkFile reads one bounded UTF-8 regular file.
+// readWorkFile reads one bounded UTF-8 regular file. It rechecks the type
+// before reading so a file swapped for a symlink or a special file between the
+// directory walk and the open is rejected instead of followed.
 func readWorkFile(path string) ([]byte, fs.FileMode, error) {
+	linkInfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot inspect %s", path)
+	}
+	if !linkInfo.Mode().IsRegular() {
+		return nil, 0, memerr.New(memerr.Unsupported,
+			"the proposal contains a non-regular file at %q", path)
+	}
 	handle, err := os.Open(path)
 	if err != nil {
 		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot open %s", path)
@@ -199,6 +231,10 @@ func readWorkFile(path string) ([]byte, fs.FileMode, error) {
 	info, err := handle.Stat()
 	if err != nil {
 		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot inspect %s", path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, 0, memerr.New(memerr.Unsupported,
+			"the proposal contains a non-regular file at %q", path)
 	}
 	content, err := io.ReadAll(io.LimitReader(handle, vault.MaxTextFileBytes+1))
 	if err != nil {

@@ -124,6 +124,7 @@ EOF
 printf '# Added\n- new fact\n' > added.md
 printf 'evil' > %[1]q 2>/dev/null || true
 printf 'evil' >> %[2]q 2>/dev/null || true
+ln -f "$(dirname %[1]q)/MEMORY.md" ./alias 2>/dev/null && printf 'tampered' >> ./alias 2>/dev/null; true
 `, filepath.Join("REPO_PLACEHOLDER", "evil.txt"), "HOME_PLACEHOLDER/.claude/settings.json")
 	bin := buildMemctlBinary(t)
 	home := t.TempDir()

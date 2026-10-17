@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/gray0128/memctl/internal/memerr"
 )
@@ -51,6 +52,10 @@ func (s *Service) runRunner(ctx context.Context, workDir, execPath string, args 
 	cmd.Dir = repoDir(workDir)
 	cmd.Env = runnerEnv(workDir)
 	cmd.Stdin = nil
+	// Bound Wait after a kill so a descendant that escaped the process group
+	// cannot keep the run blocked past the isolation budget by holding the
+	// stdout pipe open.
+	cmd.WaitDelay = 5 * time.Second
 	limit := s.MaxOutputBytes
 	if limit <= 0 {
 		limit = MaxRunnerOutput

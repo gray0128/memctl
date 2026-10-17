@@ -52,7 +52,7 @@
 
 | 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
 | --- | --- | --- | --- |
-| D-1：Dreaming 隔离生成与持久化提案预览 | C-1 | `internal/dream` 锁内校验干净基线、无 `.git`/凭据/符号链接的独立临时目录导出、已验证 runner（`claude`/`codex`）与平台沙箱受限执行、固定基线 Diff 与范围校验、`$STATE/repos/<repoId>/proposals/` 持久化与 `dream.updated` 事件；实现 CLI `dream --runner`、`dream --show` 与 `POST /api/v1/dream:preview`、`GET /api/v1/dream/{proposalId}` | D01、D02（脏库拒绝生成部分）、D03，R02 的无 runner 与缺少沙箱降级场景 |
+| D-1：Dreaming 隔离生成与持久化提案预览 | C-1 | `internal/dream` 锁内校验干净基线、无 `.git`/凭据/符号链接的独立临时目录导出、候选 runner（`claude`/`codex`，真实宿主未验证）与平台沙箱受限执行、固定基线 Diff 与范围校验、`$STATE/repos/<repoId>/proposals/` 持久化与 `dream.updated` 事件；实现 CLI `dream --runner`、`dream --show` 与 `POST /api/v1/dream:preview`、`GET /api/v1/dream/{proposalId}` | D01、D02（脏库拒绝生成部分）、D03，R02 的无 runner 与缺少沙箱降级场景 |
 | D-2：Dreaming 显式应用、UI 整理视图与全量发布交付 | D-1、C-2、C-3 | 实现 `app.ApplyDream`、CLI `dream --apply <ID> --patch-hash <HASH>` 与 `POST /api/v1/dream:apply`（校验原始基线、过期拒绝、受管事务提交、中断恢复与重复 apply 幂等返回），接入 UI「整理接入」提案预览与确认操作；按第 3、4 节完成跨平台发布候选包（`make release`）、校验和与许可证清单、降级与恢复演练及阶段 A–D 全量回归 | D02（旧基线提案拒绝应用部分）、D04，A03 的 Dreaming 接口只读拦截，R01–R04 全量回归及第 4 节发布前检查 |
 
 ### 阶段步骤的子任务切分

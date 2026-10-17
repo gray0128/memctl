@@ -141,7 +141,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `POST /api/v1/audit/{hash}/revert` | `{baseRevision}` | `MutationResult` |
 | `GET /api/v1/doctor` | 无 | `DoctorReport` |
 | `POST /api/v1/doctor:fix` | `{issueCodes, baseRevision}` | `{report, result}`；仅应用确定性修复 |
-| `POST /api/v1/dream:preview` | `{runner: "claude" 或 "codex", baseRevision}` | 202、`{proposalId}` |
+| `POST /api/v1/dream:preview` | `{runner: "claude" 或 "codex", baseRevision?}` | 202、`{proposalId}`；`baseRevision` 可选，省略时服务端在锁内固定当前基线，提供时按预条件校验 |
 | `GET /api/v1/dream/{proposalId}` | 无 | `DreamProposal` |
 | `POST /api/v1/dream:apply` | `{proposalId, patchHash}` | `MutationResult` |
 | `GET /api/v1/adapters` | 无 | `{adapters: AdapterStatus[]}`；只探测与预览，不写文件 |

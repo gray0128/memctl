@@ -46,6 +46,14 @@ export function canGenerate(readOnly, sandboxAvailable) {
   return Boolean(!readOnly && sandboxAvailable)
 }
 
+// previewFailureDisablesSandbox reports whether a preview rejection should
+// latch generation off for the session. Only a missing sandbox means the
+// capability is unavailable; a missing runner or another UNSUPPORTED cause
+// must not make the panel claim the sandbox is gone.
+export function previewFailureDisablesSandbox(errorCode, sandboxAvailable) {
+  return errorCode === 'UNSUPPORTED' && !sandboxAvailable
+}
+
 // canApply reports whether a proposal is ready to confirm. A stale, failed or
 // already applied proposal is never applyable again.
 export function canApply(proposal, readOnly) {

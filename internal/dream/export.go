@@ -77,7 +77,12 @@ func exportBaseline(root *vault.Root, workDir string) (*baseline, error) {
 		if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 			return nil, memerr.Wrap(memerr.IOFailed, err, "cannot create %s", filepath.Dir(destination))
 		}
-		if err := os.WriteFile(destination, []byte(file.RawContent), file.Mode.Perm()); err != nil {
+		// os.WriteFile applies the process umask to the create mode, so a
+		// restrictive umask would silently change the exported mode. That would
+		// make every untouched file look like a mode change and turn a fully
+		// no-op run into a phantom proposal. Set the exact source mode after the
+		// write, mirroring vault.Root.WriteAtomic.
+		if err := writeExportFile(destination, file.RawContent, file.Mode.Perm()); err != nil {
 			return nil, memerr.Wrap(memerr.IOFailed, err, "cannot export %s", rel)
 		}
 		base.files[rel] = baselineFile{
@@ -88,4 +93,22 @@ func exportBaseline(root *vault.Root, workDir string) (*baseline, error) {
 		}
 	}
 	return base, nil
+}
+
+// writeExportFile writes one exported file and sets its exact mode, so the
+// create mode never depends on the process umask.
+func writeExportFile(destination, content string, mode fs.FileMode) error {
+	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := file.WriteString(content); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }

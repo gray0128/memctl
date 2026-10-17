@@ -231,3 +231,32 @@ func TestD2DreamCLIApplyCoversD04(t *testing.T) {
 		t.Fatalf("repeated apply created a commit: %s -> %s", commits, got)
 	}
 }
+
+// TestD2DreamPreviewBoundCoversBusy verifies the documented concurrency limit
+// on generation tasks (docs/04-ui-and-cli-specification.md section 5): a second
+// preview while one is still running is rejected with 503 BUSY instead of
+// spawning another sandboxed runner.
+func TestD2DreamPreviewBoundCoversBusy(t *testing.T) {
+	requireDarwinSandbox(t)
+	fixture := newB1Fixture(t, false)
+	fixture.write(t, "topic.md", "# Topic\n- fact\n")
+	attachDreamRunner(t, fixture, "sleep 2\nprintf '# Topic\\n- organized\\n' > topic.md\n")
+
+	first := fixture.send(t, http.MethodPost, "/api/v1/dream:preview", `{"runner":"claude"}`, nil)
+	mustStatus(t, first.status, http.StatusAccepted)
+	var started struct {
+		ProposalID string `json:"proposalId"`
+	}
+	if err := json.Unmarshal(first.body, &started); err != nil || started.ProposalID == "" {
+		t.Fatalf("decode preview response: %v (%s)", err, first.body)
+	}
+
+	second := fixture.send(t, http.MethodPost, "/api/v1/dream:preview", `{"runner":"claude"}`, nil)
+	mustStatus(t, second.status, http.StatusServiceUnavailable)
+	mustCode(t, errorCode(t, second), "BUSY")
+
+	// Drain the first generation so the fixture is not torn down mid-run.
+	if proposal := waitForReadyProposal(t, fixture, started.ProposalID, 20*time.Second); proposal.Status != "ready" {
+		t.Fatalf("first proposal = %+v, want ready", proposal)
+	}
+}

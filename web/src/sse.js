@@ -78,9 +78,10 @@ export function createSSEParser() {
 
 // createEventStream keeps one SSE connection open and reconnects with bounded
 // exponential backoff. `onInvalidate(reason)` is called after every (re)connect
-// with reason "connect" and for every vault.updated or resync.required hint;
-// the caller re-reads the snapshot. `onState` reports connecting/live/
-// reconnecting/stopped for the status bar.
+// with reason "connect" and for every vault.updated, resync.required or
+// dream.updated hint; the caller re-reads the snapshot and any view that tracks
+// a proposal. `onState` reports connecting/live/reconnecting/stopped for the
+// status bar.
 export function createEventStream(options) {
   const {
     token,
@@ -116,7 +117,11 @@ export function createEventStream(options) {
       if (done) return
       const events = parser.push(decoder.decode(value, { stream: true }))
       for (const event of events) {
-        if (event.name === 'vault.updated' || event.name === 'resync.required') {
+        if (
+          event.name === 'vault.updated' ||
+          event.name === 'resync.required' ||
+          event.name === 'dream.updated'
+        ) {
           await onInvalidate(event.name)
         }
       }

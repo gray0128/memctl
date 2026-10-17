@@ -24,7 +24,7 @@ memctl <subcommand> [flags] [-- command...]
 | `recover` | `--status` 或 `--rollback` | 查看或恢复本工具未完成事务；不接管外部 Git 操作 |
 | `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、runner 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
-| `dream` | `--runner claude` 或 `--runner codex` | 生成并保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
+| `dream` | `--runner claude` 或 `--runner codex` | 选择 runner 即确认将导出的受支持文本发送给该 runner 的模型端点；生成并保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
 | `dream` | `--show ID` 或 `--apply ID --patch-hash HASH` | 查看或确认已有提案；apply 不重新调用模型 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `version` / `help` | 无 | 不访问记忆库、不初始化图谱 |

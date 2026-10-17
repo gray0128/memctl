@@ -104,6 +104,9 @@ func TestApplyDreamCommitsAndIsIdempotentCoversD04(t *testing.T) {
 	if again.Commit != result.Commit {
 		t.Fatalf("repeated apply commit = %q, want %q", again.Commit, result.Commit)
 	}
+	if again.SyncState == "" {
+		t.Fatalf("repeated apply returned an empty syncState: %+v", again)
+	}
 	if got := commitCount(t, repo); got != commits {
 		t.Fatalf("repeated apply created a commit: %s -> %s", commits, got)
 	}
@@ -264,5 +267,86 @@ func TestApplyDreamRejectsPatchHashMismatch(t *testing.T) {
 	}
 	if stored.Status != dream.StatusReady {
 		t.Fatalf("proposal status = %q, want ready after a rejected hash", stored.Status)
+	}
+}
+
+// TestApplyDreamRefusesDirtyTreeWithoutStaling covers that a dirty worktree is
+// a retryable precondition, not a moved baseline: the reviewed proposal must
+// stay applyable instead of being turned into a terminal stale record.
+func TestApplyDreamRefusesDirtyTreeWithoutStaling(t *testing.T) {
+	service, repo := newTestService(t)
+	withDreamRunner(t, service, dreamRunnerBody)
+	ctx := context.Background()
+
+	proposal, err := service.DreamPreview(ctx, "test", "")
+	if err != nil {
+		t.Fatalf("DreamPreview: %v", err)
+	}
+	// An untracked file makes the worktree dirty without moving the revision
+	// digest a clean checkout would report.
+	writeTestFile(t, filepath.Join(repo, "untracked.md"), "# untracked\n", 0o644)
+
+	commits := commitCount(t, repo)
+	_, err = service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	requireContractCode(t, err, memerr.ExternalChanges)
+	if got := commitCount(t, repo); got != commits {
+		t.Fatalf("a dirty-tree rejection created a commit: %s -> %s", commits, got)
+	}
+	stored, err := service.DreamProposal(ctx, proposal.ProposalID)
+	if err != nil {
+		t.Fatalf("DreamProposal: %v", err)
+	}
+	if stored.Status != dream.StatusReady {
+		t.Fatalf("proposal status = %q, want ready after a dirty-tree rejection", stored.Status)
+	}
+}
+
+// TestRecoverRollbackRecordsAppliedDream covers the W05 window for an explicit
+// apply: the commit exists but the proposal status was not written, and the
+// documented recover entry must record the applied status instead of deleting
+// the only proof and leaving the proposal stale.
+func TestRecoverRollbackRecordsAppliedDream(t *testing.T) {
+	service, repo := newTestService(t)
+	withDreamRunner(t, service, dreamRunnerBody)
+	ctx := context.Background()
+
+	proposal, err := service.DreamPreview(ctx, "test", "")
+	if err != nil {
+		t.Fatalf("DreamPreview: %v", err)
+	}
+
+	service.testFault = func(stage string) error {
+		if stage == "after-commit" {
+			return errSimulatedCrash
+		}
+		return nil
+	}
+	if _, err := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash); err == nil {
+		t.Fatal("expected the injected interruption to fail the apply")
+	}
+	service.testFault = nil
+	head := headHash(t, repo)
+
+	if _, err := service.RecoverRollback(ctx); err != nil {
+		t.Fatalf("RecoverRollback: %v", err)
+	}
+	stored, err := service.DreamProposal(ctx, proposal.ProposalID)
+	if err != nil {
+		t.Fatalf("DreamProposal: %v", err)
+	}
+	if stored.Status != dream.StatusApplied || stored.AppliedCommit != head {
+		t.Fatalf("proposal after recovery = %+v, want applied as %s", stored, head)
+	}
+
+	commits := commitCount(t, repo)
+	again, err := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	if err != nil {
+		t.Fatalf("repeated ApplyDream: %v", err)
+	}
+	if again.Commit != head {
+		t.Fatalf("repeated apply commit = %q, want %q", again.Commit, head)
+	}
+	if got := commitCount(t, repo); got != commits {
+		t.Fatalf("repeated apply created a commit: %s -> %s", commits, got)
 	}
 }

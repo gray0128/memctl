@@ -21,6 +21,8 @@ import (
 // baseline: app.ApplyDream revalidates that under the lock and marks the
 // proposal stale when it moved.
 func (s *Service) PrepareApply(ctx context.Context, proposalID, expectedHash string) (ApplyPlan, error) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
 	value, err := s.loadRecord(ctx, proposalID)
 	if err != nil {
 		return ApplyPlan{}, err
@@ -141,8 +143,12 @@ func (s *Service) MarkApplied(_ context.Context, proposalID, commit string) erro
 
 // setStatus persists one proposal status transition. A proposal that is already
 // applied is never moved backwards, so a lost response cannot make an applied
-// proposal applyable again.
+// proposal applyable again. The transition is serialized with statusMu so two
+// in-process applies cannot lose the applied record; MarkApplied may repair a
+// stale record because only a proven commit can reach this call.
 func (s *Service) setStatus(proposalID, status, commit string) error {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
 	value, err := s.store.Load(proposalID)
 	if err != nil {
 		return err
@@ -154,7 +160,7 @@ func (s *Service) setStatus(proposalID, status, commit string) error {
 		return memerr.New(memerr.InvalidArgument,
 			"proposal %s is already applied as %s", proposalID, value.AppliedCommit)
 	}
-	if value.Status == StatusStale && status != StatusStale {
+	if value.Status == StatusStale && status != StatusStale && status != StatusApplied {
 		return memerr.New(memerr.ProposalStale,
 			"proposal %s is stale; generate a new proposal", proposalID)
 	}

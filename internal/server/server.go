@@ -79,6 +79,11 @@ type Server struct {
 	sseHeartbeat    time.Duration
 	adapters        adapters.Env
 	mux             *http.ServeMux
+	// dreamRun bounds concurrent Dreaming generations started by the API, as
+	// docs/04-ui-and-cli-specification.md section 5 requires. A preview that
+	// cannot take a slot is rejected with BUSY instead of spawning an unbounded
+	// number of sandboxed runners.
+	dreamRun chan struct{}
 	// uiFS is the embedded compiled frontend; indexHTML already carries the
 	// session token and the read-only flag. uiErr records a build without the
 	// frontend so the API still works and `memctl ui` can fail fast.
@@ -86,6 +91,10 @@ type Server struct {
 	indexHTML []byte
 	uiErr     error
 }
+
+// DefaultMaxConcurrentDreams bounds concurrent generation tasks accepted by
+// POST /api/v1/dream:preview.
+const DefaultMaxConcurrentDreams = 1
 
 // New builds a Server and registers every route. It does not listen.
 func New(opts Options) (*Server, error) {
@@ -135,6 +144,7 @@ func New(opts Options) (*Server, error) {
 		events:          events,
 		sseHeartbeat:    sseHeartbeat,
 		adapters:        adapterEnv,
+		dreamRun:        make(chan struct{}, DefaultMaxConcurrentDreams),
 	}
 	for _, name := range []string{"127.0.0.1", "localhost"} {
 		server.allowedHosts[net.JoinHostPort(name, port)] = struct{}{}

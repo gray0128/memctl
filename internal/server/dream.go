@@ -36,13 +36,24 @@ type dreamApplyBody struct {
 // generating proposal and starts the isolated runner. The read-only middleware
 // already rejects this route when the server runs with --readonly.
 func (s *Server) handleDreamPreview(w http.ResponseWriter, r *http.Request) {
+	if s.dreamRun != nil {
+		select {
+		case s.dreamRun <- struct{}{}:
+		default:
+			s.writeAppError(w, memerr.New(memerr.Busy,
+				"another Dreaming generation is already running; retry after it finishes"))
+			return
+		}
+	}
 	var body dreamPreviewBody
 	if err := decodeBody(r, &body); err != nil {
+		s.releaseDreamSlot()
 		s.writeAppError(w, err)
 		return
 	}
 	proposal, err := s.app.DreamBegin(r.Context(), body.Runner, body.BaseRevision)
 	if err != nil {
+		s.releaseDreamSlot()
 		s.writeAppError(w, err)
 		return
 	}
@@ -50,10 +61,18 @@ func (s *Server) handleDreamPreview(w http.ResponseWriter, r *http.Request) {
 	go s.runDream(proposal.ProposalID)
 }
 
+// releaseDreamSlot returns one concurrency slot to the generation bound.
+func (s *Server) releaseDreamSlot() {
+	if s.dreamRun != nil {
+		<-s.dreamRun
+	}
+}
+
 // runDream executes one started generation and publishes the terminal
 // dream.updated event. The runner has its own isolation time budget, so the
 // background context carries no second deadline.
 func (s *Server) runDream(proposalID string) {
+	defer s.releaseDreamSlot()
 	proposal, err := s.app.DreamRun(context.Background(), proposalID)
 	status := proposal.Status
 	if err != nil && status == "" {

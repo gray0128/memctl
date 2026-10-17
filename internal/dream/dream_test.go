@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/vault"
 )
 
 // This file verifies the stage D-1 Dreaming pipeline without a kernel sandbox:
@@ -289,4 +290,113 @@ func contractCode(err error, code string) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), code+":") || strings.Contains(err.Error(), code)
+}
+
+// TestExportPreservesModeDespiteUmask covers the export module of docs/03
+// section 6 step 1: a restrictive process umask must not change the exported
+// mode, or every untouched file would look like a mode change and a no-op run
+// would produce a phantom proposal.
+func TestExportPreservesModeDespiteUmask(t *testing.T) {
+	repo := initRepo(t)
+	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
+
+	previous := setUmask(0o077)
+	defer setUmask(previous)
+
+	proposal, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if len(proposal.Changes) != 0 {
+		t.Fatalf("a no-op runner produced phantom changes under umask 077: %+v", proposal.Changes)
+	}
+}
+
+// TestModeChangeIsNormalizedWithWarning covers docs/03 section 6 step 4: a mode
+// change the managed write cannot reproduce is normalized to the baseline mode
+// with a warning, so the resulting proposal stays applyable instead of being
+// rejected later by apply.
+func TestModeChangeIsNormalizedWithWarning(t *testing.T) {
+	repo := initRepo(t)
+	service, _ := newTestService(t, repo, t.TempDir(),
+		"printf '# Topic\\n- fact one\\n- more\\n' > topic.md\nchmod +x topic.md\n")
+	ctx := context.Background()
+
+	proposal, err := service.Preview(ctx, PreviewRequest{Runner: "test"})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if proposal.Status != StatusReady || len(proposal.Changes) != 1 {
+		t.Fatalf("proposal = %+v, want one ready update", proposal)
+	}
+	change := proposal.Changes[0]
+	if change.Action != ChangeUpdate || change.Path != "topic.md" {
+		t.Fatalf("change = %+v, want an update of topic.md", change)
+	}
+	want := vault.FileRevision("100644", []byte("# Topic\n- fact one\n- more\n"))
+	if change.PlannedRevision != want {
+		t.Fatalf("planned revision = %q, want the baseline mode revision %q", change.PlannedRevision, want)
+	}
+	modeWarning := false
+	for _, warning := range proposal.Warnings {
+		if strings.Contains(warning, "file mode") {
+			modeWarning = true
+		}
+	}
+	if !modeWarning {
+		t.Fatalf("warnings = %v, want a mode-change warning", proposal.Warnings)
+	}
+	if _, err := service.PrepareApply(ctx, proposal.ProposalID, proposal.PatchHash); err != nil {
+		t.Fatalf("a normalized proposal is not applyable: %v", err)
+	}
+}
+
+// TestServiceRequiresEntryPoint verifies that Dreaming refuses a repository
+// without the root entry file instead of exporting an unrelated worktree. See
+// docs/01-architecture-and-modules.md section 3.1.
+func TestServiceRequiresEntryPoint(t *testing.T) {
+	repo := initRepo(t)
+	if err := os.Remove(filepath.Join(repo, "MEMORY.md")); err != nil {
+		t.Fatalf("remove MEMORY.md: %v", err)
+	}
+	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
+	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
+	if !contractCode(err, "NO_REPO") {
+		t.Fatalf("err = %v, want NO_REPO", err)
+	}
+}
+
+// TestForeignLoadKeepsLiveWorkDir verifies that querying a proposal from
+// another service instance marks a can-not-continue generation failed without
+// destroying the live run's working directory.
+func TestForeignLoadKeepsLiveWorkDir(t *testing.T) {
+	repo := initRepo(t)
+	stateDir := t.TempDir()
+	service, _ := newTestService(t, repo, stateDir, "sleep 30\n")
+	started, err := service.Begin(context.Background(), PreviewRequest{Runner: "test"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+
+	service.mu.Lock()
+	workDir := service.pending[started.ProposalID].record.WorkDir
+	service.mu.Unlock()
+	if _, err := os.Stat(workDir); err != nil {
+		t.Fatalf("live work directory is missing: %v", err)
+	}
+
+	other := NewService(Source{RepoPath: repo, RepoID: config.RepoID(repo), StateDir: stateDir})
+	other.Sandbox = passthrough{}
+	other.Runners = service.Runners
+	proposal, err := other.Load(context.Background(), started.ProposalID)
+	if err != nil {
+		t.Fatalf("foreign Load: %v", err)
+	}
+	if proposal.Status != StatusFailed {
+		t.Fatalf("foreign Load status = %q, want failed", proposal.Status)
+	}
+	if _, err := os.Stat(workDir); err != nil {
+		t.Fatalf("a foreign Load removed the live work directory: %v", err)
+	}
+	_ = os.RemoveAll(workDir)
 }

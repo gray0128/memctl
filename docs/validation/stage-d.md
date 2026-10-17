@@ -20,6 +20,23 @@
 - 未验证与遗留：真实 `claude`/`codex` 宿主与模型端点仍未验证，生成隔离仅在 macOS Seatbelt 后端验证，Linux/Windows 返回 `UNSUPPORTED`；未驱动浏览器 DOM，`DreamPanel` 交互由纯逻辑测试与 Go HTTP 联调覆盖，未开展浏览器视觉 UI/UX 验证；`reconcileDreamApply` 在完成记录已持久化但清理被占用锁跳过时只留下一个小型完成记录，不阻塞后续 apply，未新增独立清理任务。
 - 下一步：`D-2` 子任务 1 完成，阶段 D 未结束（以 `D-2` 为界），按 [开发循环规范](../06-development-loop.md#6-交接与中断) 接续 `D-2` 子任务 2（跨平台发布工程与全量交付验收）。
 
+## T037：跨平台发布工程与全量交付验收（`D-2` 子任务 2）
+
+- 目标与范围：完成 `D-2` 子任务 2（阶段 D 的最后一个子任务），前置为 `T036`。新增 `scripts/release.sh` 与 `Makefile` 的 `release` 目标（依赖 `test`，先构建前端并跑全量测试），按 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 交叉编译 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制到 `dist/`，生成 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识；前端部分由 `web/scripts/npm-licenses.mjs` 生成）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）；新增 `Makefile` 的 `install` 目标以对齐 04 已文档化入口。新增 `tests/integration/t037_release_test.go` 的路由契约测试 `TestRoutesContractCoversT037`，用 TRACE 请求逐条断言 02 §4.2 与 04 §5 的 25 条路由已注册且方法匹配。执行降级与恢复演练、阶段 A–D 全量回归与第 4 节发布前检查，并按第 3 节记录性能基线与平台/宿主适配状态。
+- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[REST 契约](./02-domain-models-and-contracts.md#4-rest-契约)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)、[性能与适配记录](./05-validation-and-delivery.md#3-性能与适配记录)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分)、[阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64（MacBook Pro `MacBookPro18,3`，Apple M1 Pro，16 GiB），Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；执行者为主会话。
+- 命令与结果：
+  - 发布链路：`make release` 退出码 `0`；`make test` 通过（`vite build` 72 模块，`vitest run` 13 文件 72 项，`go test ./... -count=1` 含 `tests/integration` 186.8 秒），随后生成四个二进制与三个元数据文件；由 `scripts/release.sh` 独立重跑后 `shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`。
+  - 静态检查：`go vet ./...` 无输出；`gofmt -l internal cmd tests web/embed.go` 无输出；`git diff --check` 无告警；`make build` 生成 `bin/memctl`。
+  - 验收回归：`R03` 由 `tests/integration/r03_cli_test.go` 覆盖真实构建入口与 `version`/`help`/未知命令；`R01` 由 `TestR01EmbeddedInstructionsFromEmptyHome` 与 `TestB3EmbeddedUIAssetsCoverR01A02` 覆盖空 HOME 下的内嵌指引、UI 资产与无外部 CDN；`R02` 由 `TestR02MissingGitIsTargeted`、`TestR02MissingCredentialsAreTargeted` 与 `TestD1DreamMissingRunnerCoversR02` 覆盖；`R04` 由 `TestA6DoctorReadOnlyDiagnosisCoversR04` 覆盖。
+  - 路由契约：`TestRoutesContractCoversT037` 通过，25 条文档路由全部注册且方法匹配；`A01` 的行为用例继续覆盖读取路由。
+  - 降级演练：发布二进制在 `--no-open --readonly` 下无图形浏览器仍正常服务首页，`POST /api/v1/sync` 与 `POST /api/v1/dream:apply` 均返回 403 `READ_ONLY`；无 remote 的 `sync --wait` 返回 `remote: local_only`；PATH 无 runner 的 `dream --runner claude` 返回 `UNSUPPORTED`；缺沙箱由 `internal/dream.TestServiceRejectsMissingSandbox` 覆盖；缺 Git 由 `R02` 覆盖。
+  - 恢复演练：`internal/app.TestRecoverRollsBackInterruptedWrite`（`W04`）、`TestRecoverRecognizesCommittedTransaction`（`W05`）、`TestRecoverRefusesUserEditedFile`（`W06`）、`TestMoveInterruptionRollsBack`（`W04`）与 `TestApplyDreamRecoversInterruptedApplyCoversD04`（`D04`）通过；`TestA3RecoverCli` 与 `TestC3InstallRecoversInterruptedInstallCoversI02`（`I02`）通过；演练使用故障注入，未以手工删除锁或强制重置仓库作为通过条件。
+  - 发布前检查逐项结论：文档命令、参数、状态字段与 REST 路由同实现一致（新增全路由契约测试）；同步与写入测试使用临时 HOME 与本地裸远端/桩，不接触真实用户配置或公网；单文件包含默认指引与全部 8 个 adapter 模板，首页与 CSP 无外部 CDN；`--readonly`、无 remote、无 runner、无沙箱、无 Git 降级路径都有明确结果；事务与配置安装恢复演练通过；视觉 UI/UX 验证未开展（未明确安排），以协议与业务测试为准。
+  - 性能与适配：性能基线、平台矩阵与宿主/adapter 状态见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证；真实宿主（claude/codex 等）未安装 Hook、未触发事件，Dreaming 真实 runner 在隔离 scratch HOME 下退出 `1`，模型端点与凭据环境未验证；仅 macOS Seatbelt 为已验证隔离后端；未开展浏览器视觉 UI/UX 验证；`P3-6`、`P3-7`、`P3-13`（见 [阶段 C 实现审查报告](./validation/stage-c-review.md)）与组件级 DOM 测试为已知限制，本轮未引入。
+- 下一步：阶段 D 结束、阶段 A–D 全部完成，触发 [停止条件](./06-development-loop.md#3-状态与推进)，暂停自动接续并通知用户确认。
+
 ## 阶段 D 性能与适配记录
 
 本节按 [性能与适配记录](../05-validation-and-delivery.md#3-性能与适配记录) 记录 `T037` 发布验收期间的本地性能基线与平台/宿主适配状态。数值来自本机一次会话的临时环境与发布二进制，不是跨机承诺；未实测的宿主和平台保持未验证。

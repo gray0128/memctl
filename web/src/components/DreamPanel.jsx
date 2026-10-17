@@ -6,6 +6,7 @@ import {
   canGenerate,
   changeSummary,
   isTerminalProposal,
+  previewFailureDisablesSandbox,
   proposalStatusLabel,
   summarizeProposal,
 } from '../dreams.js'
@@ -75,9 +76,11 @@ export function DreamPanel({ api, refreshKey }) {
       const started = await api.dreamPreview(runner, '')
       setProposalId(started.proposalId)
     } catch (requestError) {
-      if (requestError.code === 'UNSUPPORTED') {
+      if (previewFailureDisablesSandbox(requestError.code, api.dreamSandbox)) {
         setSandboxUnavailable(true)
         setMessage({ tone: 'warn', text: `生成已禁用：${requestError.message}` })
+      } else if (requestError.code === 'UNSUPPORTED') {
+        setMessage({ tone: 'warn', text: requestError.message })
       } else {
         setMessage({ tone: 'error', text: requestError.message })
       }
@@ -113,6 +116,10 @@ export function DreamPanel({ api, refreshKey }) {
     setProposal(null)
     setError(null)
     setMessage(null)
+    // Bump the reload key even when the id did not change, so querying the
+    // proposal already on screen re-runs the effect instead of leaving the
+    // panel in a permanent loading state.
+    setReload((current) => current + 1)
   }
 
   const sandboxAvailable = api.dreamSandbox && !sandboxUnavailable
@@ -130,6 +137,9 @@ export function DreamPanel({ api, refreshKey }) {
               : '本主机没有已验证的隔离沙箱，生成已禁用'}
         </span>
       </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        选择 runner 即确认将导出的记忆文本发送给该 runner 的模型端点；确认应用前不会修改主库。
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         <select

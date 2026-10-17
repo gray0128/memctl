@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 
+	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/state"
+	"github.com/gray0128/memctl/internal/syncer"
 )
 
 // This file implements the explicit Dreaming apply of stage D-2. It loads a
@@ -29,7 +31,7 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 	}
 	switch proposal.Status {
 	case dream.StatusApplied:
-		return dreamAppliedResult(proposal, ""), nil
+		return a.repeatedDreamApply(ctx, service, proposal, patchHash)
 	case dream.StatusStale:
 		return MutationResult{}, staleProposal(proposalID)
 	case dream.StatusGenerating, dream.StatusFailed:
@@ -39,6 +41,11 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 
 	plan, err := service.PrepareApply(ctx, proposalID, patchHash)
 	if err != nil {
+		// A concurrent apply may have completed between the load above and the
+		// status gate. Return its result instead of an error.
+		if applied, ok := a.appliedDreamResult(ctx, service, proposalID); ok {
+			return applied, nil
+		}
 		return MutationResult{}, err
 	}
 
@@ -55,10 +62,16 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 				return recovered, markErr
 			}
 		}
+		// The reconciled commit was never followed by the normal post-commit
+		// bookkeeping, so trigger the best-effort sync here.
+		a.triggerBackgroundSync()
 		return recovered, nil
 	}
 
 	if err := service.MarkApplying(ctx, proposalID); err != nil {
+		if applied, ok := a.appliedDreamResult(ctx, service, proposalID); ok {
+			return applied, nil
+		}
 		return MutationResult{}, err
 	}
 	result, err := a.Apply(ctx, MutationRequest{
@@ -68,11 +81,17 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 		Changes:         dreamFileChanges(plan),
 	})
 	if err != nil {
+		// A lost race is only signalled by RevisionMismatch. ExternalChanges
+		// means the worktree is dirty, which is retryable and must not destroy a
+		// valid proposal.
 		if dreamBaselineError(err) {
-			// A concurrent apply may have won the race; prefer its result.
 			if foundAgain, concurrent, rerr := a.reconcileDreamApply(ctx, proposalID); rerr == nil && foundAgain {
 				_ = service.MarkApplied(ctx, proposalID, concurrent.Commit)
+				a.triggerBackgroundSync()
 				return concurrent, nil
+			}
+			if applied, ok := a.appliedDreamResult(ctx, service, proposalID); ok {
+				return applied, nil
 			}
 			if markErr := service.MarkStale(ctx, proposalID); markErr != nil {
 				return result, markErr
@@ -80,8 +99,17 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 			return result, staleProposal(proposalID)
 		}
 		if code, ok := memerr.As(err); !ok || code.Code != memerr.RecoveryRequired {
-			// The managed transaction rolled back cleanly, so the reviewed
-			// proposal stays applyable.
+			// A post-commit failure (for example a hook changing the committed
+			// path set) can still leave a proven commit. Only a result that
+			// carries a commit proves one; a failure before the commit must keep
+			// its recovery record so a later retry can detect a manual edit.
+			if result.Commit != "" {
+				if foundAgain, concurrent, rerr := a.reconcileDreamApply(ctx, proposalID); rerr == nil && foundAgain {
+					_ = service.MarkApplied(ctx, proposalID, concurrent.Commit)
+					a.triggerBackgroundSync()
+					return concurrent, nil
+				}
+			}
 			_ = service.MarkReady(ctx, proposalID)
 		}
 		return result, err
@@ -93,6 +121,42 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 	// for reconciliation. It does not block on a concurrent background sync.
 	a.clearDreamRecords(ctx, proposalID)
 	return result, nil
+}
+
+// repeatedDreamApply builds the idempotent result of an already-applied
+// proposal. It still requires the quoted hash to match so a caller cannot use a
+// reviewed proposal id with an unrelated hash, and it cleans up any completed
+// transaction record left by a crash after the status write.
+func (a *App) repeatedDreamApply(ctx context.Context, service *dream.Service, proposal dream.Proposal, patchHash string) (MutationResult, error) {
+	if patchHash != "" && proposal.PatchHash != "" && patchHash != proposal.PatchHash {
+		return MutationResult{}, memerr.New(memerr.InvalidArgument,
+			"the patch hash does not match proposal %s", proposal.ProposalID)
+	}
+	a.clearDreamRecords(ctx, proposal.ProposalID)
+	return dreamAppliedResult(proposal, a.cachedSyncState()), nil
+}
+
+// appliedDreamResult re-reads a proposal after a lost status transition and
+// returns its idempotent result when it is already applied. ok is false when
+// the proposal is not applied or cannot be read.
+func (a *App) appliedDreamResult(ctx context.Context, service *dream.Service, proposalID string) (MutationResult, bool) {
+	fresh, err := service.Load(ctx, proposalID)
+	if err != nil || fresh.Status != dream.StatusApplied {
+		return MutationResult{}, false
+	}
+	return dreamAppliedResult(fresh, a.cachedSyncState()), true
+}
+
+// cachedSyncState reports the persisted remote state without taking the
+// repository lock. The idempotent repeat-apply result cannot open a
+// transaction, so it must not claim a state that was never computed.
+func (a *App) cachedSyncState() string {
+	cache := state.OpenCache(a.cfg.StateDir, config.RepoID(a.cfg.RepoPath))
+	record, ok, err := cache.LoadSync()
+	if err != nil || !ok || record.RemoteState == "" {
+		return syncer.StateLocalOnly
+	}
+	return record.RemoteState
 }
 
 // clearDreamRecords deletes the completed transaction records a successful
@@ -139,7 +203,11 @@ func (a *App) reconcileDreamApply(ctx context.Context, proposalID string) (found
 			if err := session.store.Delete(record.ID); err != nil {
 				return false, MutationResult{}, err
 			}
-			return true, session.dreamResult(record, record.Commit), nil
+			result := session.dreamResult(record, record.Commit)
+			// The crashed process never reached persistLocalCommit, so mark the
+			// cache pending for the recovered commit here.
+			a.persistLocalCommit(session, result)
+			return true, result, nil
 		}
 		described, err := session.describe(ctx, record)
 		if err != nil {
@@ -149,7 +217,9 @@ func (a *App) reconcileDreamApply(ctx context.Context, proposalID string) (found
 			if err := session.store.Delete(record.ID); err != nil {
 				return false, MutationResult{}, err
 			}
-			return true, session.dreamResult(record, described.Commit), nil
+			result := session.dreamResult(record, described.Commit)
+			a.persistLocalCommit(session, result)
+			return true, result, nil
 		}
 		if described.Reason != "" {
 			return false, MutationResult{}, memerr.New(memerr.RecoveryRequired,
@@ -215,13 +285,15 @@ func dreamFileChanges(plan dream.ApplyPlan) []FileChange {
 }
 
 // dreamBaselineError reports whether err means the repository moved past the
-// proposal baseline.
+// proposal baseline. Only a revision mismatch proves that: a dirty worktree
+// (EXTERNAL_CHANGES) is retryable and must not turn a reviewed proposal into a
+// terminal stale record.
 func dreamBaselineError(err error) bool {
 	code, ok := memerr.As(err)
 	if !ok {
 		return false
 	}
-	return code.Code == memerr.RevisionMismatch || code.Code == memerr.ExternalChanges
+	return code.Code == memerr.RevisionMismatch
 }
 
 // dreamAppliedResult builds the idempotent result of an already-applied

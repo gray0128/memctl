@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +40,10 @@ type Service struct {
 	keepWorkDir bool
 	mu          sync.Mutex
 	pending     map[string]*pendingRun
+	// statusMu serializes the read-modify-write of one proposal status so two
+	// in-process applies cannot lose a terminal transition. It is never taken
+	// while holding mu.
+	statusMu sync.Mutex
 }
 
 // NewService binds a Dreaming service to one repository.
@@ -82,6 +88,7 @@ func (s *Service) Begin(ctx context.Context, req PreviewRequest) (Proposal, erro
 	if s.Sandbox == nil || !s.Sandbox.Available() {
 		return Proposal{}, sandboxUnavailable()
 	}
+	s.sweepWorkDirs()
 
 	workDir, base, head, revision, err := s.fixBaseline(ctx, req.BaseRevision)
 	if err != nil {
@@ -194,12 +201,15 @@ func (s *Service) loadRecord(_ context.Context, proposalID string) (record, erro
 	if fresh, err := s.store.Load(proposalID); err == nil && fresh.Status != StatusGenerating {
 		return fresh, nil
 	}
+	// The work directory of a generation that is still owned by another live
+	// process must not be removed here: marking the record failed is enough,
+	// because the owning process overwrites it with its terminal status. An
+	// abandoned directory is reclaimed by sweepWorkDirs instead.
 	value.Status = StatusFailed
 	value.Error = "generation was interrupted before it completed"
 	if err := s.store.Save(value); err != nil {
 		return value, err
 	}
-	s.removeWorkDir(value.WorkDir)
 	return value, nil
 }
 
@@ -238,6 +248,39 @@ func (s *Service) removeWorkDir(workDir string) {
 	_ = os.RemoveAll(workDir)
 }
 
+// sweepWorkDirs reclaims abandoned Dreaming work directories left by a killed
+// process. Only directories older than twice the isolation budget are removed,
+// because a live run cannot outlive one budget, so a work directory of a live
+// run is never touched.
+func (s *Service) sweepWorkDirs() {
+	budget := s.Timeout
+	if budget <= 0 {
+		budget = DefaultTimeout
+	}
+	cutoff := s.timeNow().Add(-2 * budget)
+	entries, err := os.ReadDir(os.TempDir())
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "memctl-dream-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		s.removeWorkDir(filepath.Join(os.TempDir(), entry.Name()))
+	}
+}
+
+func (s *Service) timeNow() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
 func (s *Service) now() string {
 	if s.Now != nil {
 		return s.Now().UTC().Format(time.RFC3339)
@@ -270,6 +313,10 @@ func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (wor
 	} else if ok {
 		return "", nil, "", "", memerr.New(memerr.OperationActive,
 			"conflict %s is awaiting resolution; resolve it before generating a proposal", conflict.ConflictID)
+	}
+	if _, err := os.Lstat(filepath.Join(s.Source.RepoPath, vault.EntryPointName)); err != nil {
+		return "", nil, "", "", memerr.New(memerr.NoRepo,
+			"%s has no %s; run memctl init", s.Source.RepoPath, vault.EntryPointName)
 	}
 	if pending, err := store.Pending(); err != nil {
 		return "", nil, "", "", err
@@ -362,9 +409,12 @@ func plannedFiles(base *baseline, work map[string]workFile, changes []Change) ma
 		}
 		entry := plannedFile{
 			Content: string(file.content),
-			GitMode: vault.GitMode(file.fsMode),
+			// The managed apply creates files as 100644 and preserves the
+			// baseline mode otherwise, matching buildChanges' normalization.
+			GitMode: "100644",
 		}
 		if old, ok := base.files[change.Path]; ok {
+			entry.GitMode = old.gitMode
 			entry.BaseGitMode = old.gitMode
 		}
 		planned[change.Path] = entry

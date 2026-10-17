@@ -6,6 +6,7 @@ import {
   changeActionLabel,
   changeSummary,
   isTerminalProposal,
+  previewFailureDisablesSandbox,
   proposalStatusLabel,
   summarizeProposal,
 } from './dreams.js'
@@ -43,6 +44,15 @@ describe('dream helpers', () => {
     expect(canGenerate(false, true)).toBe(true)
     expect(canGenerate(false, false)).toBe(false)
     expect(canGenerate(true, true)).toBe(false)
+  })
+
+  it('only latches generation off when the sandbox is the missing capability', () => {
+    expect(previewFailureDisablesSandbox('UNSUPPORTED', false)).toBe(true)
+    // A missing runner is also UNSUPPORTED, but the sandbox is available, so
+    // the capability state must not change.
+    expect(previewFailureDisablesSandbox('UNSUPPORTED', true)).toBe(false)
+    expect(previewFailureDisablesSandbox('BUSY', true)).toBe(false)
+    expect(previewFailureDisablesSandbox('', true)).toBe(false)
   })
 
   it('only allows applying a ready proposal with a patch hash', () => {
