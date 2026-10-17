@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）各任务的完成记录，含 `T060`、`T062`、`T063`、`T064`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）各任务的完成记录，含 `T060`、`T062`、`T063`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -32,13 +32,3 @@
 - 验收：npm 官方包可安装、适配器可识别、版本与发布说明正确；`I09` 的 npm 通道场景通过。
 - 未验证与遗留：`memctl-dsh` 仍未发布 npm 包；`0.5.0` 版本号不可复用，GitHub `v0.5.0` 附件中的 `memctl-pi-0.5.0.tgz` 与 npm `0.5.1` 内容不同；npm 发布不改变二进制 Release。
 - 下一步：按需发布 `memctl-dsh` 或创建 `v0.5.1` 发布轮次；继续维护 npm 包与 GitHub Release 的版本对应关系。
-
-## T064：发布 memctl-dsh 到 npm 与 v0.5.1 Release
-
-- 目标与范围：把 `memctl-dsh` 发布到 npm 官方仓库，并把 `memctl-dsh`、`memctl-pi` 版本提升到 `0.5.1`，重新生成候选二进制、两个插件 tarball、校验和与 CI Release；补齐 dsh 包的 npm 元数据和 README。不改变插件运行时行为。
-- 契约：[dsh 专用插件](../07-dsh-plugin.md)、[pi 专用插件](../08-pi-plugin.md)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
-- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.5.1` 指向 `71ebf75`。
-- 命令与结果：`VERSION=v0.5.1 make release` 通过（前端 16 文件 85 项；插件 Node 测试 dsh 14 项、pi 15 项；Go 测试全部通过）；生成四个平台二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件，`SHA256SUMS` 六个产物全部 `OK`，二进制输出 `memctl v0.5.1`。tag 推送后 [GitHub Actions 运行 39053620948](https://github.com/gray0128/memctl/actions/runs/39053620948) 成功并创建 [Release v0.5.1](https://github.com/gray0128/memctl/releases/tag/v0.5.1)；下载附件重新校验，六个产物全部 `OK`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.1`。`npm publish --dry-run` 对 `memctl-dsh@0.5.1` 输出 8 个文件并指向 npm 官方仓库；正式 `npm publish` 返回 `EOTP`，等待维护者 2FA 批准。
-- 验收：`v0.5.1` 二进制与插件发布通过；npm `memctl-dsh` 尚未发布，任务保持「待验收」。
-- 未验证与遗留：`memctl-dsh` npm 发布需要维护者 OTP；macOS amd64、Linux 与 Windows 仅交叉编译；`desktop` profile 的 `memctl-dsh` 仍为 `0.4.0`。
-- 下一步：维护者在终端执行 `cd plugins/dsh && npm publish` 并输入 OTP；成功后验证 `npm view memctl-dsh@0.5.1 version`，再把本任务标记为已完成。

@@ -26,9 +26,12 @@ printf '# Memory\n\n## Index\n- new entry\n' \
 
 示例中的 `./bin/memctl` 指本地 `make build` 的产物，使用下载的二进制时替换为实际路径。接入远端（`init <url> --confirm-private`）、注册宿主 Hook 与使用整理能力都需要额外参数或前置条件，见下文「能做什么」与对应契约。
 
-DSH 使用专用 Host 插件 `memctl-dsh`，插件随二进制内嵌，不需要 npm 发布：
+DSH 使用专用 Host 插件 `memctl-dsh`，可通过 npm 安装，也可使用二进制内嵌的 tarball：
 
 ```bash
+dsh plugin --profile <profile> add memctl-dsh@0.5.1
+
+# 离线备用
 ./bin/memctl dsh plugin-path   # 输出绝对 .tgz 路径
 # 在 DSH：插件 → 添加插件 → 粘贴该路径
 ```
