@@ -2,6 +2,7 @@
   "name": "memctl-dsh",
   "version": "0.5.0",
   "description": "Loads memctl memory at DSH session start and synchronizes it after each turn.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -22,5 +23,9 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }

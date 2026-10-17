@@ -2,13 +2,16 @@
   "name": "memctl-pi",
   "version": "0.5.0",
   "description": "Loads memctl memory at pi session start and synchronizes it after each agent run.",
+  "license": "MIT",
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js"
   },
   "pi": {
-    "extensions": ["./index.js"]
+    "extensions": [
+      "./index.js"
+    ]
   },
   "files": [
     "index.js",
@@ -27,5 +30,9 @@
     "memory",
     "agent-memory"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
   "scripts": {}
 }
