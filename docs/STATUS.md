@@ -104,7 +104,8 @@
 - 目标与范围：新增 GitHub Actions 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release`，构建 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制并上传 `dist/` 构建产物；推送 `v*` 标签时用 `gh release create` 创建 GitHub Release，附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。同步更新根 `README.md`、[CLI 与 UI 打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查) 的 CI 说明。
 - 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[目录规划](./01-architecture-and-modules.md#5-目录结构与依赖)。
 - 验证日期与环境：2026-10-17，macOS 26.6.2 arm64（本地 `scripts/release.sh`）与 GitHub Actions `macos-latest`；Go 1.27.1，Node v26.10.0 / npm 11.19.1。
-- 命令与结果：本地 `VERSION=v0.1.0 scripts/release.sh` 产出四个候选二进制与三个元数据文件，`shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`；GitHub Actions 运行与 Release 资产见 <待补>。
+- 命令与结果：本地 `VERSION=v0.1.0 scripts/release.sh` 产出四个候选二进制与三个元数据文件，`shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`；首次 GitHub Actions 运行暴露宿主机差异并修复，修复后在 `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null` 隔离环境下 `go test ./... -count=1` 全量通过（`tests/integration` 256.5 秒）；GitHub Actions 运行与 Release 资产见 <待补>。
+- 首次流水线运行发现的环境依赖：GitHub 托管 macOS runner 无全局 `init.defaultBranch=main`，测试用 `git init --bare` 建的裸远端默认指向 `master`，`RemoteDefaultBranch` 读不到默认分支；`newBareRemote` 改用 `git init --bare -b main` 固定裸远端 HEAD。`TestB2WatchStreamsExternalEditCoversA05` 在 watcher 注册完成前写入外部文件会丢失事件；改为在等待事件期间有界重试写入，watcher 每次突发仍发布一个 `vault.updated`。两项均为测试隔离加固，不改变产品行为。
 - 未验证与遗留：流水线只在 GitHub 托管 runner 上验证；`macos-latest` 之外的平台仍只做交叉编译，运行、生命周期与隔离保持未验证。
 - 下一步：本轮完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户确认。
 

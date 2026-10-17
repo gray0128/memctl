@@ -31,7 +31,10 @@ func a4Home(t *testing.T, root, name string) string {
 func newBareRemote(t *testing.T, dir, name string) string {
 	t.Helper()
 	bare := filepath.Join(dir, name)
-	cmd := exec.Command("git", "init", "-q", "--bare", bare)
+	// Pin the bare remote's HEAD to main so the symref check is deterministic:
+	// memctl initializes repositories on main, and relying on the ambient
+	// init.defaultBranch made these tests fail on hosts that default to master.
+	cmd := exec.Command("git", "init", "-q", "--bare", "-b", "main", bare)
 	cmd.Env = os.Environ()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v\n%s", err, string(out))

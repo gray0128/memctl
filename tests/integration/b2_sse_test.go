@@ -304,9 +304,28 @@ func TestB2WatchStreamsExternalEditCoversA05(t *testing.T) {
 	defer resp.Body.Close()
 
 	external := filepath.Join(fixture.repo, "external.md")
-	if err := os.WriteFile(external, []byte("# External\n\n- out of band\n"), 0o644); err != nil {
+	body := []byte("# External\n\n- out of band\n")
+	// srv.Watch registers the recursive watch tree asynchronously. Retry the
+	// out-of-band write until the stream observes it so a slow runner cannot
+	// drop the first write before registration finishes; the watcher publishes
+	// one vault.updated per burst, so a repeated write still produces an event.
+	if err := os.WriteFile(external, body, 0o644); err != nil {
 		t.Fatalf("external write: %v", err)
 	}
+	stopRetry := make(chan struct{})
+	defer close(stopRetry)
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopRetry:
+				return
+			case <-ticker.C:
+				_ = os.WriteFile(external, body, 0o644)
+			}
+		}
+	}()
 
 	var event sseEvent
 	for {
