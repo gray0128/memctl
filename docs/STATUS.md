@@ -1,14 +1,14 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T066`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T067`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
 - 版本：`v0.5.1` 为当前二进制发布版本（2026-10-18 发布）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
 - 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–08 为准。
-- 发布后改动：`T040`–`T067` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布与版本发布均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
+- 发布后改动：`T040`–`T068` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布与版本发布均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
-- 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end`、绝对 tarball 界面安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，bundle 与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md)、[T067 记录](#t067复验-dsh-界面-npm-安装与-desktop-插件升级) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
+- 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end`、绝对 tarball 界面安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，bundle 与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md)、[T067 记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
 - 宿主（pi）：`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`，真实会话确认 `<memctl>` 注入、每轮 `sync`、收尾、恢复、分叉、后台子代理与失败降级；前台 in-process 子代理不触发会话事件，不注入记忆。证据见 [T062 验证记录](./validation/t062-pi-real-session.md) 与 [pi 专用插件](./08-pi-plugin.md#11-实现状态)。
 - 未验证：
   - 平台与进程：macOS amd64、Linux amd64、Windows amd64 的运行、生命周期与隔离；Windows/Linux 进程清理。
@@ -89,25 +89,27 @@
 | T064 | 已完成 | 发布 `memctl-dsh@0.5.1` 到 npm 与 `v0.5.1` Release：MAC 二进制、两个插件 tarball、MIT 与 npm 元数据、隔离安装与适配器探测通过；[归档记录](./validation/stage-f.md#t064发布-memctl-dsh-到-npm-与-v051-release) |
 | T065 | 已完成 | 删除 npm 上 `memctl-pi@0.0.0-stage` 占位版本；registry 保留 `0.5.0`、`0.5.1`，`latest` 为 `0.5.1`；[归档记录](./validation/stage-f.md#t065删除-npm-占位版本) |
 | T066 | 已完成 | 文档一致性检查与整理：修正发布状态、`F-5` 状态、Makefile 与发布产物描述、DSH/pi 状态段和失效链接，补全验证记录索引；不改变产品行为；[归档记录](./validation/stage-f.md#t066文档一致性检查与整理) |
-| T067 | 已完成 | 复验 DSH 界面 npm 包名安装：确认 `desktop` profile 已升级到 `memctl-dsh@0.5.1`、bundle 与依赖一致，`install --status` 为 `configured plugin@0.5.1`；更新界面安装与 desktop 版本的未验证记录；不改变产品行为；[完成记录](#t067复验-dsh-界面-npm-安装与-desktop-插件升级) |
+| T067 | 已完成 | 复验 DSH 界面 npm 包名安装：确认 `desktop` profile 已升级到 `memctl-dsh@0.5.1`、bundle 与依赖一致，`install --status` 为 `configured plugin@0.5.1`；更新界面安装与 desktop 版本的未验证记录；不改变产品行为；[归档记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) |
+| T068 | 已完成 | 按 `tech-doc-style-chinese` 检查并优化中文帮助：统一术语与引号、把命令选项与路径改为行内代码、修正与契约不符的环境变量默认值和示例描述；不改变命令行为；[完成记录](#t068中文帮助检查与优化) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T067：复验 DSH 界面 npm 安装与 desktop 插件升级
+## T068：中文帮助检查与优化
 
-- 目标与范围：记录用户通过 DSH 界面 npm 包名安装 `memctl-dsh` 的结果，核对本机 `desktop` profile 的插件版本、bundle 与适配器状态；更新“界面 npm 安装未验证”和“`desktop` 仍为 `0.4.0`”的记录；不改变产品行为。
-- 契约：[dsh 专用插件](./07-dsh-plugin.md#13-实现状态)、[T052 验证记录](./validation/t052-dsh-real-session.md)。
-- 验证日期与环境：2026-10-18，macOS arm64，DSH 0.2.1-rc.2，`desktop` profile，`memctl v0.5.1`。
-- 命令与结果：用户报告已在 DSH 界面用 npm 包名 `memctl-dsh` 完成安装。`~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 含 `memctl-dsh`，依赖为 `memctl-dsh: 0.5.1`；`node_modules/memctl-dsh/package.json` 版本为 `0.5.1`；`memctl install --status` 输出 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
-- 验收：DSH 界面 npm 包名安装完成；`desktop` profile 已从 `0.4.0` 升级到 `0.5.1`，适配器识别为 `configured`。
-- 未验证与遗留：绝对目录的界面安装；`agent/disposed` 真实事件路径；界面安装后的新会话注入未单独复验。
-- 下一步：按需验证绝对目录界面安装；其余未验证项见[当前事实](#当前事实)。
+- 目标与范围：按 `tech-doc-style-chinese` 检查 `internal/cli/help_data.go` 的中文帮助（概览与 21 个命令页），优化术语、引号、留白与信息层级，并修正与 [帮助契约](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n) 和实现不一致的表述；只改中文帮助文本，不改命令行为、英文帮助与 JSON 结构。
+- 契约：[面向 Agent 的帮助与中英 i18n](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)、[环境变量与会话身份](./04-ui-and-cli-specification.md#2-环境变量与会话身份)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，`memctl v0.5.1` 工作树。
+- 命令与结果：`gofmt -l internal/cli`、`go vet ./internal/cli/` 无输出；`go test ./...` 全部通过（`tests/integration` 237.2 s）；`./bin/memctl help` 与 20 个 `help <command> --lang zh` 逐页人工复核，并以脚本检查中西文留白、直角引号与重复空格，0 处问题；`help --lang en` 与 `help --lang zh --json` 输出结构不变（`schemaVersion` 1、21 个命令条目）。
+- 主要修改：把 `--sid`、`AGENT_MEMORY_*`、`~/memory`、`0`/`false` 等机器可读值统一改为行内代码；删除 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`MEMCTL_LANG`、`LC_ALL/LC_MESSAGES/LANG` 四项与实现不符的 `none`/`auto` 默认值（实现只打印非空默认值）；把分散在各选项里的互斥规则合并到「说明」，删去逐项重复；`update` 示例由「然后重启 memctl」改为「重启 memctl 后生效」，与实现一致；全角引号改为直角引号；「逃逸路径」「首推」「环回」等表述改为「越出仓库的路径」「首次推送」「回环」，并补全 `wrap`、`resolve`、`install` 等页面缺失的主语与动作。
+- 验收：中文帮助术语、排版与事实一致；帮助渲染与 JSON 结构未变；Go 全量测试通过。
+- 未验证与遗留：未验证终端宽度、颜色或字体渲染（帮助文本不使用 ANSI 颜色，也不探测终端宽度）；未改变英文帮助文本。
+- 下一步：如需发布，按 [发布前检查](./05-validation-and-delivery.md#4-发布前检查) 走一次版本发布；其余未验证项见[当前事实](#当前事实)。
 
 ## 近期待办与下一步
 
-- 没有待实现的交付任务；阶段 A–F 的任务均已完成，最近一轮为 `T067`。
+- 没有待实现的交付任务；阶段 A–F 的任务均已完成，最近一轮为 `T068`。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

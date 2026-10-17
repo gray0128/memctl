@@ -72,3 +72,13 @@
 - 验收：链接、锚点、版本引用与跨文档状态一致；文档检查项通过。
 - 未验证与遗留：未运行二进制、平台或宿主测试（纯文档轮次）；`desktop` profile 的 `memctl-dsh` 当时仍为 `0.4.0`，DSH 界面 npm 安装未验证（后续由 `T067` 复验）。
 - 下一步：把 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1` 并复验 DSH 界面 npm 包名安装（已由 `T067` 完成）。
+
+## T067：复验 DSH 界面 npm 安装与 desktop 插件升级
+
+- 目标与范围：记录用户通过 DSH 界面 npm 包名安装 `memctl-dsh` 的结果，核对本机 `desktop` profile 的插件版本、bundle 与适配器状态；更新「界面 npm 安装未验证」和「`desktop` 仍为 `0.4.0`」的记录；不改变产品行为。
+- 契约：[dsh 专用插件](../07-dsh-plugin.md#13-实现状态)、[T052 验证记录](./t052-dsh-real-session.md)。
+- 验证日期与环境：2026-10-18，macOS arm64，DSH 0.2.1-rc.2，`desktop` profile，`memctl v0.5.1`。
+- 命令与结果：用户报告已在 DSH 界面用 npm 包名 `memctl-dsh` 完成安装。`~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 含 `memctl-dsh`，依赖为 `memctl-dsh: 0.5.1`；`node_modules/memctl-dsh/package.json` 版本为 `0.5.1`；`memctl install --status` 输出 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
+- 验收：DSH 界面 npm 包名安装完成；`desktop` profile 已从 `0.4.0` 升级到 `0.5.1`，适配器识别为 `configured`。
+- 未验证与遗留：绝对目录的界面安装；`agent/disposed` 真实事件路径；界面安装后的新会话注入未单独复验。
+- 下一步：按需验证绝对目录界面安装；其余未验证项见 [STATUS](../STATUS.md#当前事实)。
