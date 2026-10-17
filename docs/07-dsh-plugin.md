@@ -1,0 +1,487 @@
+# 07. dsh 专用插件：分发、安装与实现方案
+
+> 状态：设计提案。本文先确定分发与安装方式，再给出插件、适配器、发布和验收设计；不表示功能已经实现或验证通过。主通道选择见 [§4.3](#43-推荐)，待用户确认后进入实现。
+
+## 1. 结论
+
+- 不再依赖 `dsh-hooks-plugin` 作为 dsh 的唯一接入方式，改为自建一个只服务 memctl 的 DSH Host-only bundle：`memctl-dsh`。
+- 插件只负责三件事：会话开始时读取 memctl 上下文、每轮结束时触发同步、会话销毁时触发收尾；记忆仓库、同步、锁、冲突处理仍由 memctl 二进制负责。
+- 分发主通道推荐 npm 预构建包，安装走 DSH Plugin Manager 或 `dsh plugin add`；每个版本同时产出 tarball，作为离线、审计和无 npm 场景的备选。
+- `memctl install dsh` 不自动安装插件，也不写入 DSH profile。DSH 的 Plugin Manager 拥有安装、批准、升级和卸载；memctl 只负责探测、提示和验证。
+- 第一版不做客户端 UI，只做 Host half。状态面板、每轮检索注入等能力留到后续版本。
+- 运行时使用当前 DSH 0.2.1-rc.1 实际存在的事件：`agent/created`、`session/event` 中的 `turn/end`、`agent/disposed`；不使用已经不存在于当前安装的 `agent/session-start`。
+
+## 2. 范围
+
+本方案覆盖：
+
+- `memctl-dsh` 的包结构、生命周期接线、上下文注入、同步触发和错误隔离。
+- npm、tarball、可选的 DSH 插件市场索引三种分发产物。
+- `internal/adapters` 对 dsh 原生插件与旧 hooks 插件的探测、状态和安装提示。
+- 单元、包安装、真实宿主三层验收。
+
+本方案不覆盖：
+
+- DSH 客户端 UI 面板、插件市场客户端实现。
+- MCP server、新的记忆检索服务或记忆仓库格式变更。
+- 由 memctl 直接修改 DSH profile、`package.json`、`cordis.patch.yml` 或执行 `pnpm`。
+- dsh 之外的其他宿主适配器迁移。
+- 自动升级插件；升级仍由 DSH Plugin Manager 或用户显式命令完成。
+
+## 3. 为什么需要自建插件
+
+### 3.1 当前链路的事实
+
+| 事实 | 证据 | 影响 |
+| --- | --- | --- |
+| 当前 dsh 安装没有 `agent/session-start` 事件 | DSH 0.2.1-rc.1 的 `app.asar` 中该字符串为 0 次匹配；`dsh-agent` 的公开事件清单也没有它；`agent/created` 才携带 `SessionStartSource` | `dsh-hooks-plugin` 订阅的 SessionStart 不会触发，`memctl start --json` 不执行 |
+| 全局 hooks 文件路径与插件实际读取路径不一致 | 插件从 `DSH_HOME`/`USERPROFILE` 推导路径；日志实际落在 `~/.dsh/profiles/desktop/.dsh/logs/`；memctl 写的是 `~/.dsh/hooks.json` | 即使项目层 hooks 被读取，全局层也不会按预期生效 |
+| 版本错配 | `dsh-hooks-plugin@0.2.15` 的 peer 要求 dsh-shell `^0.1.0-rc.6`，当前 DSH 为 `0.2.1-rc.1`；[开发状态](./STATUS.md) 已记录精确版本豁免 | 事件名与服务语义会继续漂移 |
+| 注入形态是 user message | 插件用 `agent.inject(createTextUserMessage(...))` | 不是 DSH 为动态上下文提供的快照通道，也没有 `form`/`source` 语义 |
+| 未在真实会话验证注入 | [开发状态](./STATUS.md) 记录的是「以样例载荷验证」 | 当前 dsh 接入最多是 `configured`，不是 `verified` |
+
+这些事实说明，继续修第三方 hooks 配置只能解决部分问题；要可靠拿到会话开始事件和正确的上下文通道，需要插件直接使用当前 DSH API。
+
+### 3.2 当前 DSH 实际可用的接入点
+
+| 接入点 | 模式 | 用途 |
+| --- | --- | --- |
+| `agent/created` | serial，创建完成前等待监听器 | 会话开始；读取 memctl 上下文并注册到该 agent |
+| `session/event` + `event.type === 'turn/end'` | emit，提交后通知 | 每轮结束触发同步 |
+| `agent/disposed` | emit，离开注册表后通知 | 会话销毁触发收尾 |
+| `agent.ctx.systemPrompt.context()` | 作用域注册 | 把动态上下文作为耐久 user-role 快照注入 |
+| `agent/turn-stopping` | serial，轮次关闭前等待 | 本方案不使用：会阻塞轮次关闭，且语义是关闭前而不是提交后 |
+
+`turn/end` 是会话事件类型，不是同名 Cordis 事件；必须通过 `session/event` 过滤。当前 DSH 文档明确区分了这两类事件。[事件系统](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/framework/events.zh.md)
+
+## 4. 分发与安装
+
+### 4.1 约束
+
+- DSH 的 profile 位于 `$DSH_HOME/profiles/<name>`，由有序 bundle 列表和 profile 层 patch 组成；bundle 是声明 `dsh.bundle.patch` 的 npm 包。[打包与安装插件](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/basic/publish.zh.md)
+- `dsh plugin --profile <name> <args>` 把参数转发给 profile 目录内的 pnpm。npm 包、tarball、本地目录和 git 源都可以安装；git 源默认拉源码，不自动运行构建，除非作者提供 `prepare` 且用户授权。
+- DSH 在安装和启动时检查 `engines.dsh`，没有声明时回退检查 `@deepseek-ai/dsh*` peer 范围；不兼容的组合会被跳过或拒绝。版本豁免记录在 profile 的 `compatibility.json`，不会随升级继承。[app-boot](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/app-boot/README.zh.md)
+- Plugin Manager 的安装、升级、卸载需要危险权限或逐次批准；已安装的 Host 插件在进程内执行，位于工作区沙箱之外。[Plugin Manager](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/plugin-manager/README.zh.md)
+- DSH 插件市场是用户配置的 HTTPS 索引，不是默认商店；索引格式 1 要求每个版本声明 `engines.dsh`，npm 源固定到精确版本，git 源固定到 commit。[市场索引格式](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/.agents/notes/implemented/feature/2026-10-02-plugin-market-index-format.md)
+- memctl 的安装器当前只写配置文件，不自动安装第三方插件，也不依赖 Node.js；这条边界见 [流程与恢复](./03-workflows-and-dataflows.md#7-agent-配置安装)。
+
+### 4.2 方案比较
+
+| 方案 | 安装体验 | 更新 | 离线 | 额外设施 | 主要风险 | 判断 |
+| --- | --- | --- | --- | --- | --- | --- |
+| npm 包 + 可选市场索引 | 最好：Plugin Manager 搜索/安装，或 `dsh plugin add memctl-dsh@x` | Plugin Manager 检测新版本；或显式 `add` | 首次需网络 | npm 发布、可选静态索引 | npm 账号与供应链；索引托管 | 推荐主通道 |
+| 仅 npm 包 | 好：知道包名即可 | 需记住显式版本或 `add` | 首次需网络 | npm 发布 | 发现性弱；无市场页面 | 可作为 npm 主通道的子集 |
+| GitHub Release tarball | 中：下载后 `dsh plugin add ./memctl-dsh-x.tgz` | 手动下载新 tarball | 好 | GitHub Release 已有 | 路径/引号；无自动更新 | 推荐备用通道 |
+| memctl 内嵌 tarball | 中：memctl 解包后输出安装命令 | 换 memctl 版本后重新安装 | 最好 | Go 嵌入、解包目录 | 仍需 DSH 批准；增加二进制体积与版本耦合 | 离线优先时再选 |
+| 本地目录 link | 开发可用 | 改代码后重载 | 好 | 无 | 链接路径必须长期存在；不适合最终用户 | 仅开发 |
+| 直接改 profile 文件 | 看似一键 | 不可控 | 好 | 无 | 绕过 Plugin Manager、锁、版本检查；升级丢失 | 不采用 |
+
+### 4.3 推荐
+
+推荐组合：
+
+1. **主通道：npm 包 `memctl-dsh`**。每次 memctl 发布时同步发布预构建包，用户通过 DSH Plugin Manager 或 `dsh plugin --profile <p> add memctl-dsh@<version>` 安装。npm 包不声明 install/postinstall 脚本，不引入运行时依赖，只包含已构建的 ESM 文件、patch、locale 和图标。
+2. **备用通道：GitHub Release tarball**。同一份源码用 `npm pack` 产出 `memctl-dsh-<version>.tgz`，作为 release 附件并写入 `SHA256SUMS`。用户下载后执行 `dsh plugin --profile <p> add ./memctl-dsh-<version>.tgz`。tarball 不需要构建授权，也不依赖 npm registry。
+3. **可选发现通道：DSH 市场索引**。在 memctl 仓库发布一份格式 1 的 `index.json`，通过稳定的 HTTPS 静态地址提供，用户把它加入 DSH 的 Discover 索引后即可在应用内安装和检测更新。索引固定到 npm 精确版本，不写 `latest` 浮动目标。
+4. **不把内嵌 tarball 作为第一版主通道**。它适合离线或严格单文件分发，但会让插件版本与 memctl 二进制强耦合，并且仍需要用户执行 DSH 安装命令；如果用户明确要求「下载 memctl 一个文件即可离线安装插件」，再切换到第四种方案。
+
+主通道选择是一个会影响发布工程和用户入口的决策，记录为 `D1`，见 [§9](#9-风险与待确认事项)。
+
+### 4.4 安装流程
+
+前置条件：
+
+- DSH 0.2.1-rc.1 或声明的兼容版本。
+- memctl 已安装，默认路径 `~/.agent-memory/bin/memctl`，或通过 `MEMCTL_DSH_BIN` 指定。
+- 用户已在 DSH 中打开要使用的 profile；桌面端常见为 `desktop`，CLI 常见为 `web`。
+
+npm 安装：
+
+```sh
+dsh plugin --profile <profile> add memctl-dsh@<version>
+```
+
+tarball 安装：
+
+```sh
+dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
+```
+
+安装后验证：
+
+```sh
+dsh --profile <profile> --dump-config
+```
+
+输出中应出现 `memctl-dsh` 的插件行；新会话开始后，插件日志应出现会话 id 和 `memctl start` 结果。DSH Plugin Manager 的插件列表应显示 `memctl-dsh`，并显示 locale 中的标题、描述和图标。
+
+升级：
+
+- npm：在 Plugin Manager 中更新，或 `dsh plugin --profile <profile> add memctl-dsh@<new-version>`。
+- tarball：下载新 tarball 后重新执行 `add`；若 pnpm 拒绝覆盖，再执行 `remove` 后安装。
+- 插件升级不改变记忆仓库；memctl 二进制可以独立升级。
+
+卸载：
+
+```sh
+dsh plugin --profile <profile> remove memctl-dsh
+```
+
+卸载只移除 DSH 插件；记忆仓库、状态目录和 memctl 二进制保留。若之前装过旧 hooks 方案，`memctl install --status` 应同时报告旧 hooks 配置，用户手工决定是否清理。
+
+### 4.5 版本与信任
+
+- 插件包版本与 memctl 发布版本保持同一主次版本，避免「插件 0.3 调 memctl 0.1 CLI」的隐藏矩阵；补丁版本可以独立。
+- `engines.dsh` 使用精确下界和上界，例如 `>=0.2.1-rc.1 <0.3.0`；DSH 升级到范围外时由 DSH 拒绝加载，而不是静默不工作。
+- 插件不声明 `@deepseek-ai/dsh-*` peer 依赖：它只使用宿主传入的 `ctx` 和 Node 内置模块，不需要解析 DSH 包。这样避免 `dsh-hooks-plugin` 式的 peer 版本错配。
+- 不声明 `dependencies`、`install`、`postinstall`、`prepare`。安装不执行第三方构建脚本，也不需要 pnpm 构建授权。
+- npm 发布使用 provenance（可用时）和精确版本；tarball 写入 `SHA256SUMS`；市场索引只列已发布版本。
+- 安装 Host 插件等于授权其在 DSH 进程内以用户权限执行。插件只执行固定路径的 memctl 二进制和固定参数，不读取项目 hooks 文件，不执行任意命令；但 memctl 本身会写 `~/memory`，这一点必须在安装文档中写明。
+
+## 5. 插件设计
+
+### 5.1 包结构
+
+```text
+plugins/dsh/
+  package.json          # dsh.bundle.patch、engines、files、exports
+  cordis.patch.yml      # insert: memctl-dsh
+  index.js              # Host half，纯 ESM，无第三方依赖
+  locale/en.json        # meta.title / meta.description
+  locale/zh.json
+  icon.svg
+  test/                 # Node 单元测试，不进入 npm 包
+```
+
+`package.json` 的 `files` 只包含 `index.js`、`cordis.patch.yml`、`locale/*.json` 和 `icon.svg`。不提交 `lib/` 之外的多余产物，不允许 `src/` 与预构建入口混用。
+
+### 5.2 生命周期映射
+
+| DSH 事件 | 监听位置 | 动作 |
+| --- | --- | --- |
+| `agent/created` | 根 `ctx` | 过滤子代理；读取 memctl 上下文；在该 agent 的作用域注册动态上下文 |
+| `session/event`，`event.type === 'turn/end'` | `agent.ctx` | 每轮提交后后台触发 `memctl sync` |
+| `agent/disposed` | 根 `ctx` | 尽力触发 `memctl end`；清理内存状态和子进程 |
+
+不使用的接入点：
+
+- `agent/session-start`：当前 DSH 不存在。
+- `agent/turn-stopping`：serial 且会等待，适合需要阻止轮次关闭的插件；memctl 只需要提交后的同步。
+- `agent/pre-step`：可以按用户输入做相关性检索，但第一版不做；它需要每步调用额外逻辑，成本和复杂度更高。
+- `tools/pre-execute`、`UserPromptSubmit`：第一版不介入工具和用户消息，避免与宿主或其他插件竞争。
+
+### 5.3 会话开始与上下文
+
+`agent/created` 监听器执行：
+
+1. 读取 `agent.id` 作为会话 id；读取 `agent.session.header.cwd` 作为工作目录（memctl 不依赖它绑定仓库，但可作为子进程 cwd）。
+2. 若 `agent.session.header.parentSession` 非空，判定为子代理，跳过后面的读取、注入和同步。子代理共享父会话的 memory，不应重复启动和重复同步。
+3. 以固定参数运行：
+
+```text
+memctl start --agent dsh --sid <agent.id> --json
+```
+
+不使用 `--stdin`，不经过 shell；参数数组直接传给 `spawn`。`start` 的 stdout 只允许一个 JSON 对象，解析 `hookSpecificOutput.additionalContext`。
+
+4. 成功后在 `agent.ctx` 注册动态上下文：
+
+```js
+agent.ctx.systemPrompt.context({
+  name: 'memctl:memory',
+  order: 9000,
+  text: () => contextCache.get(agent.id) ?? '',
+  interpolate: false,
+  required: true,
+})
+```
+
+使用 `systemPrompt.context` 而不是 `agent.inject` 的原因：
+
+- 它是 DSH 为动态上下文定义的持久 user-role 快照，只在完整快照变化或压缩移除时重新记录，避免每轮重复 token。[system-prompt](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/subsystems/system-prompt.zh.md)
+- 它带作用域，注册在 `agent.ctx` 上只影响该会话。
+- 它不伪造 inbox 消息，不依赖注入时序，也不会和用户输入竞争。
+
+不把整段记忆放进 `systemPrompt.section()`：section 是系统提示文本，适合稳定规则；记忆是动态数据，放 context 更符合 DSH 的语义，也避免每请求重复大段文本。`required: true` 让记忆上下文在用户关闭可选运行时上下文时仍然保留。
+
+5. `text` 提供器不能抛异常；缓存值必须是字符串。`interpolate: false` 防止记忆正文里的 `{{...}}` 被当成提示词变量。
+6. 对 `agent/created` 的 `source` 处理：
+
+| source | 行为 |
+| --- | --- |
+| `startup`、`resume` | 正常执行 start |
+| `clear` | 重新执行 start，刷新上下文 |
+| `compact` | 不重复 start；已注册的 context 会在下一次组装时按当前快照恢复 |
+
+`agent/created` 是 serial 事件，DSH 在创建完成前等待监听器，并在此期间暂存输入。插件可以在监听器内等待 `start`，但要设置超时；如果 `start` 失败，记录错误并继续创建会话，不能让 DSH 启动失败。
+
+### 5.4 同步与收尾
+
+每轮同步：
+
+- 在 `agent.ctx` 监听 `session/event`，只处理 `event.type === 'turn/end'`。
+- `turn/end` 是提交后的耐久事件；此时触发同步不会读到未提交的半成品。
+- 使用后台 `spawn`，不等待结果，不阻塞轮次关闭。参数固定为：
+
+```text
+memctl sync --agent dsh --sid <agent.id>
+```
+
+- 同一会话同时只允许一个同步进程；如果有新的 `turn/end` 到来，只记录一个 pending 标记，当前同步结束后再补一次，避免队列无限增长。
+- 同步失败只写日志，不改变会话状态。memctl 的自动路径本身以退出 0 处理断网、锁忙等失败，插件不应额外制造宿主错误。
+
+会话销毁：
+
+- `agent/disposed` 上触发 `memctl end --agent dsh --sid <agent.id>`，使用 detached + unref，尽力在 DSH 退出前完成。
+- 子代理没有注册监听器，不会触发。
+- 插件卸载时清理所有子进程和定时器；不要等待 `agent.whenIdle()` 或自己的 disposal，避免创建/销毁死锁。
+
+### 5.5 进程与超时
+
+| 动作 | 调用 | 超时 | 输出 |
+| --- | --- | --- | --- |
+| 会话开始 | `start --json` | 20 s | 有界读取 stdout，上限 1 MiB |
+| 每轮同步 | `sync` | 15 s | 忽略 stdout/stderr，仅记录退出状态 |
+| 会话收尾 | `end` | 15 s | detached + unref，尽力执行 |
+
+- 使用 `spawn(bin, args, { shell: false, windowsHide: true })`，不拼接命令字符串。
+- POSIX 下超时先发 `SIGTERM`，宽限后发 `SIGKILL`；需要时以进程组方式终止。Windows 下先 `kill`，必要时使用 `taskkill /T /F`，并记录无法清理的残留。
+- 所有子进程登记到插件状态；插件卸载或 agent 销毁时取消未完成的 start，并允许 sync/end 尽力完成。
+- stdout 超过上限时终止进程并记录错误，不截断后当成完整 JSON 解析。
+
+### 5.6 身份与配置
+
+- 会话 id 使用 `agent.id`，通过 `--sid` 显式传入。不依赖 `DSH_HOOK_SESSION_ID`，也不读取宿主 hooks JSON。
+- agent 名固定为 `dsh`；设备名、仓库路径、Git 凭据由 memctl 现有配置和环境决定。
+- memctl 路径按以下顺序解析：
+  1. `MEMCTL_DSH_BIN` 环境变量。
+  2. `~/.agent-memory/bin/memctl`。
+  3. `/opt/homebrew/bin/memctl`、`/usr/local/bin/memctl`。
+  4. PATH 中的 `memctl`。
+- 不读取项目 `.dsh/hooks.json`，不提供任意命令配置；这消除第三方 hooks 插件「配置文件即执行内容」的通用执行面。
+- 第一版不增加 DSH `Config` schema。需要调整路径或超时时用环境变量；如果后续需要设置面板，再引入受校验的 Config，避免第一版依赖 Schemastery 或宿主内部配置 API。
+
+### 5.7 错误处理
+
+| 场景 | 行为 |
+| --- | --- |
+| memctl 不存在或不可执行 | 记录一次错误，跳过注入；会话继续；不重试到每个事件 |
+| 记忆仓库未初始化 | `start` 返回可诊断错误；插件记录，不注入伪造上下文 |
+| `start` 超时或输出不是合法 JSON | 终止进程，记录错误；不注册半截上下文 |
+| `sync` 失败或超时 | 记录错误；不影响下一轮；不重试风暴 |
+| `end` 失败 | 记录错误；不能保证崩溃/强杀场景下一定执行 |
+| `systemPrompt` 服务缺失 | 插件声明 `inject = ['systemPrompt']`，让加载器等待或在缺失时保持非活动；不在 apply 里抛异常 |
+| 子代理 | 跳过注入和同步；不创建独立记忆上下文 |
+| 插件重复安装/旧 hooks 共存 | 记录警告；不自动删除用户配置 |
+| DSH 版本不匹配 | 由 DSH 的 `engines.dsh` 检查拒绝加载；Plugin Manager 显示不兼容原因 |
+| 插件卸载时有子进程 | 取消 start；sync/end 尽力完成并清理登记 |
+
+所有事件监听器必须内部捕获异常。`agent/created` 监听器抛错会让 agent 创建失败，这是最需要避免的宿主破坏。
+
+## 6. memctl 适配器改动
+
+### 6.1 探测
+
+dsh 适配器同时识别两种接入：
+
+- 原生插件：`$HOME/.dsh/profiles/*/node_modules/memctl-dsh/package.json`，以及 `$HOME/.dsh/node_modules/memctl-dsh/package.json`、`$HOME/.dsh/plugins/memctl-dsh/package.json`。
+- 旧 hooks 插件：保留现有 `dsh-hooks-plugin` 探测，作为兼容回退。
+
+两种都未探测到时状态为 `not_installed` 或 `needs_attention`，并给出安装命令；不能只因为 dsh 可执行文件存在就返回成功。
+
+### 6.2 状态
+
+| 探测结果 | 状态 | 说明 |
+| --- | --- | --- |
+| dsh 存在，原生插件存在 | `configured` | 不需要 hooks.json；首次真实验证后才是 `verified` |
+| dsh 存在，只有旧 hooks 插件和 hooks 配置 | `configured` | 兼容路径；标记为 legacy，提示迁移 |
+| dsh 存在，原生插件和旧 hooks 同时存在 | `needs_attention` | 重复触发风险；提示用户移除其中一套，不自动删 |
+| dsh 存在，没有任何插件 | `needs_attention` | 输出 npm/tarball 安装命令 |
+| dsh 不存在 | `not_installed` | 不写入任何配置 |
+| 插件版本低于最低支持版本 | `needs_attention` | 提示升级 |
+| DSH 版本不在 `engines.dsh` 范围 | `unsupported` | 不进入安装流程 |
+
+### 6.3 安装计划
+
+- 原生插件已存在：`install dsh` 返回零配置写入的计划，输出「无需 hooks.json」。
+- 原生插件缺失：`install dsh --dry-run` 输出 npm 与 tarball 两种安装命令；不执行 pnpm，不写 profile。
+- 旧 hooks 回退：保留现有模板和合并逻辑，但标记 deprecated；只有用户显式选择旧路径时才写入。
+- 不把 `memctl-dsh` 作为 `PluginSpec` 的必需插件来写 hooks；需要扩展 `AdapterSpec`，增加「原生插件」字段或候选列表，并让 `Plan` 在原生插件存在时返回空 artifact 集。具体改动在实现前更新 [架构与模块](./01-architecture-and-modules.md#5-目录结构与依赖) 和 [模型与契约](./02-domain-models-and-contracts.md#23-审计诊断整理与接入)。
+
+### 6.4 安装提示
+
+`memctl install dsh` 的提示必须包含：
+
+```text
+DSH Plugin Manager: Settings → Plugins → Add plugin → memctl-dsh@<version>
+CLI: dsh plugin --profile <profile> add memctl-dsh@<version>
+Offline: dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
+```
+
+不猜测 profile 名称；让用户使用 Plugin Manager 或填入自己的 profile。若当前进程带有 `DSH_PROFILE` 环境变量，可以把它作为默认值显示，但不假定它一定存在。
+
+## 7. 发布工程
+
+### 7.1 产物
+
+每个 memctl 版本产出：
+
+- `memctl-dsh-<version>.tgz`：预构建 npm 包，无依赖、无安装脚本。
+- 可选的 npm 发布：包名 `memctl-dsh`，精确版本，带 `engines.dsh`。
+- 可选的 `docs/dsh-market/index.json`：格式 1，`source.type = npm`，精确版本，`engines.dsh`，图标和本地化元数据。
+
+tarball 与 npm 包来自同一份源码和同一份 `package.json`；不允许 tarball 是另一套构建结果。
+
+### 7.2 构建入口
+
+```sh
+make dsh-plugin-test     # Node 单元测试
+make dsh-plugin-pack     # npm pack，产出 tgz 并校验文件清单
+make dsh-plugin-index    # 生成市场索引（可选）
+```
+
+`make release` 在现有四平台二进制、校验和、许可证清单之外，加入 `memctl-dsh-<version>.tgz` 和对应的 SHA-256。插件本身不参与 Go 交叉编译；它是平台无关的 ESM 包。
+
+### 7.3 CI 与发布
+
+- 在现有 GitHub Actions `v*` 标签流水线中增加：
+  1. 运行插件单元测试和 `npm pack --dry-run` 文件清单检查。
+  2. 产出 tarball 并加入 Release 附件与 `SHA256SUMS`。
+  3. 如启用 npm，使用 `NPM_TOKEN` 发布 `memctl-dsh@<version>`；优先使用 npm provenance。
+  4. 如启用市场索引，生成并校验 `index.json`，发布到静态托管地址。
+- npm 发布失败不应导致二进制 Release 失败；反之，二进制测试失败不能发布插件。两类产物分别报告状态。
+- 市场索引必须校验：`format = 1`、`name`/`version` 与包清单一致、`engines.dsh` 非空、`publishTimestamp` 正确、图标路径可解析、无重定向。
+- 不在 CI 中运行 `dsh plugin add` 修改真实用户 profile；安装验证使用隔离的 `DSH_HOME` 和临时 profile。
+
+### 7.4 版本矩阵
+
+| 维度 | 策略 |
+| --- | --- |
+| 插件版本 | 与 memctl 主次版本对齐，补丁可独立 |
+| DSH 兼容 | `engines.dsh` 精确声明；每次 DSH 升级跑真实宿主验证 |
+| memctl CLI 兼容 | 只依赖 `start/sync/end` 的稳定参数和 JSON envelope；插件加载时可选执行 `memctl version` 记录版本，不因版本不同拒绝工作 |
+| Node | `engines.node >= 20`；使用 DSH 自带 Node 运行时 |
+| 平台 | 插件平台无关；进程清理和路径解析需在 macOS、Linux、Windows 验证 |
+
+## 8. 验证与验收
+
+### 8.1 单元测试
+
+使用假 `ctx`、假 `agent` 和假 `spawn` 覆盖：
+
+- `agent/created` 只处理根 agent，子代理跳过。
+- `start` 参数、超时、JSON 解析、上下文缓存、`systemPrompt.context` 注册。
+- `session/event` 只对 `turn/end` 触发；并发时只保留一个 pending。
+- `agent/disposed` 触发 `end`，重复 disposed 不重复触发。
+- 插件卸载清理监听器、子进程和定时器。
+- 二进制缺失、非零退出、超时、非法 JSON、输出超限都不抛出宿主异常。
+- `source` 为 `startup/resume/clear/compact` 时的行为。
+
+### 8.2 包与安装测试
+
+- `npm pack` 后检查 `files`：不包含测试、源码映射、缓存和凭据。
+- `package.json` 无 `dependencies`、`scripts.install/postinstall/prepare`；`engines.dsh` 有效。
+- 在隔离 `DSH_HOME` 和临时 profile 中执行 `dsh plugin --profile test add ./memctl-dsh-<version>.tgz`，再执行 `dsh --profile test --dump-config` 检查插件行。
+- 安装不兼容的 `engines.dsh` 时 DSH 拒绝，profile 不出现半安装状态。
+- 卸载后插件行消失，profile 依赖清理，记忆仓库不变。
+- 旧 hooks 与原生插件同时存在时，适配器报告 `needs_attention`，不自动删除。
+
+### 8.3 真实宿主测试
+
+环境：DSH 0.2.1-rc.1，macOS arm64；隔离 `HOME` 或隔离 `AGENT_MEMORY_DIR`；临时记忆仓库和可控远端。
+
+必须验证：
+
+1. 新会话首个模型请求前，`systemPrompt.context` 快照包含 `[agent-memory]` 内容；会话日志可复核。
+2. 一轮对话结束后，`git -C <repo> log -1` 出现 memctl 提交，且没有重复同步。
+3. 关闭会话后 `end` 被调用；强杀/崩溃场景记录为未保证。
+4. 恢复旧会话时上下文重新注册，不重复创建记忆提交。
+5. 子代理不触发独立 start/sync。
+6. memctl 不存在、仓库未初始化、断网、锁忙时，会话仍能正常使用，日志有明确错误。
+7. 旧 hooks 插件卸载后不再重复触发。
+8. DSH 版本升级到范围外时，Plugin Manager 显示不兼容，DSH 不加载插件且不崩溃。
+
+### 8.4 建议的验收 ID
+
+在 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 中新增或映射：
+
+| ID | 场景 | 预期 |
+| --- | --- | --- |
+| `H07` | 原生 dsh 插件事件映射 | `agent/created` 注入、`turn/end` 同步、`agent/disposed` 收尾各一次 |
+| `H08` | 上下文注入 | 首个请求前存在 `[agent-memory]` 快照，不伪造 inbox 用户消息 |
+| `H09` | 并发与失败 | 多轮快速结束只保留一个有界同步；断网/锁忙不阻塞会话 |
+| `H10` | 子代理与生命周期 | 子代理不重复注入/同步；插件卸载清理子进程 |
+| `I03` | 插件安装/升级/卸载 | 隔离 profile 中幂等；无 hooks.json；无安装脚本 |
+| `I04` | tarball 离线安装 | 无 npm 网络也能安装；文件清单和版本正确 |
+| `I05` | DSH 兼容拒绝 | 范围外版本被拒绝，不出现半安装或静默失效 |
+
+这些 ID 在实现前写入 05，避免实现后再补验收定义。
+
+## 9. 风险与待确认事项
+
+| ID | 事项 | 影响 | 建议 |
+| --- | --- | --- | --- |
+| `D1` | npm 主通道还是 tarball/内嵌主通道 | 影响发布工程、用户入口、离线能力 | 推荐 npm 主 + tarball 备用；若 npm 发布不可接受，切 tarball 主 |
+| `D2` | 是否发布 DSH 市场索引及托管位置 | 影响发现性、更新提示 | 第一版可不做；用 npm 名 + 文档安装，索引作为第二阶段 |
+| `D3` | 插件版本是否与 memctl 完全同步 | 影响兼容矩阵和发布节奏 | 主次版本同步，补丁独立 |
+| `D4` | 记忆上下文过大时的截断策略 | 影响 token 成本和信息完整性 | 第一版不静默截断；超限记录错误并保留 memctl 原始输出策略 |
+| `D5` | 子代理是否注入简短指针 | 影响子代理能力和 token | 第一版跳过；需要时再做短指针 |
+| `D6` | 是否在 v1 提供客户端状态面板 | 影响插件复杂度和验收 | 不做；Host-only 先跑通 |
+| `D7` | 旧 hooks 配置是否自动迁移 | 影响用户配置所有权 | 不自动删除；报告并让用户选择 |
+
+其他风险：
+
+- DSH 仍是 developer preview，事件和服务可能在下个版本改名。`engines.dsh` 只能拒绝不兼容版本，不能消除维护成本；每次 DSH 升级都要跑真实宿主验证。
+- Host 插件在进程内、沙箱外执行；安装即信任。插件本身很小，但仍应发布源码、校验和、无依赖清单。
+- `agent/disposed` 在进程被强杀或崩溃时不能保证执行；`end` 只能尽力而为，不能对外宣称「一定同步」。
+- `systemPrompt.context` 会把记忆作为 user-role 快照写入会话历史；大段 `MEMORY.md` 会增加 token 和压缩成本。建议 memctl 输出保持「规则 + 入口」，详细内容按需读取。
+- npm 供应链和包名占用风险；使用精确版本、provenance、无 install 脚本和发布前文件清单检查。
+
+## 10. 实施顺序
+
+| 步骤 | 内容 | 完成条件 |
+| --- | --- | --- |
+| `E-1` | 包骨架、`package.json`、patch、locale、icon、单元测试 | `npm pack` 文件清单正确；假 ctx 测试通过 |
+| `E-2` | 生命周期、上下文注入、同步/收尾、进程管理 | 假宿主集成测试覆盖 H07–H10 |
+| `E-3` | 适配器探测、状态、安装提示、旧 hooks 共存 | `install --status` 区分原生/旧/缺失；无自动写 profile |
+| `E-4` | npm/tarball 产物、CI、可选市场索引 | Release 附件和校验和；隔离 profile 安装测试 |
+| `E-5` | 真实 DSH 会话验证、文档、发布 | H07–H10、I03–I05 有真实宿主证据；未验证项如实记录 |
+
+实现前需要：
+
+1. 更新 [目录规划](./01-architecture-and-modules.md#5-目录结构与依赖)，增加 `plugins/dsh/`。
+2. 更新 [模型与契约](./02-domain-models-and-contracts.md#23-审计诊断整理与接入) 的适配器结构，支持原生插件与旧 hooks 两种模式。
+3. 更新 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的验收 ID 和阶段计划。
+4. 确认 `D1` 主通道；其余决策可先按推荐值实现，再在验收时复核。
+
+## 11. 类似项目调研
+
+| 项目 | 分发/安装 | 上下文接入 | 可借鉴与差异 |
+| --- | --- | --- | --- |
+| [`dsh-context-memory`](https://github.com/hj01857655/dsh-plugins/tree/main/packages/dsh-context-memory) | npm 包，`dsh plugin --profile web add dsh-context-memory`；无自定义安装器 | `agent/pre-step` 注入带 `plugin` source 的 recall 消息，按用户输入检索 | 最接近的 DSH 记忆插件；证明「npm + Host 插件」足够，不必先做安装器。它把记忆存在项目 `.memory`，memctl 用 Git 仓库，职责不同 |
+| [`dsh-hooks-plugin`](https://github.com/KYinCode/dsh-hooks-plugin) | npm 包，`dsh plugin add` + `hooks.json`；memctl 当前依赖 | 订阅旧事件，`agent.inject` 注入 | 说明通用 hooks 的维护面；其 SessionStart 事件和全局路径在 0.2.1-rc.1 已失效 |
+| [`dsh-hooks`](https://github.com/PeterBon/dsh-hooks) | npm 包，配置写在 `cordis.patch.yml` | 事件执行 shell 命令，无 stdin | 更轻，但同样受 DSH 事件版本影响；不适合需要结构化上下文的 memctl |
+| [`claude-mem`](https://github.com/thedotmack/claude-mem/blob/main/docs/public/installation.mdx) | npm 包 + `npx claude-mem install` + 插件市场；安装器写 hooks、启动 worker、配置 launcher | 各宿主 hooks + 本地 worker | 展示「一键安装器」的复杂度与失败面；memctl 不需要 worker 和 launcher，应避免复制 |
+| [`basic-memory`](https://docs.basicmemory.com/local/local-install) | Python CLI（uv/Homebrew）+ 用户手工配置 MCP client | MCP tools / 资源 | 包管理器 + 手动配置可以工作，但 DSH 用户更习惯 Plugin Manager；不作为主通道 |
+| [Claude Code 插件市场](https://code.claude.com/docs/en/plugin-marketplaces) | 市场仓库 `.claude-plugin/marketplace.json`；`/plugin marketplace add` + `/plugin install` | 插件自带 hooks、skills、agents | 与 DSH 市场索引思路一致：目录与包分离，安装由宿主完成；memctl 可复用这种「目录 + 预构建包」模式 |
+| [DSH Plugin Hub](https://github.com/dshplugin/dsh-plugin-hub) | 第三方社区市场，npm 安装，自带浏览器端目录 | 不涉及 memctl | 可作为发现渠道，但不是 memctl 控制的发布通道；不能把可用性建立在第三方审核上 |
+
+调研结论：
+
+- DSH 生态的主流安装方式是 npm bundle + `dsh plugin add`，不是每个项目自带安装器。
+- 只有需要写宿主配置或启动常驻服务时，才值得做 `npx ... install`（claude-mem 的路径）；memctl 的插件不需要写 hooks.json，也不需要 worker，因此不应引入安装器。
+- 记忆类插件通常把「检索/注入」和「存储」分开；memctl 已有 Git 仓库和同步，插件应只做桥接。
+- 市场索引适合发现和更新，但应作为可选增强，不应成为第一版安装的前置条件。
+
+## 12. 参考
+
+- [DSH 打包与安装插件](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/basic/publish.zh.md)
+- [DSH 插件与生命周期](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/framework/index.zh.md)
+- [DSH 事件系统](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/framework/events.zh.md)
+- [DSH 服务与依赖](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/framework/service.zh.md)
+- [DSH 会话事件](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/subsystems/session.zh.md)
+- [DSH 系统提示](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/subsystems/system-prompt.zh.md)
+- [DSH app-boot](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/app-boot/README.zh.md)
+- [DSH Plugin Manager](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/plugin-manager/README.zh.md)
+- [DSH 市场索引格式](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/.agents/notes/implemented/feature/2026-10-02-plugin-market-index-format.md)
+- [DSH 核心子系统 Cordis 接口](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/subsystems/core.zh.md)
