@@ -201,4 +201,6 @@ clean:
 
 `make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及三个元数据文件：`SHA256SUMS`（四个二进制的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
+GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，在 `macos-latest` 上构建四个候选二进制并上传 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制与三个元数据文件。工作流不改变发布内容，`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
+
 运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。

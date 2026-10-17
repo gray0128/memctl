@@ -1,0 +1,67 @@
+# Builds the cross-platform release candidates and publishes a GitHub release
+# for version tags. The build step calls the same entry point as local release
+# runs (make release -> scripts/release.sh), so the CI artifacts and the local
+# candidates come from one code path. See docs/04-ui-and-cli-specification.md
+# section 6 and docs/05-validation-and-delivery.md section 4.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The release helper records the build host in RELEASE-INFO.txt as the only
+    # runtime-verified target. macOS covers the platform the test suite is
+    # validated on; the other three targets are cross-compiled from here.
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          # git describe needs the tag history for the version string.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.10.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build release candidates
+        run: make release
+
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v7
+        with:
+          name: memctl-dist
+          path: dist/
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "memctl $GITHUB_REF_NAME" \
+            --generate-notes

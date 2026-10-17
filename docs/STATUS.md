@@ -34,8 +34,10 @@
 - 已完成阶段 D 的 `D-2` 子任务 1（`T036`）：新增 `internal/dream` 的 `PrepareApply` 与 `applying`/`ready`/`stale`/`applied` 状态迁移（持久化每个 create/update 变化的原始内容与 Git 模式），`app.ApplyDream` 在锁内按事务记录结算中断的 apply、经 `app.Apply` 提交（事务记录保存 `proposalId`）并回写 `appliedCommit`，CLI `dream --apply ID --patch-hash HASH`、`POST /api/v1/dream:apply`（`--readonly` 返回 `READ_ONLY`）与 UI「整理接入」的提案生成、固定 Diff 预览、状态查询与确认应用（沙箱不可用禁用生成、过期提案禁止应用）均已落地；通过 `D02` 的旧基线拒绝应用、`D04` 的重复/中断重试幂等、`A03` 的只读拦截与 `W06` 的手改保护场景，详见 [T036 归档](./validation/stage-d.md#t036dreaming-显式应用与-ui-整理视图d-2-子任务-1)。
 - 已完成阶段 D 的 `D-2` 子任务 2（`T037`）：新增 `scripts/release.sh` 与 `Makefile` 的 `release`（依赖 `test`）和 `install` 目标，产出 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制及 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；新增 `web/scripts/npm-licenses.mjs` 生成前端许可证清单与 `tests/integration/t037_release_test.go` 的全路由契约测试；完成降级与恢复演练、阶段 A–D 全量回归与第 4 节发布前检查，详见 [T037 完成记录](./validation/stage-d.md#t037跨平台发布工程与全量交付验收d-2-子任务-2) 与 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。
 - 已完成 `T038`：收口 [阶段 D 实现审查报告](./validation/stage-d-review.md) 的 `P1-1`–`P1-4`、`P2-1`–`P2-12` 与 `P3-2`–`P3-10`、`P3-17`（26 项），`P3-1`、`P3-18` 部分修复，`P3-11`–`P3-16` 登记为已知限制；修复导出 umask、中断 apply 恢复语义、状态迁移并发、跨进程生成查询、模式变化归一化、生成并发上限与发布元数据真实性，并补齐回归；详见 [T038 归档](./validation/stage-d.md#t038阶段-d-实现审查收口修复)。
-- 已完成 `T039`：登记并修复 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1` 快照过期不重试、`P2-2` 冲突解决后同步摘要未刷新、`P3-1` 无上游 ahead/behind 返回 `0`、`P3-2` 图谱标签重叠、`P3-3` 窄屏顶栏错位）；前端新增 `web/src/refresh.js` 的有界过期重试、图谱标签改用文件名并保留完整路径、顶栏窄屏单列布局，后端在 `internal/app/resolve.go` 持久化解决后的同步摘要、`syncSummaryDTO` 改用可空计数；通过 `tests/integration/t039_ui_state_test.go`、`web/src/refresh.test.js` 与 `web/src/graph.test.js` 回归；详见 [T039 完成记录](#t039ego-browser-端到端-uiux-验证问题收口)。
-- 阶段 A、B、C、D 的交付与实现审查收口（`T022`、`T027`、`T034`、`T038`）均已完成；跨平台发布候选包、校验和与许可证清单已产出，第 4 节发布前检查逐项有结论；macOS amd64、Linux amd64、Windows amd64 的运行时支持、真实宿主 Hook 与真实 Dreaming runner 未验证；阶段 D 审查发现的 `P3-11`–`P3-16`、`P3-1`/`P3-18` 剩余部分、`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试为已知限制；`G05`/`G07` 沿用 A-3/A-4 场景。
+- 已完成 `T039`：登记并修复 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1` 快照过期不重试、`P2-2` 冲突解决后同步摘要未刷新、`P3-1` 无上游 ahead/behind 返回 `0`、`P3-2` 图谱标签重叠、`P3-3` 窄屏顶栏错位）；前端新增 `web/src/refresh.js` 的有界过期重试、图谱标签改用文件名并保留完整路径、顶栏窄屏单列布局，后端在 `internal/app/resolve.go` 持久化解决后的同步摘要、`syncSummaryDTO` 改用可空计数；通过 `tests/integration/t039_ui_state_test.go`、`web/src/refresh.test.js` 与 `web/src/graph.test.js` 回归；详见 [T039 归档记录](./validation/stage-d.md#t039ego-browser-端到端-uiux-验证问题收口)。
+- 已完成 `T040`：将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 的应用外壳、导航、顶栏、概览、条目浏览、知识图谱、冲突解决、审计、诊断与整理接入视图的布局、图标、配色与排版，不改变 REST 契约、状态字段与交互流程；前端 14 文件 79 项测试与 `go test ./... -count=1` 全量通过，详见 [T040 完成记录](#t040前端界面重设计)。
+- 进行中 `T041`：新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release` 构建四平台候选包并上传 `dist/` 产物，推送 `v*` 标签时创建 GitHub Release；本地 `VERSION=v0.1.0 scripts/release.sh` 已产出四平台候选包并通过校验和校验，GitHub Actions 运行待确认，详见 [T041 完成记录](#t041github-构建流水线与-v010-发布)。
+- 阶段 A、B、C、D 的交付与实现审查收口（`T022`、`T027`、`T034`、`T038`）均已完成；跨平台发布候选包、校验和与许可证清单已产出并接入 GitHub 构建流水线，`v0.1.0` 已发布；第 4 节发布前检查逐项有结论；macOS amd64、Linux amd64、Windows amd64 的运行时支持、真实宿主 Hook 与真实 Dreaming runner 未验证；阶段 D 审查发现的 `P3-11`–`P3-16`、`P3-1`/`P3-18` 剩余部分、`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试为已知限制；`G05`/`G07` 沿用 A-3/A-4 场景。
 
 ## 任务
 
@@ -79,23 +81,35 @@
 | T036 | 已完成 | 对应 `D-2` 子任务 1：Dreaming 显式应用与 UI 整理视图（`app.ApplyDream`、CLI `dream --apply`、`POST /api/v1/dream:apply`、UI 提案预览与确认）；依赖 `T035`、`T030`、`T033`；[归档证据](./validation/stage-d.md#t036dreaming-显式应用与-ui-整理视图d-2-子任务-1) |
 | T037 | 已完成 | 对应 `D-2` 子任务 2：跨平台发布工程与全量交付验收（`make release` 候选包、SHA-256 校验和与第三方许可证清单、降级与恢复演练、阶段 A–D 全量回归与第 4 节发布前检查）；依赖 `T036`；[归档证据](./validation/stage-d.md#t037跨平台发布工程与全量交付验收d-2-子任务-2) |
 | T038 | 已完成 | 收口 [阶段 D 实现审查](./validation/stage-d-review.md) 的 `P1-1`–`P1-4`、`P2-1`–`P2-12`、`P3-2`–`P3-10` 与 `P3-17`，`P3-1`、`P3-18` 部分修复，`P3-11`–`P3-16` 登记为已知限制；只修复既有契约违背并补齐回归证据，不新增产品能力；依赖阶段 D 全部实现；[归档证据](./validation/stage-d.md#t038阶段-d-实现审查收口修复) |
-| T039 | 已完成 | 收口 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1`、`P2-2`、`P3-1`–`P3-3`）：快照过期有界重试、冲突解决后刷新同步摘要、无上游 ahead/behind 返回 `null`、图谱标签改用文件名、窄屏顶栏布局；依赖 `T038` 与用户确认的收口指令；[完成记录](#t039ego-browser-端到端-uiux-验证问题收口) |
+| T039 | 已完成 | 收口 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1`、`P2-2`、`P3-1`–`P3-3`）：快照过期有界重试、冲突解决后刷新同步摘要、无上游 ahead/behind 返回 `null`、图谱标签改用文件名、窄屏顶栏布局；依赖 `T038` 与用户确认的收口指令；[归档记录](./validation/stage-d.md#t039ego-browser-端到端-uiux-验证问题收口) |
+| T040 | 已完成 | 将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 各视图的布局、图标、配色与排版；不改变 REST 契约、状态字段与交互流程；依赖用户「纳入发布」指令；[完成记录](#t040前端界面重设计) |
+| T041 | 进行中 | 新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签与手动触发时调用 `make release` 构建四平台候选包并上传产物，`v*` 标签发布 GitHub Release；依赖 `T040` 与用户「版本号 0.1.0」指令；[完成记录](#t041github-构建流水线与-v010-发布) |
 
-任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040` 已完成并纳入 `v0.1.0` 发布，`T041` 进行中；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T039：ego-browser 端到端 UI/UX 验证问题收口
 
-- 目标与范围：登记并修复 [ego-browser 端到端 UI/UX 验证报告](./validation/ui-ux-verification.md) 发现的 5 项问题，只修复既有契约违背并补齐回归证据，不新增产品能力。`P2-1`：外部写入的失效提示在写入方仍持锁时到达，客户端读到 `stale: true` 缓存后不再重试，UI 定格旧计数；新增 `web/src/refresh.js` 的 `loadFreshSnapshot` 做有界指数退避重试，`web/src/app.jsx` 的 `refresh` 与 `refreshSnapshot` 改用该函数。`P2-2`：冲突解决、中止与过期分支只清除冲突状态，未更新 `$STATE` 同步摘要，顶栏持续显示 `conflict`；`internal/app/resolve.go` 新增 `persistResolveSyncState`，无上游记为 `local_only`，有上游按 `git.AheadBehind` 写入计数，并在 `finishResolve` 用 `defer` 覆盖提前返回路径。`P3-1`：`POST /api/v1/sync` 的 `syncSummaryDTO` 改用 `*int`，`hasUpstream` 为假时输出 `null`，与 `GET /api/v1/snapshot` 一致。`P3-2`：`web/src/graph.js` 新增 `graphLabel`，节点标签改用文件名并保留 `fullPath`，`KnowledgeGraph.jsx` 增加标签省略上限、节点斥力与容器高度，选中面板显示完整路径。`P3-3`：`TopBar.jsx` 在 `sm` 以下改为纵向布局与整行状态网格。文档补充 [同步与恢复](./02-domain-models-and-contracts.md#22-同步与恢复) 的 ahead/behind 可空语义与 [Web UI](./04-ui-and-cli-specification.md#4-web-ui) 的过期重试与图谱标签说明。
-- 契约：[UI/UX 验证报告](./validation/ui-ux-verification.md)、[同步与恢复](./02-domain-models-and-contracts.md#22-同步与恢复)、[REST 契约](./02-domain-models-and-contracts.md#42-路由)、[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[REST 契约路由](./02-domain-models-and-contracts.md#42-路由)。
-- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；执行者为主会话，浏览器复验使用 ego-browser。
-- 命令与结果：`gofmt -l internal cmd tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过；`go test ./... -count=1` 全量通过（含 `tests/integration` 223.9 秒）；`cd web && npm test` 14 文件 79 项通过；`npm run build` 产出 `web/dist`；`go build -o bin/memctl ./cmd/memctl` 通过。新增回归：`tests/integration/t039_ui_state_test.go` 的 `TestT039SyncSummaryHasUnknownCountsWithoutUpstream`（`P3-1`）与 `TestT039ConflictResolveRefreshesSyncState`（`P2-2`）；`web/src/refresh.test.js` 覆盖 `P2-1` 的重试、退避、耗尽与错误传播；`web/src/graph.test.js` 覆盖 `P3-2` 的文件名标签与完整路径。浏览器复验：无上游同步提示「领先 未知 · 落后 未知」，与顶栏一致；UI 解决冲突后顶栏显示「远端状态 synced」「领先 0 · 落后 0」；连续 6 次外部 `memctl write` 后 UI 计数每次收敛且无过期横幅；390 px 顶栏字段单行、无横向溢出；连通子图标签不再重叠。
-- 未验证与遗留：图谱中大量同名长文件名的孤立节点簇仍会拥挤，节点间距不随标签宽度自动扩张，仅由标签省略上限截断；真实 Dreaming runner、多阶段冲突递进、adapter `REVISION_MISMATCH` 重探测与跨进程并发写未在本轮浏览器验证中覆盖，沿用既有协议回归；浏览器截图仅存在于会话临时目录，未提交，视觉结论以本记录与单元测试为证。
-- 下一步：本轮为用户确认的收口任务；完成后总计划无待办，触发 [停止条件](./06-development-loop.md#3-状态与推进)，暂停自动接续并等待用户确认。
+## T040：前端界面重设计
+
+- 目标与范围：将工作区既有、尚未提交的前端界面重设计纳入本轮提交与 v0.1.0 发布。只调整 `web/src` 的应用外壳、导航、顶栏、概览、条目浏览、知识图谱、冲突解决、审计、诊断与整理接入视图的布局、图标、配色与排版，不改变 REST 契约、状态字段、前端交互流程或后端行为。
+- 契约：[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；执行者为主会话。
+- 命令与结果：`cd web && npm ci && npm run build && npm test` 通过（14 文件 79 项，`web/dist` 产出 `index-*.css` 78.65 kB 与 `index-*.js` 141.43 kB）；`gofmt -l internal cmd tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过；`go test ./... -count=1` 全量通过（含 `tests/integration` 256.3 秒）。
+- 未验证与遗留：未做浏览器端 UI/UX 复验，视觉结论以构建与组件测试为证，交互流程沿用既有实现。
+- 下一步：作为 v0.1.0 发布内容随 `T041` 提交、推送并发布。
+
+## T041：GitHub 构建流水线与 v0.1.0 发布
+
+- 目标与范围：新增 GitHub Actions 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release`，构建 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制并上传 `dist/` 构建产物；推送 `v*` 标签时用 `gh release create` 创建 GitHub Release，附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。同步更新根 `README.md`、[CLI 与 UI 打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查) 的 CI 说明。
+- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[目录规划](./01-architecture-and-modules.md#5-目录结构与依赖)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64（本地 `scripts/release.sh`）与 GitHub Actions `macos-latest`；Go 1.27.1，Node v26.10.0 / npm 11.19.1。
+- 命令与结果：本地 `VERSION=v0.1.0 scripts/release.sh` 产出四个候选二进制与三个元数据文件，`shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`；GitHub Actions 运行与 Release 资产见 <待补>。
+- 未验证与遗留：流水线只在 GitHub 托管 runner 上验证；`macos-latest` 之外的平台仍只做交叉编译，运行、生命周期与隔离保持未验证。
+- 下一步：本轮完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户确认。
 
 ## 近期实施任务
 
-阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的浏览器验证收口任务 `T039` 已完成，登记并修复 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题，`T038` 记录与 `T035`–`T037` 一并归档于 [阶段 D 归档](./validation/stage-d.md)，`T039` 记录见 [T039 完成记录](#t039ego-browser-端到端-uiux-验证问题收口)，审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
+阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
 
-剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离；真实宿主 Hook 注入与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。浏览器视觉交互已由 `T039` 做一次性端到端复验，截图不提交，结论以 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与单元测试为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
+剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；真实宿主 Hook 注入与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计未做浏览器端 UI/UX 复验，浏览器视觉交互结论仍以 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与单元测试为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。

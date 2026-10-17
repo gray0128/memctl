@@ -82,6 +82,15 @@ ls dist/                 # 四个候选二进制、SHA256SUMS、THIRD_PARTY_LICE
 
 `dist/` 与 `bin/` 不提交。发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期验证以 [验收与交付](./docs/05-validation-and-delivery.md#3-性能与适配记录) 的记录为准。
 
+GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，构建四个候选二进制并保留 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
+
 本地初始化与读取使用隔离路径验证；`init` 不带 URL 时只创建本地仓库与首笔提交，不配置远端：
 
 ```bash
