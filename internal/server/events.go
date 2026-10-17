@@ -28,6 +28,12 @@ type vaultUpdatedData struct {
 	ChangedFiles []string `json:"changedFiles,omitempty"`
 }
 
+// dreamUpdatedData is the documented payload of one dream.updated event.
+type dreamUpdatedData struct {
+	ProposalID string `json:"proposalId"`
+	Status     string `json:"status"`
+}
+
 // Events returns the invalidation bus behind GET /api/v1/events. A caller that
 // runs the recursive file watcher publishes external-edit hints into it.
 func (s *Server) Events() *watcher.Bus { return s.events }
@@ -76,7 +82,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case hint := <-sub.Hints():
-			if err := writeSSEEvent(w, hint.Reason, vaultUpdatedPayload(hint)); err != nil {
+			if err := writeSSEEvent(w, hint.Reason, invalidationPayload(hint)); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -116,6 +122,18 @@ func vaultUpdatedPayload(hint watcher.Invalidation) []byte {
 		Revision:     hint.Revision,
 		ChangedFiles: hint.ChangedFiles,
 	})
+	if err != nil {
+		return nil
+	}
+	return payload
+}
+
+// invalidationPayload selects the documented payload for one event reason.
+func invalidationPayload(hint watcher.Invalidation) []byte {
+	if hint.Reason != watcher.ReasonDreamUpdated {
+		return vaultUpdatedPayload(hint)
+	}
+	payload, err := json.Marshal(dreamUpdatedData{ProposalID: hint.ProposalID, Status: hint.Status})
 	if err != nil {
 		return nil
 	}

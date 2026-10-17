@@ -15,6 +15,10 @@ type Invalidation struct {
 	Reason       string
 	ChangedFiles []string
 	Revision     string
+	// ProposalID and Status carry the dream.updated payload. They are only
+	// set by the Dreaming producer; every other reason ignores them.
+	ProposalID string
+	Status     string
 }
 
 // Sink receives invalidation hints. Publish must never block.

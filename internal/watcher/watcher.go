@@ -20,11 +20,12 @@ import (
 )
 
 // Notification reasons defined by docs/02-domain-models-and-contracts.md
-// section 5. Other event names (sync.status, sync.conflict, dream.updated)
-// belong to later stages and are not produced here.
+// section 5. dream.updated is published by the Dreaming generator when a
+// proposal changes status.
 const (
 	ReasonVaultUpdated   = "vault.updated"
 	ReasonResyncRequired = "resync.required"
+	ReasonDreamUpdated   = "dream.updated"
 )
 
 // Debounce is the initial window that merges a burst of file-system events into

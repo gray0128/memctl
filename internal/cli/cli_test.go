@@ -195,28 +195,31 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 }
 
-func TestPlannedCommandsRejectPlaceholderSuccess(t *testing.T) {
-	planned := []string{
-		"dream",
+// TestUnimplementedApplyRejectsPlaceholderSuccess verifies that the stage D-2
+// apply path returns UNSUPPORTED instead of a placeholder success, and that
+// `dream` without a mode is a usage error.
+func TestUnimplementedApplyRejectsPlaceholderSuccess(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{"dream", "--apply", "dp-00000000000000000000000000000000", "--patch-hash", "sha256:deadbeef"},
+		strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
+	if code == cli.ExitOK {
+		t.Fatalf("unimplemented apply must not return placeholder success (0)")
+	}
+	if code != cli.ExitError {
+		t.Fatalf("apply returned %d, want %d", code, cli.ExitError)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty stdout for unimplemented apply, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "UNSUPPORTED") {
+		t.Fatalf("expected UNSUPPORTED reason in stderr, got %q", stderr.String())
 	}
 
-	for _, sub := range planned {
-		t.Run(sub, func(t *testing.T) {
-			var stdout, stderr bytes.Buffer
-			code := cli.Run([]string{sub}, strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
-			if code == cli.ExitOK {
-				t.Fatalf("planned command %q must not return placeholder success (0)", sub)
-			}
-			if code != cli.ExitError {
-				t.Fatalf("planned command %q returned %d, want %d", sub, code, cli.ExitError)
-			}
-			if stdout.Len() != 0 {
-				t.Fatalf("expected empty stdout for unimplemented command %q, got %q", sub, stdout.String())
-			}
-			if !strings.Contains(stderr.String(), "UNSUPPORTED") {
-				t.Fatalf("expected UNSUPPORTED reason in stderr for %q, got %q", sub, stderr.String())
-			}
-		})
+	var usageOut, usageErr bytes.Buffer
+	if code := cli.Run([]string{"dream"}, strings.NewReader(""), &usageOut, &usageErr, "v2.0.0-dev"); code != cli.ExitUsageError {
+		t.Fatalf("dream without a mode returned %d, want %d (stderr=%q)", code, cli.ExitUsageError, usageErr.String())
 	}
 }
 

@@ -1,0 +1,95 @@
+// Package dream implements the isolated Dreaming pipeline: it fixes a clean
+// repository baseline, exports the supported memory files into an independent
+// temporary directory, runs a detected runner inside a platform sandbox,
+// validates the resulting change set against the fixed baseline and persists a
+// reviewable proposal. It never modifies the main repository. See
+// docs/03-workflows-and-dataflows.md section 6 and
+// docs/02-domain-models-and-contracts.md section 2.3.
+package dream
+
+import "time"
+
+// Proposal status values. Generating and the terminal ready/failed states are
+// produced by stage D-1; applying/applied/stale are produced by the explicit
+// apply workflow of stage D-2.
+const (
+	StatusGenerating = "generating"
+	StatusReady      = "ready"
+	StatusApplying   = "applying"
+	StatusApplied    = "applied"
+	StatusStale      = "stale"
+	StatusFailed     = "failed"
+)
+
+// Change actions of one ordered proposal change.
+const (
+	ChangeCreate = "create"
+	ChangeUpdate = "update"
+	ChangeDelete = "delete"
+)
+
+// Documented runtime limits. They mirror the request limits of
+// docs/02-domain-models-and-contracts.md section 4.1 and the text limit of
+// internal/vault.
+const (
+	// MaxChanges bounds the number of files one proposal may touch.
+	MaxChanges = 100
+	// MaxChangeBytes bounds the total planned content of one proposal.
+	MaxChangeBytes = 8 << 20
+	// MaxRunnerOutput bounds the runner stdout and stderr that memctl keeps.
+	MaxRunnerOutput = 4 << 20
+	// DefaultTimeout bounds one isolated runner execution.
+	DefaultTimeout = 10 * time.Minute
+	// MaxPatchBytes bounds the human-readable unified diff stored with a
+	// proposal. A larger diff is replaced by a truncation notice; the ordered
+	// change list remains authoritative.
+	MaxPatchBytes = 4 << 20
+)
+
+// Change is one ordered entry of a proposal. Path uses `/` separators and is
+// root-relative to the exported memory tree. BaseRevision is the file revision
+// at the fixed baseline (absent for a creation) and PlannedRevision binds the
+// proposed content, so patchHash does not depend on the rendered patch text.
+type Change struct {
+	Path            string `json:"path"`
+	Action          string `json:"action"`
+	BaseRevision    string `json:"baseRevision,omitempty"`
+	PlannedRevision string `json:"plannedRevision"`
+	Patch           string `json:"patch,omitempty"`
+}
+
+// Proposal is the DreamProposal of docs/02-domain-models-and-contracts.md
+// section 2.3. It is persisted under $STATE/repos/<repoId>/proposals and stays
+// queryable after the generating process exits.
+type Proposal struct {
+	ProposalID    string   `json:"proposalId"`
+	RepoID        string   `json:"repoId"`
+	BaseRevision  string   `json:"baseRevision"`
+	BaseHead      string   `json:"baseHead"`
+	Runner        string   `json:"runner"`
+	Status        string   `json:"status"`
+	PatchHash     string   `json:"patchHash,omitempty"`
+	Diff          string   `json:"diff,omitempty"`
+	Changes       []Change `json:"changes,omitempty"`
+	Warnings      []string `json:"warnings"`
+	CreatedAt     string   `json:"createdAt"`
+	AppliedCommit string   `json:"appliedCommit,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+// Source identifies the repository and state root the service operates on.
+// RepoPath is the canonical absolute repository root; RepoID is its local
+// state partition key.
+type Source struct {
+	RepoPath string
+	RepoID   string
+	StateDir string
+}
+
+// PreviewRequest is one generation request. BaseRevision is optional at the
+// library level and, when non-empty, is checked against the fixed baseline like
+// every other managed precondition. Runner names a registered runner.
+type PreviewRequest struct {
+	Runner       string
+	BaseRevision string
+}

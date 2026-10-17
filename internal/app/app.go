@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/dream"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
@@ -71,6 +72,11 @@ type App struct {
 	// available. See docs/02-domain-models-and-contracts.md section 1.1.
 	snapshotMu     sync.Mutex
 	cachedSnapshot *Snapshot
+	// dreamMu guards the lazily built Dreaming service. One service instance
+	// owns the in-process generation records, so it must outlive a single HTTP
+	// request.
+	dreamMu  sync.Mutex
+	dreamSvc *dream.Service
 }
 
 // New builds the application service for the given configuration.

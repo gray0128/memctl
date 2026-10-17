@@ -21,10 +21,6 @@ const (
 	ExitUsageError = 2
 )
 
-var plannedSubcommands = map[string]string{
-	"dream": "generate, inspect, or apply Dreaming memory proposals (planned in Stage D)",
-}
-
 const usageText = `Usage:
   memctl <subcommand> [flags] [-- command...]
 
@@ -46,11 +42,9 @@ Available Commands:
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
   doctor               Run read-only repository diagnostics (--json)
+  dream                Generate or inspect Dreaming proposals (--runner NAME | --show ID)
   install [agent...]   Inspect or install agent adapter configurations (--all --dry-run --status)
   ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
-
-Planned Commands (not yet enabled):
-  dream                Preview, show, or apply memory organization proposals
 
 Run "memctl help" for usage details.
 `
@@ -127,6 +121,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	case "doctor":
 		return runDoctor(rest, stdout, stderr)
 
+	case "dream":
+		return runDream(rest, stdout, stderr)
+
 	case "install":
 		return runInstall(rest, stdout, stderr)
 
@@ -138,11 +135,6 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 		fmt.Fprintf(stderr, "memctl: unknown flag %q\n", sub)
 		fmt.Fprint(stderr, usageText)
 		return ExitUsageError
-	}
-
-	if desc, ok := plannedSubcommands[sub]; ok {
-		fmt.Fprintf(stderr, "memctl %s: UNSUPPORTED: command is not yet implemented (%s)\n", sub, desc)
-		return ExitError
 	}
 
 	fmt.Fprintf(stderr, "memctl: unknown command %q\n", sub)
