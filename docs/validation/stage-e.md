@@ -1,6 +1,6 @@
-# 阶段 E 归档：DSH 专用插件
+# 阶段 E 与发布后归档
 
-本文件归档阶段 E 的完成记录。当前任务状态、未验证项与下一步见 [开发状态](../STATUS.md)；阶段 E 的步骤定义见 [验收与交付](../05-validation-and-delivery.md#阶段-e-的实施顺序)。
+本文件归档阶段 E 与发布后轮次的完成记录。当前任务状态、未验证项与下一步见 [开发状态](../STATUS.md)；阶段 E 的步骤定义见 [验收与交付](../05-validation-and-delivery.md#阶段-e-的实施顺序)。
 
 ## T048：memctl-dsh 主机插件与发布产物
 
@@ -40,3 +40,13 @@
 - 验收：`make test` 全量通过；本地 `dist/SHA256SUMS` 与下载的 Release 附件校验全部 `OK`；tag `v0.2.1` 的 CI Release 成功；`T054` 的 `H11`、`H07`、`H10`、`I01` 回归包含在发布前测试中。
 - 未验证与遗留：真实 DSH 退出兜底、真实 Codex `SessionEnd` 与 OpenCode `session.deleted` 仍未执行；macOS amd64、Linux 与 Windows 仅交叉编译；本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.2.1`。
 - 下一步：`T052` 安装 `v0.2.1` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。
+
+## T056：新增 update 命令
+
+- 目标与范围：为单文件 CLI 增加 `update` 与 `update --check`：查询 `gray0128/memctl` 的最新 GitHub Release，按 `runtime.GOOS/GOARCH` 选择已发布资产，读取同一 Release 的 `SHA256SUMS`，在目标目录写入临时文件并同步计算 SHA-256；校验通过后沿用权限、flush 并以同目录 rename 原子替换当前二进制。Windows 运行中不可替换，返回 `UNSUPPORTED`；`--check` 只查询不写文件。不修改记忆仓库、不读取凭据、不自检下载的二进制，也不自动重启。
+- 契约：[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[`update` 自更新](../04-ui-and-cli-specification.md#12-update-自更新)、[验收矩阵](../05-validation-and-delivery.md#2-核心测试矩阵) 的 `R05`。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；真实 Release `v0.2.1` 与临时目录中的候选二进制；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
+- 命令与结果：`make test` 全量通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 261.3 秒）。`go test ./internal/update ./internal/cli` 通过（更新包 11 项，CLI 含新增用法错误）；`go vet ./internal/update ./internal/cli` 通过；`GOOS=linux GOARCH=amd64` 与 `GOOS=windows GOARCH=amd64` 交叉编译通过。以 `-X main.version=v0.2.0` 构建临时二进制后，`update --check` 输出 `current: v0.2.0`、`latest: v0.2.1`、`update available`；`update` 从真实 Release 下载并校验 `memctl-darwin-arm64`，输出 `updated: /private/tmp/memctl-update-smoke`，替换后 `version` 输出 `memctl v0.2.1`，退出码 `0`，目标目录无临时文件；以 `v0.2.1` 重新构建后执行 `update`，输出 `up to date`，文件 mtime 未变化。合成服务器覆盖校验和不匹配、`SHA256SUMS` 缺失、资产缺失与不支持平台，均保持原文件不变。
+- 验收：`R05` 通过（已最新、有新版本、校验和不匹配、资产缺失与不支持平台；真实 Release 下载、校验与原子替换在 darwin/arm64 执行）。既有 `F01`–`R04` 场景由全量 `make test` 回归通过。
+- 未验证与遗留：macOS amd64、Linux amd64 与 Windows amd64 的运行时替换；Windows 的 `UNSUPPORTED` 分支只做单元测试与交叉编译；断网、GitHub 403 速率限制与目标目录无写权限未做真实故障注入；`update` 只依赖发布校验和，不额外校验新二进制的可执行性。
+- 下一步：下次发布后用安装位置的实际二进制验证一次 `update`；`T052` 继续真实 DSH 会话收尾验证。
