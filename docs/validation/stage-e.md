@@ -60,3 +60,13 @@
 - 验收：`make test` 全量通过；本地与下载的 Release 附件校验全部 `OK`；tag `v0.3.0` 的 CI Release 成功；`R05` 的真实更新路径在发布后复验通过。
 - 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；发布时本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.3.0`；真实 DSH 会话退出收尾等 `T052` 项仍未验证。
 - 下一步：`T052` 安装 `v0.3.0` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。
+
+## T058：面向 Agent 的 CLI 帮助与中英 i18n
+
+- 目标与范围：把 `help` 从单页命令列表扩展为 Agent 可直接使用的帮助体系。概览包含快速开始、使用规则、命令分组、环境变量、退出码和语言选择；每个命令页包含用法、说明、参数、选项（标明必填或可选）、输入、输出、退出码、示例、注意事项和相关命令。新增 `help <command>`、`<command> --help`/`-h`、`help --json`、`<command> --help --json`、`--lang`/`MEMCTL_LANG`/locale 的中英选择，以及命令参数错误时的帮助入口提示。不改变既有命令的业务输出、错误码和退出码。
+- 契约：[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[面向 Agent 的帮助与中英 i18n](../04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)、[验收 R06](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1；临时 HOME、不存在的记忆仓库与状态目录、空 `PATH` 的隔离环境；`GOCACHE` 指向工作区外可写目录。当前宿主未提供 Dreaming 所需的 macOS sandbox 执行权限。
+- 命令与结果：`go test ./internal/cli -count=1` 通过（帮助目录完整性、语言优先级、单命令页、JSON、错误边界与无仓库访问）；`go test ./tests/integration -run 'TestR03BuildAndCLIEntry|TestR06AgentHelpI18n' -count=1` 通过；`go vet ./internal/cli ./tests/integration` 通过。`TestR06AgentHelpI18n` 用真实二进制覆盖 20 个命令的 `help <command>` 与 `<command> --help`、`help --json`、`MEMCTL_LANG=zh` 与 `--lang zh`、未知主题和非法语言，并确认未创建仓库或状态目录。全量 `go test ./... -count=1` 中 `internal/...` 与 `plugins/dsh` 全部通过；`tests/integration` 除既有 D1/D2 Dreaming 用例外通过，Dreaming 用例因当前宿主 sandbox 不可用使 runner 以 `71` 退出，与帮助路径无关。`GOOS=linux GOARCH=amd64`、`GOOS=windows GOARCH=amd64` 与 `GOOS=darwin GOARCH=amd64` 交叉编译通过。
+- 验收：`R03` 回归通过；`R06` 通过。帮助路径不访问仓库、Git、Node.js 或网络；只本地化帮助文本，JSON 字段、输出键和错误码保持英文；未知主题或非法 `--lang` 返回 `2`，已知命令页返回 `0`。
+- 未验证与遗留：Linux 与 Windows 的 locale 探测和中文终端显示未在实机验证；全量集成测试中的 Dreaming sandbox 用例未通过，原因是当前宿主缺少 macOS sandbox 执行权限（runner 退出 `71`），需在具备该权限的受控环境复跑；帮助内容只覆盖当前 20 个命令，后续新增命令时必须同步帮助目录、分组和回归测试；`help --json` 的 `schemaVersion` 目前为 1，字段语义变化时需要递增。
+- 下一步：`T052` 仍进行中；下一轮验证轮次内受管写入提交与去重，确认 DSH 是否提供可触发 `agent/disposed` 的入口，并隔离复现锁忙延迟；`T059` 进行中：准备发布 `v0.4.0`（含 `T058` 的 Agent 帮助与 i18n）；完成插件版本提升、全量测试、候选包与 CI Release 后回写记录。按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
