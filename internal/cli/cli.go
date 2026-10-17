@@ -46,6 +46,7 @@ Available Commands:
   install [agent...]   Inspect or install agent adapter configurations (--all --dry-run --status)
   dsh plugin-path      Print the absolute path of the embedded memctl-dsh tarball
   dsh plugin-dir       Print the absolute path of the embedded memctl-dsh directory
+  update               Update memctl from GitHub Releases (--check)
   ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
 
 Run "memctl help" for usage details.
@@ -131,6 +132,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	case "dsh":
 		return runDsh(rest, stdout, stderr)
+
+	case "update":
+		return runUpdate(rest, stdout, stderr, version)
 
 	case "ui":
 		return runUI(rest, stdout, stderr)

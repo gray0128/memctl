@@ -176,6 +176,16 @@ func TestRunUsageErrors(t *testing.T) {
 			args:       []string{"init", "git@example.com:a/b.git", "extra"},
 			wantStderr: "unexpected argument",
 		},
+		{
+			name:       "update with unknown flag",
+			args:       []string{"update", "--force"},
+			wantStderr: `unknown flag "--force"`,
+		},
+		{
+			name:       "update with extra argument",
+			args:       []string{"update", "extra"},
+			wantStderr: "unexpected argument",
+		},
 	}
 
 	for _, tc := range tests {

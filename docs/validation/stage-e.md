@@ -30,3 +30,13 @@
 - 验收：`H11` 在模板与假宿主层面通过；`H07`、`H10`、`I01` 回归通过。真实 Codex 与 OpenCode 会话结束事件、真实 DSH 退出兜底未执行。
 - 未验证与遗留：真实会话结束路径；Claude Code `StopFailure`/`PreCompact` 与 Grok `StopFailure`/`PreCompact` 未补；Antigravity `Stop` 语义待确认；Command Code 无 `SessionEnd`；插件版本未提升，未重新构建发布 tarball。
 - 下一步：`T052` 重新安装插件并正常退出 DSH，确认恰好一次 `end`；再评估补齐 Claude Code 与 Grok 的缺失事件与发布补丁版本。
+
+## T055：发布 v0.2.1
+
+- 目标与范围：把 `T054` 的宿主会话结束映射作为 `v0.2.1` 发布；插件包版本提升到 `0.2.1`，运行全量测试与 `make release`，校验四个候选二进制和插件 tarball，推送 tag 触发 GitHub Release。不改变 `end` 的 CLI 语义或新增 adapter 能力。
+- 契约：[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](../07-dsh-plugin.md)。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.2.1` 指向 `9c136e1`；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
+- 命令与结果：`VERSION=v0.2.1 make release` 全量测试通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 246.5 秒），生成四个平台候选二进制、`memctl-dsh-0.2.1.tgz` 与三个元数据文件；`dist/SHA256SUMS` 五个产物全部 `OK`，`dist/memctl-darwin-arm64` 与 `memctl-darwin-amd64 version` 均输出 `memctl v0.2.1`，插件 tarball 版本为 `0.2.1` 且包含卸载兜底代码。tag 推送后 [GitHub Actions 运行 39034737007](https://github.com/gray0128/memctl/actions/runs/39034737007) 在 3 分 1 秒内通过并创建 [Release v0.2.1](https://github.com/gray0128/memctl/releases/tag/v0.2.1)；Release 附件含四个平台二进制、`memctl-dsh-0.2.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 Release 附件后按发布 `SHA256SUMS` 校验，五个产物全部 `OK`；发布二进制输出 `memctl v0.2.1`。
+- 验收：`make test` 全量通过；本地 `dist/SHA256SUMS` 与下载的 Release 附件校验全部 `OK`；tag `v0.2.1` 的 CI Release 成功；`T054` 的 `H11`、`H07`、`H10`、`I01` 回归包含在发布前测试中。
+- 未验证与遗留：真实 DSH 退出兜底、真实 Codex `SessionEnd` 与 OpenCode `session.deleted` 仍未执行；macOS amd64、Linux 与 Windows 仅交叉编译；本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.2.1`。
+- 下一步：`T052` 安装 `v0.2.1` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。

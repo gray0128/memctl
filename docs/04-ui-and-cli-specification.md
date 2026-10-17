@@ -28,6 +28,7 @@ memctl <subcommand> [flags] [-- command...]
 | `dream` | `--show ID` 或 `--apply ID --patch-hash HASH` | 查看或确认已有提案；apply 不重新调用模型 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
+| `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
 | `version` / `help` | 无 | 不访问记忆库、不初始化图谱 |
 
 同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成、查看、应用互斥；`install --status` 不写文件。
@@ -46,6 +47,17 @@ dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只�
 - `tag` 不读取全局 `last-sid-<agent>` 猜测当前会话，不自动生成看似稳定的来源。
 - JSON 输出不回退成纯文本；Git 命令失败不无条件归为内容冲突。
 - 整理应用必须引用已经展示的提案，不提供「重新生成并自动应用」的模糊 `--apply` 开关。
+
+### 1.2 `update` 自更新
+
+`update` 从 GitHub Releases 查询 `gray0128/memctl` 的最新发布，不访问记忆仓库，不要求 Git 或 Node.js。
+
+- **平台与资产**：只支持 `darwin/arm64`、`darwin/amd64`、`linux/amd64` 与 `windows/amd64`，资产名沿用发布脚本 `scripts/release.sh` 的 `memctl-<os>-<arch>`（Windows 带 `.exe`）。其他组合返回 `UNSUPPORTED`，不尝试近似平台。
+- **版本判断**：以 `releases/latest` 的 `tag_name` 为准。当前版本是发布版本且不早于最新版本时输出 `up to date`，不下载资产。非发布版本（如 `v2.0.0-dev`、`git describe` 后缀或 `-dirty`）视为开发构建，可更新到最新发布。
+- **完整性与替换**：读取同一 Release 的 `SHA256SUMS`，下载时以流式写入目标目录的临时文件并同时计算 SHA-256。摘要不匹配、`SHA256SUMS` 缺失或平台资产缺失时删除临时文件并返回错误，当前二进制不变。校验通过后沿用原文件权限（缺少所有者执行位时补足）、flush 并以同目录 rename 原子替换；正在运行的旧进程继续使用旧映像，重启后生效。
+- **安全边界**：只请求固定的 GitHub API 与 Release 资产地址，不接受用户提供的 URL，不读取凭据，不发送记忆内容或仓库信息；不执行下载的二进制做自检，也不自动重启。未认证 GitHub API 受速率限制：404 返回 `NOT_FOUND`，403 与 5xx 返回 `NETWORK_UNAVAILABLE`。
+- **平台差异**：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED` 并给出下载地址，`update --check` 仍可只读报告；其他已支持平台在目标目录不可写时返回 `IO_FAILED`，不请求提权。
+- **输出与退出码**：`--check` 只输出 `current:`、`latest:` 与 `up to date`/`update available`；`update` 替换成功后输出 `updated:` 和重启提示。成功或已最新返回 `0`，网络、完整性、权限或不支持平台返回 `1`，未知参数返回 `2`。
 
 ## 2. 环境变量与会话身份
 

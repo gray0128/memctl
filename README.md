@@ -19,6 +19,9 @@ printf '# Memory\n\n## Index\n- new entry\n' \
 
 # 本地 Web UI：仅绑定 127.0.0.1，默认端口 18420，首页注入 Session Token
 ./bin/memctl ui --no-open
+
+# 自更新：先只读检查；去掉 --check 才会下载、校验并替换当前二进制
+./bin/memctl update --check
 ```
 
 示例中的 `./bin/memctl` 指本地 `make build` 的产物，使用下载的二进制时替换为实际路径。接入远端（`init <url> --confirm-private`）、注册宿主 Hook 与使用整理能力都需要额外参数或前置条件，见下文「能做什么」与对应契约。
@@ -45,6 +48,7 @@ DSH 使用专用 Host 插件 `memctl-dsh`，插件随二进制内嵌，不需要
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理接入 7 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；只写状态目录，不修改 DSH profile |
+| 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
 | 整理提案 | `dream --runner`、`dream --show`、`dream --apply` | 隔离生成带固定 Diff 的提案，人工确认后按受管事务应用；应用不重新调用模型 |
 
 命令、参数、退出码与输出格式的权威定义见 [CLI 命令](./docs/04-ui-and-cli-specification.md#1-cli-命令)，HTTP 路由与错误码见 [REST 契约](./docs/02-domain-models-and-contracts.md#4-rest-契约)。以下行为细节同样以契约为准：
@@ -68,6 +72,7 @@ DSH 使用专用 Host 插件 `memctl-dsh`，插件随二进制内嵌，不需要
 - Dreaming：仅 macOS Seatbelt 为已验证隔离后端，Linux 与 Windows 返回 `UNSUPPORTED`；真实 runner 与模型端点未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；真实 DSH 会话中的注入与每轮同步仍未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
+- 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。
 
 ## 文档入口
