@@ -11,3 +11,14 @@
 - 验收：`H12`–`H15` 的单元部分通过；`I07`、`I08`、`I09`、`I10` 通过。真实 pi 会话、真实模型、npm 发布与非 macOS 平台未验证。
 - 未验证与遗留：`agent_settled` 的 `sync` 在 `pi -p` 立即退出时被 shutdown 取消，最终同步由 `end` 完成；交互式会话、恢复、分叉与子代理行为待 `F-5`；npm 包名与许可证、Windows/Linux 进程清理未验证。
 - 下一步：`F-5` 在真实 pi 会话验证注入、同步提交、收尾、恢复、分叉与失败降级；npm 发布与版本提升留给后续发布轮次。
+
+## T062：真实 pi 会话验证
+
+- 目标与范围：对应阶段 F 的 `F-5`。把本机 pi 从旧 `pi-yaml-hooks` 条目迁移到 `memctl-pi@0.5.0`，用真实模型和真实记忆仓库验证注入、同步、收尾、恢复、分叉、子代理与失败降级；不改变插件代码。
+- 契约：[pi 专用插件](../08-pi-plugin.md)、[验收 H12–H15](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证日期与环境：2026-10-18，macOS arm64，pi `1.3.0`，memctl `v0.5.0`，真实仓库 `~/memory`。
+- 命令与结果：旧 `hooks.yaml` 已备份到 `~/.agent-memory/backups/pi-hooks-20261018-004927.yaml`；`pi install /Users/libo/.agent-memory/pi` 成功；旧 `agent-memory-*` 条目移除，`install --status` 返回 `configured plugin@0.5.0`。`pi --model deepseek/deepseek-flash --no-tools -p` 退出码 `0`，会话 system sections 含 `<memctl>` 与 `[agent-memory]` 正文；退出后同步缓存更新为 `synced`，`lastSuccessAt=2026-10-17T16:49:47Z`。交互式会话 `01a14ac7` 中两次 `memctl write` 产生提交 `ff2d05d`、`4a0f82a`，同步缓存于 3 秒内更新为 `synced`，HEAD 为 `4a0f82a`；当前日志不能区分该次同步由 `agent_settled` 还是 `end` 触发。
+- 追加验证：`pi --mode rpc` 长会话中 `agent_settled` 后 `sync` 约 0.7 秒完成并返回 0；`new_session`、`clone`、`resume` 分别获得正确 SID，每个会话 `start`/`sync`/`end` 各一次。后台子代理获得独立 SID 与 `start`/`end`；前台 in-process 子代理不触发会话事件，不注入记忆。二进制缺失、非法 JSON、`start` 挂起 30 秒、仓库锁忙、远端不可达时会话均正常完成。
+- 验收：`H12`–`H15` 的真实宿主部分通过；`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`。前台子代理不注入是宿主生命周期限制，不按 `parentSession` 跳过。
+- 未验证与遗留：前台子代理记忆注入；`sections` 缺失的低版本 pi 回退只由单元测试覆盖；npm 发布仍需确认包名与许可证。
+- 下一步：npm 发布、包名与许可证确认；需要前台子代理记忆时另行评估宿主 API。
