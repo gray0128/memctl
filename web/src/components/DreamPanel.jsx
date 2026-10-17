@@ -12,26 +12,21 @@ import {
 } from '../dreams.js'
 
 const TONES = {
-  ok: 'text-emerald-700 dark:text-emerald-300',
-  info: 'text-slate-500 dark:text-slate-400',
-  warn: 'text-amber-700 dark:text-amber-300',
-  error: 'text-rose-700 dark:text-rose-300',
+  ok: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
+  info: 'bg-slate-50 text-slate-700 border-slate-200/80 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800',
+  warn: 'bg-amber-50 text-amber-800 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
+  error: 'bg-rose-50 text-rose-800 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60',
 }
 
-const STATUS_STYLES = {
-  ready: 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-100',
-  generating: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  applying: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  applied: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100',
-  stale: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100',
-  failed: 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100',
+const STATUS_CONFIG = {
+  ready: 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900/60',
+  generating: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-700',
+  applying: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-700',
+  applied: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/60',
+  stale: 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/60',
+  failed: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/60',
 }
 
-// DreamPanel renders the 整理接入 Dreaming panel of
-// docs/04-ui-and-cli-specification.md section 4: proposal generation (disabled
-// without a verified sandbox), the fixed diff preview, a status query and the
-// confirmed apply of an already-reviewed proposal. A stale proposal is never
-// applyable from the UI.
 export function DreamPanel({ api, refreshKey }) {
   const [runner, setRunner] = useState(RUNNERS[0].id)
   const [proposalId, setProposalId] = useState('')
@@ -95,7 +90,7 @@ export function DreamPanel({ api, refreshKey }) {
     setMessage(null)
     try {
       const result = await api.dreamApply(applyPayload(proposal))
-      setMessage({ tone: 'ok', text: `已应用提案，提交 ${result.commit}` })
+      setMessage({ tone: 'ok', text: `已成功应用提案，提交哈希 ${result.commit}` })
       setReload((current) => current + 1)
     } catch (requestError) {
       if (requestError.code === 'PROPOSAL_STALE') {
@@ -116,9 +111,6 @@ export function DreamPanel({ api, refreshKey }) {
     setProposal(null)
     setError(null)
     setMessage(null)
-    // Bump the reload key even when the id did not change, so querying the
-    // proposal already on screen re-runs the effect instead of leaving the
-    // panel in a permanent loading state.
     setReload((current) => current + 1)
   }
 
@@ -126,123 +118,167 @@ export function DreamPanel({ api, refreshKey }) {
   const generationEnabled = canGenerate(api.readOnly, sandboxAvailable)
 
   return (
-    <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">整理提案（Dreaming）</h2>
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          {api.readOnly
-            ? '只读模式：生成与确认已禁用'
-            : sandboxAvailable
-              ? '生成在隔离沙箱中运行，确认前不修改主库'
-              : '本主机没有已验证的隔离沙箱，生成已禁用'}
-        </span>
+    <section className="space-y-4 rounded-2xl border border-indigo-200/80 bg-white p-5 shadow-2xs dark:border-indigo-900/60 dark:bg-slate-900">
+      {/* Header */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-xs">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">AI 记忆整理提案（Dreaming）</h2>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              {api.readOnly
+                ? '只读模式：生成与确认已禁用'
+                : sandboxAvailable
+                  ? '隔离沙箱运行 · 确认前绝不触碰主库'
+                  : '未探测到隔离沙箱，生成能力安全保护已关闭'}
+            </span>
+          </div>
+        </div>
       </div>
+
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        选择 runner 即确认将导出的记忆文本发送给该 runner 的模型端点；确认应用前不会修改主库。
+        选择 Runner 并发起整理，系统将导出脱敏记忆文本至模型端点生成结构优化建议；必须经操作者人工审查后方可应用。
       </p>
 
+      {/* Control Strip */}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="runner"
-          value={runner}
-          onChange={(event) => setRunner(event.target.value)}
-          disabled={busy || api.readOnly}
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-950"
-        >
-          {RUNNERS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={generate}
-          disabled={busy || !generationEnabled}
-          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-        >
-          生成提案
-        </button>
-        <span className="text-xs text-slate-400">或</span>
-        <input
-          type="text"
-          value={lookup}
-          onInput={(event) => setLookup(event.target.value)}
-          placeholder="查询已有提案 ID"
-          className="rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-950"
-        />
-        <button
-          type="button"
-          onClick={query}
-          disabled={!lookup.trim()}
-          className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40 dark:border-slate-700"
-        >
-          查询状态
-        </button>
+        <div className="flex items-center gap-1.5">
+          <select
+            aria-label="runner"
+            value={runner}
+            onChange={(event) => setRunner(event.target.value)}
+            disabled={busy || api.readOnly}
+            className="rounded-lg border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+          >
+            {RUNNERS.map((item) => (
+              <option key={item.id} value={item.id}>
+                Runner: {item.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={generate}
+            disabled={busy || !generationEnabled}
+            className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? '正在调度…' : '发起整理提案'}
+          </button>
+        </div>
+
+        <span className="text-xs text-slate-400 px-1">或</span>
+
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={lookup}
+            onInput={(event) => setLookup(event.target.value)}
+            placeholder="输入已有提案 Proposal ID"
+            className="rounded-lg border border-slate-200/80 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 shadow-2xs outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          />
+          <button
+            type="button"
+            onClick={query}
+            disabled={!lookup.trim()}
+            className="rounded-lg border border-slate-300/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 active:scale-95 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            查询状态
+          </button>
+        </div>
       </div>
 
-      {error && <p className="text-sm text-rose-700 dark:text-rose-300">读取提案失败：{error.message}</p>}
-
-      {proposalId && !proposal && !error && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">正在生成或读取提案 {proposalId}…</p>
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+          读取提案失败：{error.message}
+        </div>
       )}
 
+      {proposalId && !proposal && !error && (
+        <div className="flex items-center gap-2 py-2 text-xs text-slate-500 dark:text-slate-400">
+          <svg className="h-4 w-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>正在生成或读取提案 {proposalId}…</span>
+        </div>
+      )}
+
+      {/* Proposal Card */}
       {proposal && (
-        <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                STATUS_STYLES[proposal.status] || STATUS_STYLES.failed
-              }`}
-            >
-              {proposalStatusLabel(proposal.status)}
-            </span>
-            <span className="font-mono text-xs">{proposal.proposalId}</span>
+        <div className="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-2.5 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CONFIG[proposal.status] || STATUS_CONFIG.failed}`}>
+                {proposalStatusLabel(proposal.status)}
+              </span>
+              <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
+                {proposal.proposalId}
+              </span>
+            </div>
             <span className="text-xs text-slate-500 dark:text-slate-400">{summarizeProposal(proposal)}</span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">变化：{changeSummary(proposal)}</p>
+
+          <div className="text-xs text-slate-600 dark:text-slate-300">
+            <strong>预期变动:</strong> {changeSummary(proposal)}
+          </div>
+
           {proposal.error && (
-            <p className="text-xs text-rose-700 dark:text-rose-300">错误：{proposal.error}</p>
+            <p className="rounded-lg bg-rose-50 p-2.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+              错误: {proposal.error}
+            </p>
           )}
+
           {proposal.warnings && proposal.warnings.length > 0 && (
-            <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-300">
-              {proposal.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
+            <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              <span className="font-semibold">提案警告:</span>
+              <ul className="mt-1 list-inside list-disc space-y-0.5">
+                {proposal.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
           )}
+
           {proposal.diff && (
-            <div>
-              <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400">固定 Diff 预览</h3>
-              <pre className="mt-1 max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs dark:bg-slate-950">
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">固定 Diff 预览</span>
+              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-200/80 bg-slate-900 p-3 font-mono text-[11px] leading-relaxed text-slate-100 shadow-inner dark:border-slate-800">
                 {proposal.diff}
               </pre>
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               type="button"
               onClick={apply}
               disabled={busy || !canApply(proposal, api.readOnly)}
-              className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              确认应用
+              {busy ? '正在写入…' : '审查通过，确认应用此提案'}
             </button>
             {proposal.status === 'stale' && (
-              <span className="text-xs text-amber-700 dark:text-amber-300">
-                提案已过期，需重新生成后才能应用。
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                ⚠️ 提案已过期，主库已发生新变动，需重新生成后方可应用
               </span>
             )}
             {proposal.status === 'applied' && proposal.appliedCommit && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                已提交 {proposal.appliedCommit}
+              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                已提交至 Git: <code className="font-mono">{proposal.appliedCommit}</code>
               </span>
             )}
           </div>
         </div>
       )}
 
-      {message && <p className={`text-sm ${TONES[message.tone]}`}>{message.text}</p>}
+      {message && (
+        <div className={`rounded-xl border px-4 py-2.5 text-xs font-medium ${TONES[message.tone] || TONES.info}`}>
+          {message.text}
+        </div>
+      )}
     </section>
   )
 }

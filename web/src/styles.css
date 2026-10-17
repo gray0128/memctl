@@ -10,9 +10,126 @@ body {
     ui-sans-serif,
     system-ui,
     -apple-system,
+    BlinkMacSystemFont,
     'Segoe UI',
     Roboto,
     'Helvetica Neue',
     Arial,
     sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+code, pre, kbd, samp {
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    'JetBrains Mono',
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace;
+  font-feature-settings: 'tnum';
+}
+
+/* Custom sleek scrollbar for cards and diffs */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.35);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.6);
+  }
+}
+
+/* Dot grid background for canvas and empty states */
+.bg-dot-grid-light {
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.bg-dot-grid-dark {
+  background-image: radial-gradient(#334155 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Refined Diff2Html CSS overrides for dark/light themes */
+.diff-preview .d2h-wrapper {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.diff-preview .d2h-file-header {
+  background-color: #f8fafc;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.diff-preview .d2h-file-name {
+  color: #334155;
+  font-weight: 600;
+}
+
+.diff-preview .d2h-code-line {
+  padding: 2px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+@media (prefers-color-scheme: dark) {
+  .diff-preview .d2h-wrapper {
+    border-color: #1e293b;
+    background-color: #0f172a;
+  }
+  .diff-preview .d2h-file-header {
+    background-color: #1e293b;
+    border-bottom-color: #334155;
+  }
+  .diff-preview .d2h-file-name {
+    color: #e2e8f0;
+  }
+  .diff-preview .d2h-code-line-ctn {
+    color: #cbd5e1;
+  }
+  .diff-preview .d2h-ins {
+    background-color: rgba(16, 185, 129, 0.15) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+  }
+  .diff-preview .d2h-del {
+    background-color: rgba(244, 63, 94, 0.15) !important;
+    border-color: rgba(244, 63, 94, 0.3) !important;
+  }
+  .diff-preview .d2h-cntx {
+    background-color: transparent !important;
+  }
+  .diff-preview .d2h-info {
+    background-color: rgba(99, 102, 241, 0.1) !important;
+    color: #a5b4fc !important;
+    border-color: rgba(99, 102, 241, 0.2) !important;
+  }
 }

@@ -14,13 +14,72 @@ import { AdapterView } from './components/AdapterView.jsx'
 // The views of docs/04-ui-and-cli-specification.md section 4. The 整理接入 view
 // carries the Dreaming proposal panel and the adapter install panel.
 const VIEWS = [
-  { id: 'overview', label: '概览' },
-  { id: 'graph', label: '知识图谱' },
-  { id: 'entries', label: '条目' },
-  { id: 'conflict', label: '冲突解决' },
-  { id: 'audit', label: '审计' },
-  { id: 'diagnostics', label: '诊断' },
-  { id: 'adapters', label: '整理接入' },
+  {
+    id: 'overview',
+    label: '概览',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'graph',
+    label: '知识图谱',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="18" cy="18" r="3" />
+        <circle cx="18" cy="6" r="3" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 8.5l7 7M15.5 6H8.5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'entries',
+    label: '条目',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+      </svg>
+    ),
+  },
+  {
+    id: 'conflict',
+    label: '冲突解决',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+      </svg>
+    ),
+  },
+  {
+    id: 'audit',
+    label: '审计',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'diagnostics',
+    label: '诊断',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'adapters',
+    label: '整理接入',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
 ]
 
 // App is the shell of the local Web UI. It loads the snapshot once, keeps it
@@ -131,7 +190,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-50/70 text-slate-900 transition-colors dark:bg-[#0b0f17] dark:text-slate-100 antialiased selection:bg-indigo-500/20 selection:text-indigo-600">
       <TopBar
         connection={connection}
         snapshot={snapshot}
@@ -141,26 +200,36 @@ export function App() {
         syncBusy={syncBusy}
         syncMessage={syncMessage}
       />
-      <nav className="border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto">
-          {VIEWS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-current={view === item.id ? 'page' : undefined}
-              onClick={() => setView(item.id)}
-              className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
-                view === item.id
-                  ? 'border-indigo-600 font-medium text-indigo-700 dark:text-indigo-300'
-                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+
+      {/* Floating Segmented Navigation Bar */}
+      <nav className="border-b border-slate-200/70 bg-white/70 backdrop-blur-sm px-4 sm:px-6 dark:border-slate-800/70 dark:bg-slate-900/60 sticky top-[57px] z-20">
+        <div className="mx-auto flex max-w-7xl items-center gap-1.5 overflow-x-auto py-2 scrollbar-none">
+          {VIEWS.map((item) => {
+            const active = view === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setView(item.id)}
+                className={`group flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95 ${
+                  active
+                    ? 'bg-indigo-50 text-indigo-700 shadow-xs dark:bg-indigo-950/60 dark:text-indigo-300 font-semibold ring-1 ring-indigo-500/20'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200'
+                }`}
+              >
+                <span className={`transition-colors ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'}`}>
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
         </div>
       </nav>
-      <main className="mx-auto max-w-5xl px-6 py-8">{content}</main>
+
+      {/* Main Workspace */}
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">{content}</main>
     </div>
   )
 }
