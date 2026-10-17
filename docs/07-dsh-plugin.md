@@ -542,6 +542,6 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 
 未验证：
 
-- 真实 DSH 会话中的 `turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；`systemPrompt.context` 快照已在本机 `desktop` 会话出现，其余项由 `T052` 跟踪。
+- 真实 DSH 会话中的 `agent/disposed` 收尾、恢复、失败路径与界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
 - npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。
