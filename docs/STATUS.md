@@ -65,19 +65,20 @@
 | T046 | 已完成 | 发布 `v0.1.2`（含 `T044`/`T045` 的 UI 修复）：全量测试、四平台候选包、校验和与 CI Release；[归档记录](./validation/stage-d.md#t046发布-v012) |
 | T047 | 已完成 | dsh 专用插件设计：核对 DSH 事件与上下文接入点，按「添加插件」对话框的 spec（npm 名、GitHub 仓库、绝对目录、绝对 tarball）比较分发，给出插件、适配器、发布和验收方案；只写设计，不写插件代码；[设计提案](./07-dsh-plugin.md) |
 | T048 | 待开始 | 实现 `memctl-dsh` Host 插件、内嵌 tarball 路径命令、适配器探测与发布产物；`D1` 已确认 A；等待用户明确进入开发；[设计提案](./07-dsh-plugin.md) |
-| T049 | 已完成 | 台账收敛：把 `T040`–`T047` 完成记录移入阶段 D 归档、重写当前事实并把任务表锚点改指归档；不改产品行为；[完成记录](#t049台账收敛) |
+| T049 | 已完成 | 台账收敛：把 `T040`–`T047` 完成记录移入阶段 D 归档、重写当前事实并把任务表锚点改指归档；不改产品行为；[归档记录](./validation/stage-d.md#t049台账收敛) |
+| T050 | 已完成 | 重构根 README：补充版本与平台状态、快速开始、能力表、平台与限制，精简目录与命令细节并改指契约；不改产品代码；[完成记录](#t050根-readme-重构) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T049` 均已完成，`T048` 待开始；完成记录与验收证据按任务总表的链接指向 `docs/validation/`。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T050` 均已完成，`T048` 待开始；完成记录与验收证据按任务总表的链接指向 `docs/validation/`。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T049：台账收敛
+## T050：根 README 重构
 
-- 目标与范围：按 [最小记录结构](./06-development-loop.md#1-最小记录结构) 把 `T040`–`T047` 的逐任务完成记录从本文件移入 [阶段 D 归档的发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t047)，把按任务堆叠的「当前事实」重写为版本、能力、平台与宿主状态、未验证项、已知限制和构建基线，并把任务总表中指向文内完成记录的锚点改为归档锚点。不改产品代码、契约、验收条件与测试矩阵。
-- 契约：[最小记录结构](./06-development-loop.md#1-最小记录结构)、[完成条件](./06-development-loop.md#4-完成条件)、[方案索引](./README.md)。
+- 目标与范围：把根 [README](../README.md) 从按阶段堆叠的进度叙述改为当前可用方式说明：新增版本与平台状态、下载或构建入口、快速开始、能力表、平台与限制、文档入口；删除 2160 字的单段进度流水和 `internal/` 全量目录注释，改为简短目录概览并链接 [架构文档](./01-architecture-and-modules.md#5-目录结构与依赖)；命令行为细节压为 4 条要点并链接 [CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令) 与 [REST 契约](./02-domain-models-and-contracts.md#4-rest-契约)。不改产品代码与契约。
+- 契约：[最小记录结构](./06-development-loop.md#1-最小记录结构)（根 README 只记录入口与可用方式）、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)、[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[方案索引](./README.md)。
 - 验证日期与环境：2026-10-17，macOS 26.6.2 arm64；执行者为主会话。纯文档任务，未运行 Go 与前端构建测试。
-- 命令与结果：本文件与 [阶段 D 归档](./validation/stage-d.md) 的本地链接、标题锚点逐条校验全部有效（全仓 20 份文档 854 条本地链接，另有 4 条既有失效链接记入遗留）；`STATUS.md` 只剩 `T049` 一条完成记录，`T040`–`T047` 记录位于阶段 D 归档；`git diff --check` 无输出，行尾空白与弯引号扫描无匹配。
-- 未验证与遗留：产品行为未变，验证结论沿用 `T046` 与各归档记录；[阶段 D 归档](./validation/stage-d.md) 中 `T037`、`T039` 记录原有 21 处指向 `./0x-` 与 `./validation/` 的相对链接因目录层级错误已失效，本轮一并修正；全仓仍有 4 处既有失效链接未修：[阶段 A 审查](./validation/stage-a-review.md) 指向不存在的 `internal/syncer/env.go`，[阶段 C 审查](./validation/stage-c-review.md) 的 `P1-4`、[阶段 D 审查](./validation/stage-d-review.md) 的 `P2-11`、`P2-12` 标题锚点与正文标题不一致；`T048` 仍等待用户确认。
+- 命令与结果：全仓 20 份文档的本地链接与标题锚点逐条校验通过，[根 README](../README.md) 内链接全部有效；`README.md` 由 157 行降至 126 行，原 2160 字进度段落已移除；命令、参数、退出码与发布产物名称逐项对照 [CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令) 与 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)；`git diff --check` 无输出，行尾空白与弯引号扫描无匹配。
+- 未验证与遗留：未在真实终端或浏览器中执行 README 的示例命令；[Web UI](./04-ui-and-cli-specification.md#4-web-ui) 的视图表只列 5 个业务视图，与当前 7 个导航视图（含概览、诊断）不一致，属契约文档遗留，本轮未改；`T048` 仍未开始。
 - 下一步：`T048` 待开始，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 ## 近期实施任务
