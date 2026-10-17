@@ -540,7 +540,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
 - `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
-- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.4.0` 已发布；`desktop` profile 的 `memctl-dsh` 仍为 `0.3.0`，待按新 tarball 更新。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`agent/disposed` 事件本身仍未在真实宿主观察到；`desktop` 插件尚未更新到 `0.4.0`。
+- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.4.0` 已发布，`desktop` profile 的 `memctl-dsh` 已更新到 `0.4.0`；当前真实会话的 `runtime-context` 快照包含 `memctl:memory`，同步缓存于 23:20:24 更新为 `synced`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`agent/disposed` 事件本身仍未在真实宿主观察到。
 
 未验证：
 

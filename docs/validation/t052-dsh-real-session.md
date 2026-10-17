@@ -111,6 +111,19 @@ dsh --profile t052 "只回复 OK，不要调用工具。"
 
 8. **锁忙**：人工持有 `/tmp/t052-memory/.git/memctl.lock` 时，headless 从 `start` 到退出约 245 秒，未在插件声明的 20 秒 `start` 超时内结束；测试被中止。该结果与「Hook 不阻塞会话」的目标不一致，但测试持锁脚本和插件超时的交互尚未隔离，不能判定为产品缺陷，也不计入通过。后续用可控短时持锁和单独日志复现。
 
+### 0.4.0 桌面插件更新复验（2026-10-17 23:20–23:22）
+
+`desktop` profile 的 `memctl-dsh` 已从 `0.3.0` 更新到 `0.4.0`。`memctl install --status` 返回：
+
+```text
+dsh: configured host=dsh@0.2.1-rc.2 plugin@0.4.0
+  note: memctl-dsh is installed; dsh hooks.json is not needed
+```
+
+DSH 桌面进程在 23:20:16 重启；当前会话 `session-d0cf71d5-7fea-4b71-a82b-f39bb2392021` 的 `runtime-context` 快照于 23:22:21 记录 `memctl:memory`，文本以 `[agent-memory] repo=/Users/libo/memory sync=ok device=MacBookPro.lan` 开头。同步缓存的 `lastAttemptAt` 与 `lastSuccessAt` 均为 23:20:24，`remoteState=synced`。这表明 `0.4.0` 已在真实 desktop 会话加载并完成注入与同步。
+
+本轮没有产生新的记忆提交；`agent/disposed`、轮次内受管写入提交、锁忙与断网仍未验证。
+
 ## 未验证
 
 - 父会话 `agent/disposed` 事件本身。两轮真实退出都只观察到插件 `dispose` 兜底，没有 `disposed` trace；DSH 当前没有单会话关闭入口，退出应用走插件卸载路径。`agent/disposed` 仍只有插件单元测试覆盖，不能记为真实宿主通过。
