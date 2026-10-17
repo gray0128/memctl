@@ -6,7 +6,7 @@
 
 - 不再依赖 `dsh-hooks-plugin` 作为 dsh 的唯一接入方式，改为自建一个只服务 memctl 的 DSH Host-only bundle：`memctl-dsh`。
 - 插件只负责三件事：会话开始时读取 memctl 上下文、每轮结束时触发同步、会话销毁时触发收尾；记忆仓库、同步、锁、冲突处理仍由 memctl 二进制负责。
-- 分发主通道推荐 npm 预构建包，安装走 DSH Plugin Manager 或 `dsh plugin add`；每个版本同时产出 tarball，作为离线、审计和无 npm 场景的备选。
+- 分发以 DSH「插件 → 添加插件」对话框实际接受的输入为准：npm 包名、GitHub 仓库地址、本地绝对目录路径，以及当前解析器还接受的绝对 tarball 路径。主通道推荐 npm 包名；备用通道推荐 memctl 内嵌 tarball 释放到绝对路径，用户在同一个对话框粘贴安装。这样不发布 npm 也能在界面安装。
 - `memctl install dsh` 不自动安装插件，也不写入 DSH profile。DSH 的 Plugin Manager 拥有安装、批准、升级和卸载；memctl 只负责探测、提示和验证。
 - 第一版不做客户端 UI，只做 Host half。状态面板、每轮检索注入等能力留到后续版本。
 - 运行时使用当前 DSH 0.2.1-rc.1 实际存在的事件：`agent/created`、`session/event` 中的 `turn/end`、`agent/disposed`；不使用已经不存在于当前安装的 `agent/session-start`。
@@ -16,7 +16,7 @@
 本方案覆盖：
 
 - `memctl-dsh` 的包结构、生命周期接线、上下文注入、同步触发和错误隔离。
-- npm、tarball、可选的 DSH 插件市场索引三种分发产物。
+- npm 包、内嵌或随 Release 发布的 tarball、可选的独立 GitHub 仓库，以及 Discover 页面使用的市场索引。
 - `internal/adapters` 对 dsh 原生插件与旧 hooks 插件的探测、状态和安装提示。
 - 单元、包安装、真实宿主三层验收。
 
@@ -59,33 +59,46 @@
 ### 4.1 约束
 
 - DSH 的 profile 位于 `$DSH_HOME/profiles/<name>`，由有序 bundle 列表和 profile 层 patch 组成；bundle 是声明 `dsh.bundle.patch` 的 npm 包。[打包与安装插件](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/user/develop/basic/publish.zh.md)
+- DSH 0.2.1-rc.1 的「插件 → 添加插件」对话框把输入作为安装 spec 交给 Plugin Manager。当前 Host 解析器接受以下形式；这决定了「能在界面安装」的具体入口。[install-spec.ts](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/plugin-manager/src/install-spec.ts)
+
+| 输入 | 示例 | 约束 |
+| --- | --- | --- |
+| npm 包名 | `memctl-dsh`、`memctl-dsh@0.2.0` | 可带版本或范围；走 registry，对话框可选镜像源 |
+| GitHub 仓库根地址 | `https://github.com/<owner>/<repo>`、`github:<owner>/<repo>` | Host 只接受 host/owner/repo 两段路径；仓库根必须有 `package.json` 和 bundle patch；不支持仓库子目录 |
+| 本地目录 | `/Users/me/.agent-memory/dsh/0.2.0` | 必须是绝对路径，`~` 和相对路径被拒绝；以 link 依赖安装，目录必须长期存在 |
+| 本地或远程 tarball | `/Users/me/.agent-memory/dsh/memctl-dsh-0.2.0.tgz`、`https://example.com/memctl-dsh-0.2.0.tgz` | 必须是绝对路径或 http(s) URL；对话框文案没有列出 tarball，但当前解析器和 Host 接受；当前安装可用，重装或升级需重新提供 tarball |
+
+界面输入的是安装 spec，不是市场索引 URL。Discover 页面才读取市场索引；两者不能混用。
+
 - `dsh plugin --profile <name> <args>` 把参数转发给 profile 目录内的 pnpm。npm 包、tarball、本地目录和 git 源都可以安装；git 源默认拉源码，不自动运行构建，除非作者提供 `prepare` 且用户授权。
 - DSH 在安装和启动时检查 `engines.dsh`，没有声明时回退检查 `@deepseek-ai/dsh*` peer 范围；不兼容的组合会被跳过或拒绝。版本豁免记录在 profile 的 `compatibility.json`，不会随升级继承。[app-boot](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/app-boot/README.zh.md)
 - Plugin Manager 的安装、升级、卸载需要危险权限或逐次批准；已安装的 Host 插件在进程内执行，位于工作区沙箱之外。[Plugin Manager](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/plugin-manager/README.zh.md)
-- DSH 插件市场是用户配置的 HTTPS 索引，不是默认商店；索引格式 1 要求每个版本声明 `engines.dsh`，npm 源固定到精确版本，git 源固定到 commit。[市场索引格式](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/.agents/notes/implemented/feature/2026-10-02-plugin-market-index-format.md)
+- Discover 页面使用的插件市场是用户配置的 HTTPS 索引，不是默认商店，也不是「添加插件」对话框的输入；索引格式 1 要求每个版本声明 `engines.dsh`，npm 源固定到精确版本，git 源固定到 commit。[市场索引格式](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/.agents/notes/implemented/feature/2026-10-02-plugin-market-index-format.md)
 - memctl 的安装器当前只写配置文件，不自动安装第三方插件，也不依赖 Node.js；这条边界见 [流程与恢复](./03-workflows-and-dataflows.md#7-agent-配置安装)。
 
 ### 4.2 方案比较
 
-| 方案 | 安装体验 | 更新 | 离线 | 额外设施 | 主要风险 | 判断 |
+| 方案 | 界面输入 | 安装体验 | 更新 | 离线 | 额外设施 | 判断 |
 | --- | --- | --- | --- | --- | --- | --- |
-| npm 包 + 可选市场索引 | 最好：Plugin Manager 搜索/安装，或 `dsh plugin add memctl-dsh@x` | Plugin Manager 检测新版本；或显式 `add` | 首次需网络 | npm 发布、可选静态索引 | npm 账号与供应链；索引托管 | 推荐主通道 |
-| 仅 npm 包 | 好：知道包名即可 | 需记住显式版本或 `add` | 首次需网络 | npm 发布 | 发现性弱；无市场页面 | 可作为 npm 主通道的子集 |
-| GitHub Release tarball | 中：下载后 `dsh plugin add ./memctl-dsh-x.tgz` | 手动下载新 tarball | 好 | GitHub Release 已有 | 路径/引号；无自动更新 | 推荐备用通道 |
-| memctl 内嵌 tarball | 中：memctl 解包后输出安装命令 | 换 memctl 版本后重新安装 | 最好 | Go 嵌入、解包目录 | 仍需 DSH 批准；增加二进制体积与版本耦合 | 离线优先时再选 |
-| 本地目录 link | 开发可用 | 改代码后重载 | 好 | 无 | 链接路径必须长期存在；不适合最终用户 | 仅开发 |
-| 直接改 profile 文件 | 看似一键 | 不可控 | 好 | 无 | 绕过 Plugin Manager、锁、版本检查；升级丢失 | 不采用 |
+| npm 包名 | `memctl-dsh` 或 `memctl-dsh@x` | 最好：输入包名，选择镜像，点击安装 | 第三方插件通常不显示自动更新；需显式版本或卸载重装 | 首次需网络 | npm 发布 | 推荐主通道 |
+| memctl 内嵌 tarball | memctl 输出的绝对 `.tgz` 路径 | 好：复制路径到同一对话框 | 换 memctl 版本后重新安装新 tarball | 最好 | Go 嵌入、解包到稳定目录 | 推荐备用通道；npm 不可用时升为主通道 |
+| 随 Release 发布的 tarball | 下载后的绝对 `.tgz` 路径 | 中：先下载，再粘贴路径 | 手动下载新 tarball | 好 | GitHub Release 已有 | 离线备选；与内嵌 tarball 同一份 |
+| 独立 GitHub 仓库 | 仓库根 URL | 中：输入 URL；不经过 registry | pnpm 记录 git 源，更新需重装 | 需 Git 网络 | 独立仓库、预构建入口 | 可选；要维护第二个仓库 |
+| 本地目录 link | 绝对目录路径 | 开发可用 | 改代码后重载 | 好 | 无 | 仅开发；目录不能删除 |
+| 直接改 profile 文件 | 无 | 看似一键 | 不可控 | 好 | 无 | 不采用 |
+| Discover 市场索引 | 不是本对话框输入 | 取决于 Discover 页面 | 取决于索引 | 需索引托管 | 静态索引、图标、版本元数据 | 第二阶段；不是本对话框的前置条件 |
 
 ### 4.3 推荐
 
 推荐组合：
 
-1. **主通道：npm 包 `memctl-dsh`**。每次 memctl 发布时同步发布预构建包，用户通过 DSH Plugin Manager 或 `dsh plugin --profile <p> add memctl-dsh@<version>` 安装。npm 包不声明 install/postinstall 脚本，不引入运行时依赖，只包含已构建的 ESM 文件、patch、locale 和图标。
-2. **备用通道：GitHub Release tarball**。同一份源码用 `npm pack` 产出 `memctl-dsh-<version>.tgz`，作为 release 附件并写入 `SHA256SUMS`。用户下载后执行 `dsh plugin --profile <p> add ./memctl-dsh-<version>.tgz`。tarball 不需要构建授权，也不依赖 npm registry。
-3. **可选发现通道：DSH 市场索引**。在 memctl 仓库发布一份格式 1 的 `index.json`，通过稳定的 HTTPS 静态地址提供，用户把它加入 DSH 的 Discover 索引后即可在应用内安装和检测更新。索引固定到 npm 精确版本，不写 `latest` 浮动目标。
-4. **不把内嵌 tarball 作为第一版主通道**。它适合离线或严格单文件分发，但会让插件版本与 memctl 二进制强耦合，并且仍需要用户执行 DSH 安装命令；如果用户明确要求「下载 memctl 一个文件即可离线安装插件」，再切换到第四种方案。
+1. **主通道：npm 包名 `memctl-dsh`**。用户在「插件 → 添加插件」中输入包名，点击安装；必要时在对话框选择中国大陆镜像源。npm 包不声明 install/postinstall 脚本，不引入运行时依赖，只包含已构建的 ESM 文件、patch、locale 和图标。官方发布文档也把 npm 预构建包列为不需要构建授权的分发方式。
+2. **备用通道：memctl 内嵌 tarball**。把同一份 `memctl-dsh-<version>.tgz` 嵌入 memctl 二进制；用户运行一个只读命令（暂称 `memctl dsh plugin-path`），得到稳定的绝对路径，把它粘贴到同一个「添加插件」对话框。它不发布 npm、不需要 Git 仓库、不需要市场索引；重装或升级时需重新提供 tarball。这是「下载 memctl 一个文件即可在 DSH 界面安装插件」的路径。
+3. **可选通道：随 GitHub Release 发布的 tarball**。与内嵌 tarball 同一份产物，适合不想让 memctl 二进制变大、或希望手工下载审计的用户。
+4. **可选通道：独立 GitHub 仓库根**。如果希望用户粘贴仓库地址安装，需要一个根目录就是 bundle 的独立仓库；不能直接使用 memctl 的 Go 仓库根，也不能依赖仓库子目录（当前 Host 只接受 owner/repo 两段路径）。该仓库必须提交预构建入口，不能依赖 `prepare` 构建。
+5. **不作为第一版主通道：Discover 市场索引**。市场索引是 Discover 页面入口，不是「添加插件」对话框的输入；它适合后续做发现和版本提示，不应阻塞本对话框的 npm 或 tarball 安装。
 
-主通道选择是一个会影响发布工程和用户入口的决策，记录为 `D1`，见 [§9](#9-风险与待确认事项)。
+主通道选择是一个会影响发布工程和用户入口的决策，记录为 `D1`，见 [§9](#9-风险与待确认事项)。如果用户不想发布 npm，内嵌 tarball 可以直接升为主通道，仍然满足「在插件安装界面安装」。
 
 ### 4.4 安装流程
 
@@ -95,16 +108,19 @@
 - memctl 已安装，默认路径 `~/.agent-memory/bin/memctl`，或通过 `MEMCTL_DSH_BIN` 指定。
 - 用户已在 DSH 中打开要使用的 profile；桌面端常见为 `desktop`，CLI 常见为 `web`。
 
-npm 安装：
+在「插件 → 添加插件」对话框安装：
+
+1. **npm 包名（推荐）**：输入 `memctl-dsh`，需要固定版本时输入 `memctl-dsh@<version>`；网络受限时在「安装源」选择镜像。点击安装并确认信任提示。
+2. **内嵌 tarball（离线）**：先运行 memctl 的只读命令（暂称 `memctl dsh plugin-path`）取得绝对路径，例如 `/Users/me/.agent-memory/dsh/memctl-dsh-0.2.0.tgz`；把该路径粘贴到同一个输入框，点击安装。安装完成后当前会话可用；重装或升级时需重新提供 tarball，建议保留到确认稳定。
+3. **随 Release 下载的 tarball**：下载 `memctl-dsh-<version>.tgz`，粘贴其绝对路径；效果与内嵌 tarball 相同。
+4. **独立 GitHub 仓库**：粘贴仓库根 URL，例如 `https://github.com/<owner>/memctl-dsh`；仓库根必须有 `package.json`、bundle patch 和预构建入口，不能依赖 `prepare` 构建。
+5. **本地目录（仅开发）**：粘贴绝对目录路径；DSH 会以 link 依赖安装，目录不能移动或删除。
+
+命令行等价入口：
 
 ```sh
 dsh plugin --profile <profile> add memctl-dsh@<version>
-```
-
-tarball 安装：
-
-```sh
-dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
+dsh plugin --profile <profile> add /absolute/path/to/memctl-dsh-<version>.tgz
 ```
 
 安装后验证：
@@ -113,12 +129,12 @@ dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
 dsh --profile <profile> --dump-config
 ```
 
-输出中应出现 `memctl-dsh` 的插件行；新会话开始后，插件日志应出现会话 id 和 `memctl start` 结果。DSH Plugin Manager 的插件列表应显示 `memctl-dsh`，并显示 locale 中的标题、描述和图标。
+输出中应出现 `memctl-dsh` 的插件行；新会话开始后，插件日志应出现会话 id 和 `memctl start` 结果。DSH 插件列表应显示 `memctl-dsh`，并显示 locale 中的标题、描述和图标。
 
 升级：
 
-- npm：在 Plugin Manager 中更新，或 `dsh plugin --profile <profile> add memctl-dsh@<new-version>`。
-- tarball：下载新 tarball 后重新执行 `add`；若 pnpm 拒绝覆盖，再执行 `remove` 后安装。
+- npm：重新输入 `memctl-dsh@<new-version>`。对话框提示官方按需插件才提供版本更新，其他插件通常需要先卸载再安装新版本；按提示操作。
+- tarball：取得新 tarball 的绝对路径后重新安装；若 DSH 拒绝覆盖，先卸载再安装。
 - 插件升级不改变记忆仓库；memctl 二进制可以独立升级。
 
 卸载：
@@ -135,7 +151,7 @@ dsh plugin --profile <profile> remove memctl-dsh
 - `engines.dsh` 使用精确下界和上界，例如 `>=0.2.1-rc.1 <0.3.0`；DSH 升级到范围外时由 DSH 拒绝加载，而不是静默不工作。
 - 插件不声明 `@deepseek-ai/dsh-*` peer 依赖：它只使用宿主传入的 `ctx` 和 Node 内置模块，不需要解析 DSH 包。这样避免 `dsh-hooks-plugin` 式的 peer 版本错配。
 - 不声明 `dependencies`、`install`、`postinstall`、`prepare`。安装不执行第三方构建脚本，也不需要 pnpm 构建授权。
-- npm 发布使用 provenance（可用时）和精确版本；tarball 写入 `SHA256SUMS`；市场索引只列已发布版本。
+- npm 发布使用 provenance（可用时）和精确版本；Release tarball 写入 `SHA256SUMS`；内嵌 tarball 与 Release tarball 使用同一份字节并由 memctl 校验；如启用 Discover 市场索引，只列已发布版本。
 - 安装 Host 插件等于授权其在 DSH 进程内以用户权限执行。插件只执行固定路径的 memctl 二进制和固定参数，不读取项目 hooks 文件，不执行任意命令；但 memctl 本身会写 `~/memory`，这一点必须在安装文档中写明。
 
 ## 5. 插件设计
@@ -296,7 +312,7 @@ dsh 适配器同时识别两种接入：
 | dsh 存在，原生插件存在 | `configured` | 不需要 hooks.json；首次真实验证后才是 `verified` |
 | dsh 存在，只有旧 hooks 插件和 hooks 配置 | `configured` | 兼容路径；标记为 legacy，提示迁移 |
 | dsh 存在，原生插件和旧 hooks 同时存在 | `needs_attention` | 重复触发风险；提示用户移除其中一套，不自动删 |
-| dsh 存在，没有任何插件 | `needs_attention` | 输出 npm/tarball 安装命令 |
+| dsh 存在，没有任何插件 | `needs_attention` | 输出「添加插件」界面的 npm 包名与内嵌 tarball 绝对路径 |
 | dsh 不存在 | `not_installed` | 不写入任何配置 |
 | 插件版本低于最低支持版本 | `needs_attention` | 提示升级 |
 | DSH 版本不在 `engines.dsh` 范围 | `unsupported` | 不进入安装流程 |
@@ -304,7 +320,7 @@ dsh 适配器同时识别两种接入：
 ### 6.3 安装计划
 
 - 原生插件已存在：`install dsh` 返回零配置写入的计划，输出「无需 hooks.json」。
-- 原生插件缺失：`install dsh --dry-run` 输出 npm 与 tarball 两种安装命令；不执行 pnpm，不写 profile。
+- 原生插件缺失：`install dsh --dry-run` 输出 npm 包名和绝对 tarball 路径两种界面输入；不执行 pnpm，不写 profile。
 - 旧 hooks 回退：保留现有模板和合并逻辑，但标记 deprecated；只有用户显式选择旧路径时才写入。
 - 不把 `memctl-dsh` 作为 `PluginSpec` 的必需插件来写 hooks；需要扩展 `AdapterSpec`，增加「原生插件」字段或候选列表，并让 `Plan` 在原生插件存在时返回空 artifact 集。具体改动在实现前更新 [架构与模块](./01-architecture-and-modules.md#5-目录结构与依赖) 和 [模型与契约](./02-domain-models-and-contracts.md#23-审计诊断整理与接入)。
 
@@ -313,9 +329,10 @@ dsh 适配器同时识别两种接入：
 `memctl install dsh` 的提示必须包含：
 
 ```text
-DSH Plugin Manager: Settings → Plugins → Add plugin → memctl-dsh@<version>
+DSH 界面: 插件 → 添加插件 → memctl-dsh@<version>
+DSH 离线: 插件 → 添加插件 → <memctl 打印的绝对 tarball 路径>
 CLI: dsh plugin --profile <profile> add memctl-dsh@<version>
-Offline: dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
+GitHub: 插件 → 添加插件 → https://github.com/<owner>/memctl-dsh
 ```
 
 不猜测 profile 名称；让用户使用 Plugin Manager 或填入自己的 profile。若当前进程带有 `DSH_PROFILE` 环境变量，可以把它作为默认值显示，但不假定它一定存在。
@@ -326,32 +343,36 @@ Offline: dsh plugin --profile <profile> add ./memctl-dsh-<version>.tgz
 
 每个 memctl 版本产出：
 
-- `memctl-dsh-<version>.tgz`：预构建 npm 包，无依赖、无安装脚本。
+- `memctl-dsh-<version>.tgz`：预构建 npm 包，无依赖、无安装脚本；嵌入 memctl 二进制，同时作为 GitHub Release 附件。
 - 可选的 npm 发布：包名 `memctl-dsh`，精确版本，带 `engines.dsh`。
-- 可选的 `docs/dsh-market/index.json`：格式 1，`source.type = npm`，精确版本，`engines.dsh`，图标和本地化元数据。
+- 可选的独立 GitHub 仓库：根目录就是 bundle，提交预构建入口。
+- 可选的 `docs/dsh-market/index.json`：格式 1，`source.type = npm`，精确版本，`engines.dsh`，图标和本地化元数据；只服务 Discover 页面。
 
-tarball 与 npm 包来自同一份源码和同一份 `package.json`；不允许 tarball 是另一套构建结果。
+tarball、npm 包和 GitHub 仓库来自同一份源码和同一份 `package.json`；不允许其中一个是另一套构建结果。内嵌 tarball 是 release 产物的同一份字节，不在构建时重新打包。
 
 ### 7.2 构建入口
 
 ```sh
 make dsh-plugin-test     # Node 单元测试
 make dsh-plugin-pack     # npm pack，产出 tgz 并校验文件清单
-make dsh-plugin-index    # 生成市场索引（可选）
+make dsh-plugin-embed    # 把 tgz 放到 go:embed 路径，供 memctl 内嵌
+make dsh-plugin-index    # 生成 Discover 市场索引（可选）
 ```
 
-`make release` 在现有四平台二进制、校验和、许可证清单之外，加入 `memctl-dsh-<version>.tgz` 和对应的 SHA-256。插件本身不参与 Go 交叉编译；它是平台无关的 ESM 包。
+`make release` 先执行插件测试和打包，再构建四个平台二进制；现有校验和与许可证清单之外，加入 `memctl-dsh-<version>.tgz` 和对应 SHA-256。插件本身不参与 Go 交叉编译；它是平台无关的 ESM 包。`go:embed` 的文件必须在 `go build` 前生成，不能提交生成物。
 
 ### 7.3 CI 与发布
 
 - 在现有 GitHub Actions `v*` 标签流水线中增加：
   1. 运行插件单元测试和 `npm pack --dry-run` 文件清单检查。
-  2. 产出 tarball 并加入 Release 附件与 `SHA256SUMS`。
+  2. 产出 tarball，加入 Release 附件与 `SHA256SUMS`，并在 `go build` 前放入 `go:embed` 路径。
   3. 如启用 npm，使用 `NPM_TOKEN` 发布 `memctl-dsh@<version>`；优先使用 npm provenance。
-  4. 如启用市场索引，生成并校验 `index.json`，发布到静态托管地址。
+  4. 如启用独立 GitHub 仓库，验证仓库根 `package.json` 的 bundle 声明和预构建入口；不从主仓库子目录发布。
+  5. 如启用市场索引，生成并校验 `index.json`，发布到静态托管地址。
 - npm 发布失败不应导致二进制 Release 失败；反之，二进制测试失败不能发布插件。两类产物分别报告状态。
 - 市场索引必须校验：`format = 1`、`name`/`version` 与包清单一致、`engines.dsh` 非空、`publishTimestamp` 正确、图标路径可解析、无重定向。
 - 不在 CI 中运行 `dsh plugin add` 修改真实用户 profile；安装验证使用隔离的 `DSH_HOME` 和临时 profile。
+- 安装验证至少覆盖界面使用的三种 spec：npm 包名、绝对 tarball 路径、绝对目录路径；GitHub URL 在独立仓库可用后单独验证。
 
 ### 7.4 版本矩阵
 
@@ -381,16 +402,19 @@ make dsh-plugin-index    # 生成市场索引（可选）
 
 - `npm pack` 后检查 `files`：不包含测试、源码映射、缓存和凭据。
 - `package.json` 无 `dependencies`、`scripts.install/postinstall/prepare`；`engines.dsh` 有效。
-- 在隔离 `DSH_HOME` 和临时 profile 中执行 `dsh plugin --profile test add ./memctl-dsh-<version>.tgz`，再执行 `dsh --profile test --dump-config` 检查插件行。
+- 内嵌 tarball 与 Release tarball 字节一致；`memctl dsh plugin-path` 输出绝对路径，且路径存在。
+- 在隔离 `DSH_HOME` 和临时 profile 中执行 `dsh plugin --profile test add /absolute/path/memctl-dsh-<version>.tgz`，再执行 `dsh --profile test --dump-config` 检查插件行；安装后删除 tarball，当前插件仍可加载；这不验证后续 `pnpm install`。
+- 验证界面 spec 解析：npm 包名通过；绝对 tarball 路径通过；绝对目录路径通过；`~` 路径、相对路径、带子目录的 GitHub URL 被拒绝。
 - 安装不兼容的 `engines.dsh` 时 DSH 拒绝，profile 不出现半安装状态。
 - 卸载后插件行消失，profile 依赖清理，记忆仓库不变。
 - 旧 hooks 与原生插件同时存在时，适配器报告 `needs_attention`，不自动删除。
+- 用隔离 profile 手工走一遍「添加插件」对话框：npm 包名、绝对 tarball 路径、绝对目录路径三种输入；记录截图或命令输出，不修改真实用户 profile。
 
 ### 8.3 真实宿主测试
 
 环境：DSH 0.2.1-rc.1，macOS arm64；隔离 `HOME` 或隔离 `AGENT_MEMORY_DIR`；临时记忆仓库和可控远端。
 
-必须验证：
+安装路径至少一次通过「插件 → 添加插件」对话框完成，而不是只用 CLI。必须验证：
 
 1. 新会话首个模型请求前，`systemPrompt.context` 快照包含 `[agent-memory]` 内容；会话日志可复核。
 2. 一轮对话结束后，`git -C <repo> log -1` 出现 memctl 提交，且没有重复同步。
@@ -414,6 +438,7 @@ make dsh-plugin-index    # 生成市场索引（可选）
 | `I03` | 插件安装/升级/卸载 | 隔离 profile 中幂等；无 hooks.json；无安装脚本 |
 | `I04` | tarball 离线安装 | 无 npm 网络也能安装；文件清单和版本正确 |
 | `I05` | DSH 兼容拒绝 | 范围外版本被拒绝，不出现半安装或静默失效 |
+| `I06` | 添加插件界面输入 | npm 包名、绝对 tarball、绝对目录均可解析并安装；`~`、相对路径、带子目录的 GitHub URL 被拒绝 |
 
 这些 ID 在实现前写入 05，避免实现后再补验收定义。
 
@@ -421,13 +446,14 @@ make dsh-plugin-index    # 生成市场索引（可选）
 
 | ID | 事项 | 影响 | 建议 |
 | --- | --- | --- | --- |
-| `D1` | npm 主通道还是 tarball/内嵌主通道 | 影响发布工程、用户入口、离线能力 | 推荐 npm 主 + tarball 备用；若 npm 发布不可接受，切 tarball 主 |
-| `D2` | 是否发布 DSH 市场索引及托管位置 | 影响发现性、更新提示 | 第一版可不做；用 npm 名 + 文档安装，索引作为第二阶段 |
-| `D3` | 插件版本是否与 memctl 完全同步 | 影响兼容矩阵和发布节奏 | 主次版本同步，补丁独立 |
-| `D4` | 记忆上下文过大时的截断策略 | 影响 token 成本和信息完整性 | 第一版不静默截断；超限记录错误并保留 memctl 原始输出策略 |
-| `D5` | 子代理是否注入简短指针 | 影响子代理能力和 token | 第一版跳过；需要时再做短指针 |
-| `D6` | 是否在 v1 提供客户端状态面板 | 影响插件复杂度和验收 | 不做；Host-only 先跑通 |
-| `D7` | 旧 hooks 配置是否自动迁移 | 影响用户配置所有权 | 不自动删除；报告并让用户选择 |
+| `D1` | npm 包名主通道还是内嵌 tarball 主通道 | 影响发布工程、用户入口、离线能力 | 推荐 npm 主 + 内嵌 tarball 备用；两者都能从「添加插件」界面安装，npm 发布不可接受时直接切内嵌 tarball |
+| `D2` | 是否维护独立 GitHub 仓库作为界面入口 | 影响第二个仓库的发布与审计成本 | 第一版可不做；npm 或内嵌 tarball 已覆盖界面安装 |
+| `D3` | 是否发布 Discover 市场索引及托管位置 | 影响发现性、更新提示 | 第一版可不做；插件页安装不依赖市场索引 |
+| `D4` | 插件版本是否与 memctl 完全同步 | 影响兼容矩阵和发布节奏 | 主次版本同步，补丁独立 |
+| `D5` | 记忆上下文过大时的截断策略 | 影响 token 成本和信息完整性 | 第一版不静默截断；超限记录错误并保留 memctl 原始输出策略 |
+| `D6` | 子代理是否注入简短指针 | 影响子代理能力和 token | 第一版跳过；需要时再做短指针 |
+| `D7` | 是否在 v1 提供客户端状态面板 | 影响插件复杂度和验收 | 不做；Host-only 先跑通 |
+| `D8` | 旧 hooks 配置是否自动迁移 | 影响用户配置所有权 | 不自动删除；报告并让用户选择 |
 
 其他风险：
 
@@ -444,12 +470,12 @@ make dsh-plugin-index    # 生成市场索引（可选）
 | `E-1` | 包骨架、`package.json`、patch、locale、icon、单元测试 | `npm pack` 文件清单正确；假 ctx 测试通过 |
 | `E-2` | 生命周期、上下文注入、同步/收尾、进程管理 | 假宿主集成测试覆盖 H07–H10 |
 | `E-3` | 适配器探测、状态、安装提示、旧 hooks 共存 | `install --status` 区分原生/旧/缺失；无自动写 profile |
-| `E-4` | npm/tarball 产物、CI、可选市场索引 | Release 附件和校验和；隔离 profile 安装测试 |
-| `E-5` | 真实 DSH 会话验证、文档、发布 | H07–H10、I03–I05 有真实宿主证据；未验证项如实记录 |
+| `E-4` | npm/tarball 产物、`go:embed`、CI、可选 GitHub 仓库和市场索引 | Release 附件和校验和；`go:embed` 文件在构建前生成；隔离 profile 安装测试 |
+| `E-5` | 真实 DSH 会话验证、文档、发布 | H07–H10、I03–I06 有真实宿主证据；至少一次从「添加插件」界面安装；未验证项如实记录 |
 
 实现前需要：
 
-1. 更新 [目录规划](./01-architecture-and-modules.md#5-目录结构与依赖)，增加 `plugins/dsh/`。
+1. 更新 [目录规划](./01-architecture-and-modules.md#5-目录结构与依赖)，增加 `plugins/dsh/`（源码）和 `internal/assets/dsh/`（构建时生成的嵌入 tarball，不提交）。
 2. 更新 [模型与契约](./02-domain-models-and-contracts.md#23-审计诊断整理与接入) 的适配器结构，支持原生插件与旧 hooks 两种模式。
 3. 更新 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的验收 ID 和阶段计划。
 4. 确认 `D1` 主通道；其余决策可先按推荐值实现，再在验收时复核。
@@ -468,10 +494,11 @@ make dsh-plugin-index    # 生成市场索引（可选）
 
 调研结论：
 
+- DSH 的「插件 → 添加插件」是 spec 驱动：npm 包名、GitHub 仓库根、本地绝对目录和绝对 tarball 路径都能进入安装流程。因此 memctl 的 UI 分发不需要先做市场索引，npm 名或内嵌 tarball 就足够。
 - DSH 生态的主流安装方式是 npm bundle + `dsh plugin add`，不是每个项目自带安装器。
 - 只有需要写宿主配置或启动常驻服务时，才值得做 `npx ... install`（claude-mem 的路径）；memctl 的插件不需要写 hooks.json，也不需要 worker，因此不应引入安装器。
 - 记忆类插件通常把「检索/注入」和「存储」分开；memctl 已有 Git 仓库和同步，插件应只做桥接。
-- 市场索引适合发现和更新，但应作为可选增强，不应成为第一版安装的前置条件。
+- 市场索引适合 Discover 发现和更新，但它是另一个入口；本对话框的 npm 或 tarball 安装不应依赖它。
 
 ## 12. 参考
 
