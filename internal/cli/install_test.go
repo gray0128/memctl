@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gray0128/memctl/internal/adapters"
+	dshplugin "github.com/gray0128/memctl/plugins/dsh"
 )
 
 // TestPrintPlanShowsManualPatch covers docs/03 section 7: when a configuration
@@ -42,11 +43,15 @@ func TestPrintPlanShowsDshInstallHints(t *testing.T) {
 		Status: adapters.StatusNeedsAttention,
 		Reason: "no dsh plugin detected",
 	})
+	version, err := dshplugin.Version()
+	if err != nil {
+		t.Fatalf("plugin version: %v", err)
+	}
 	out := stdout.String()
 	for _, want := range []string{
-		"插件 → 添加插件 → memctl-dsh@0.1.2",
+		"插件 → 添加插件 → memctl-dsh@" + version,
 		"memctl dsh plugin-path",
-		"dsh plugin --profile <profile> add memctl-dsh@0.1.2",
+		"dsh plugin --profile <profile> add memctl-dsh@" + version,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("dsh install hints missing %q:\n%s", want, out)
@@ -59,7 +64,7 @@ func TestPrintPlanSkipsDshHintsWhenPluginExists(t *testing.T) {
 	printPlan(&stdout, adapters.InstallPlan{
 		Agent:         "dsh",
 		Status:        adapters.StatusConfigured,
-		PluginVersion: "0.1.2",
+		PluginVersion: "0.2.0",
 	})
 	if strings.Contains(stdout.String(), "插件 → 添加插件") {
 		t.Fatalf("configured dsh plan printed install hints:\n%s", stdout.String())

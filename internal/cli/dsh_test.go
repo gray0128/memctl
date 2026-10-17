@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gray0128/memctl/internal/cli"
+	dshplugin "github.com/gray0128/memctl/plugins/dsh"
 )
 
 // TestRunDshPluginArtifacts covers the absolute paths printed for the DSH
@@ -17,9 +18,13 @@ func TestRunDshPluginArtifacts(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("AGENT_MEMORY_STATE", state)
+	version, err := dshplugin.Version()
+	if err != nil {
+		t.Fatalf("plugin version: %v", err)
+	}
 
 	tarball := runDshCommand(t, "plugin-path")
-	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-0.1.2.tgz") {
+	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-"+version+".tgz") {
 		t.Fatalf("unexpected tarball path %q", tarball)
 	}
 	if _, err := os.Stat(tarball); err != nil {
@@ -33,7 +38,7 @@ func TestRunDshPluginArtifacts(t *testing.T) {
 	}
 
 	dir := runDshCommand(t, "plugin-dir")
-	if !filepath.IsAbs(dir) || filepath.Base(dir) != "0.1.2" {
+	if !filepath.IsAbs(dir) || filepath.Base(dir) != version {
 		t.Fatalf("unexpected plugin dir %q", dir)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {

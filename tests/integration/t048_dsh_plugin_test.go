@@ -44,6 +44,7 @@ func TestT048DshPluginTarballInstall(t *testing.T) {
 	if !filepath.IsAbs(tarball) {
 		t.Fatalf("plugin-path printed %q, want an absolute path", tarball)
 	}
+	version := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(tarball), "memctl-dsh-"), ".tgz")
 	if _, err := os.Stat(tarball); err != nil {
 		t.Fatalf("plugin-path did not write the tarball: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestT048DshPluginTarballInstall(t *testing.T) {
 	assertDshConfigContains(t, dshPath, env, tmpDir, "memctl-dsh")
 
 	status := runT048(t, env, binPath, "install", "--status")
-	if !strings.Contains(status, "dsh: configured") || !strings.Contains(status, "plugin@0.1.2") {
+	if !strings.Contains(status, "dsh: configured") || !strings.Contains(status, "plugin@"+version) {
 		t.Fatalf("install --status did not detect the native plugin:\n%s", status)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); !errors.Is(err, os.ErrNotExist) {

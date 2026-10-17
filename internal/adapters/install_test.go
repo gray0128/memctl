@@ -414,7 +414,7 @@ func writePluginManifest(t *testing.T, home, name, version string) {
 
 func TestDshNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
-	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+	writePluginManifest(t, home, "memctl-dsh", "0.2.0")
 
 	plan, err := env.Plan("dsh")
 	if err != nil {
@@ -423,8 +423,8 @@ func TestDshNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
 		t.Fatalf("native plugin plan = %+v, want configured with no artifacts", plan)
 	}
-	if plan.PluginVersion != "0.1.2" {
-		t.Fatalf("PluginVersion = %q, want 0.1.2", plan.PluginVersion)
+	if plan.PluginVersion != "0.2.0" {
+		t.Fatalf("PluginVersion = %q, want 0.2.0", plan.PluginVersion)
 	}
 	if plan.Reason == "" {
 		t.Fatal("native plugin plan must explain why hooks.json is not needed")
@@ -444,7 +444,7 @@ func TestDshNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 
 func TestDshNativeAndLegacyPluginsNeedAttention(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
-	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+	writePluginManifest(t, home, "memctl-dsh", "0.2.0")
 	writePluginManifest(t, home, "dsh-hooks-plugin", "0.2.15")
 
 	plan, err := env.Plan("dsh")
@@ -454,7 +454,7 @@ func TestDshNativeAndLegacyPluginsNeedAttention(t *testing.T) {
 	if plan.Status != StatusNeedsAttention || plan.Applicable || len(plan.Artifacts) != 0 {
 		t.Fatalf("coexisting plugin plan = %+v, want needs_attention without artifacts", plan)
 	}
-	if plan.PluginVersion != "0.1.2" {
+	if plan.PluginVersion != "0.2.0" {
 		t.Fatalf("PluginVersion = %q, want the native plugin version", plan.PluginVersion)
 	}
 	if !strings.Contains(plan.Reason, "memctl-dsh") || !strings.Contains(plan.Reason, "dsh-hooks-plugin") {
@@ -509,7 +509,7 @@ func TestDshOldNativePluginNeedsAttention(t *testing.T) {
 
 func TestDshHostMissingIsNotInstalled(t *testing.T) {
 	env, home := fakeEnv(t, nil, nil)
-	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+	writePluginManifest(t, home, "memctl-dsh", "0.2.0")
 
 	plan, err := env.Plan("dsh")
 	if err != nil {
