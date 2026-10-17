@@ -71,6 +71,7 @@
 | T052 | 进行中 | 对应阶段 E 的 `E-5`：真实 DSH 会话验证；已确认 `[agent-memory]` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步，待验证 `agent/disposed`、恢复、更多失败降级与界面安装；[验证记录](./validation/t052-dsh-real-session.md) |
 | T053 | 已完成 | 发布 `v0.2.0`（含 `T048`）：插件版本同步到 `0.2.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t053发布-v020) |
 | T054 | 已完成 | 统一宿主会话结束映射：补 Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补回归与契约；[完成记录](#t054宿主会话结束映射与-dsh-收尾兜底) |
+| T055 | 进行中 | 发布 `v0.2.1`（含 `T054`）：将插件版本提升到 `0.2.1`，运行全量测试与四平台候选包，校验产物并推送 tag；[本轮定义](#t055发布-v021) |
 
 任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
@@ -86,8 +87,14 @@
 - 未验证与遗留：真实会话结束路径；Claude Code `StopFailure`/`PreCompact` 与 Grok `StopFailure`/`PreCompact` 未补；Antigravity `Stop` 语义待确认；Command Code 无 `SessionEnd`；插件版本未提升，未重新构建发布 tarball。
 - 下一步：`T052` 重新安装插件并正常退出 DSH，确认恰好一次 `end`；再评估补齐 Claude Code 与 Grok 的缺失事件与发布补丁版本。
 
+## T055：发布 v0.2.1
+
+- 目标与范围：把 `T054` 的宿主会话结束映射作为 `v0.2.1` 发布；插件包版本提升到 `0.2.1`，运行全量测试与 `make release`，校验四个候选二进制和插件 tarball，推送 tag 触发 GitHub Release。不改变 `end` 的 CLI 语义或新增 adapter 能力。
+- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](./07-dsh-plugin.md)。
+- 验收：`make test` 全量通过；`dist/SHA256SUMS` 校验全部 `OK`；tag `v0.2.1` 推送后 GitHub Actions 创建 Release。
+
 ## 近期实施任务
 
-`T054` 已完成：Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 卸载兜底已实现并通过回归。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+`T055` 进行中：把 `T054` 的宿主会话结束映射发布为 `v0.2.1`。`T054` 已完成：Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 卸载兜底已实现并通过回归。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

@@ -17,8 +17,8 @@ func TestVersionMatchesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if version != "0.2.0" {
-		t.Fatalf("Version = %q, want 0.2.0", version)
+	if version != "0.2.1" {
+		t.Fatalf("Version = %q, want 0.2.1", version)
 	}
 	if strings.Contains(version, "+") || strings.Contains(version, " ") {
 		t.Fatalf("Version = %q is not suitable for a tarball name", version)
@@ -78,7 +78,7 @@ func TestWriteDirWritesEveryRuntimeFile(t *testing.T) {
 }
 
 func TestWriteTarballIsNpmCompatible(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "memctl-dsh-0.2.0.tgz")
+	path := filepath.Join(t.TempDir(), "memctl-dsh-0.2.1.tgz")
 	if err := WriteTarball(path); err != nil {
 		t.Fatalf("WriteTarball: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestEnsurePathsAreAbsoluteAndReplaceable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureTarball: %v", err)
 	}
-	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-0.2.0.tgz") {
+	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-0.2.1.tgz") {
 		t.Fatalf("unexpected tarball path %q", tarball)
 	}
 	if _, err := os.Stat(tarball); err != nil {
