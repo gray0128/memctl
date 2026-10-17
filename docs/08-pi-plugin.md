@@ -1,6 +1,6 @@
 # 08. pi 专用插件：调研、分发与实现方案
 
-> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），隔离宿主验证通过，真实 pi 会话完成一次注入与收尾验证；交互式同步、恢复/分叉/子代理、npm 发布与非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
+> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。npm 发布与非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
 
 ## 1. 结论
 
@@ -269,9 +269,14 @@ export default function memctlPi(pi) {
 
 `pi-subagents` 子进程使用 `PI_SUBAGENT_CHILD=1`，这是第三方约定，不是 pi 核心 API。v1 的默认策略是：
 
-- 不跳过任何由 pi 正常启动的会话；分叉、子代理和恢复会话都获得自己的 SID 和生命周期。
+- 不按 `parentSession` 跳过任何会话；分叉、恢复和由 pi 正常启动的会话都获得自己的 SID 和生命周期。
 - 子代理与父会话可能各自同步；memctl 的仓库锁会串行化写入，重复同步在无变化时是空操作。
 - 如果实测发现子代理产生明显的重复提交或 token 浪费，再增加显式环境变量 `MEMCTL_PI_SKIP_SUBAGENTS=1`，只跳过 `PI_SUBAGENT_CHILD=1` 的会话；不使用 `parentSession` 自动推断。
+
+真实验证区分了两类子代理：
+
+- 后台子代理 `pi-subagents` 以 `PI_SUBAGENT_CHILD=1` 的独立进程运行，触发 `session_start`，获得自己的 SID，执行一次 `start`，退出时执行一次 `end`；父会话独立同步。
+- 前台子代理在当前 pi 进程内构造子会话，不触发 `session_start` 或 `session_shutdown`；其 system prompt 不包含 `memctl` section，也不单独同步。这是宿主生命周期限制，不是插件按 `parentSession` 跳过。v1 不尝试绕过宿主 API；若后续需要前台子代理记忆，另行评估注入通道。
 
 这与 dsh 插件跳过子代理的策略不同。dsh 的子代理共享同一 agent 和记忆上下文；pi-subagents 的子代理是独立 pi session，需要独立判断，不能直接复制 dsh 的规则。
 
@@ -649,16 +654,19 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 - `go test ./internal/... ./plugins/... -count=1` 与 `go test ./tests/integration -count=1` 通过，覆盖 `I07`、`I08`、`I10` 的合成状态矩阵。
 - 隔离 `PI_CODING_AGENT_DIR` 下 `pi install <plugins/pi>`、`pi list`、`pi remove` 可用；settings 写入相对路径后适配器仍能探测到原生插件。
 - 隔离 pi `1.3.0` 会话使用本地 mock OpenAI 兼容端点和假 memctl：观察到 `start` → 模型请求包含 `<memctl>` section → 进程退出触发 `end`；`agent_settled` 的 `sync` 在 `-p` 立即退出时被 shutdown 取消，最终同步由 `end` 承担，假 memctl 只验证了调用参数。
-- 本机真实 `install --status`：存在 `pi-yaml-hooks` 和旧 `agent-memory-*` 条目时报告 `configured`、`plugin@2026.9.26`，并提示迁移。
+- 本机真实 `install --status`：旧路径存在时报告 `configured`、`plugin@2026.9.26` 并提示迁移；迁移到原生插件后报告 `configured`、`plugin@0.5.0`，无 `needs_attention`。
+- 真实 pi `1.3.0`（`deepseek/deepseek-flash`）会话：system sections 含 `<memctl>` 与 `[agent-memory]` 正文；交互式会话两次 `memctl write` 产生提交并同步到远端。
+- RPC 长会话验证 `agent_settled` 后的 `sync` 在 settle 后约 0.7 秒完成、退出码 0；`new_session`、`clone`、`resume` 各自获得正确 SID，每个会话 `start`/`sync`/`end` 各一次。
+- 后台子代理获得独立 SID 与 `start`/`end`；前台子代理不触发会话事件，因此不注入、不单独同步。
+- 失败降级：二进制缺失、非法 JSON、`start` 挂起 30 秒、仓库锁忙、远端不可达时会话均正常完成；合法 envelope 的错误退出仍保留正文。
 
 未验证：
 
-- 真实 pi 会话中的交互式 `sync` 提交、恢复、分叉和子代理行为；真实会话只用 `-p` 模式验证了注入与 `end`，没有给 `sync` 留出完成时间。
 - npm 发布、包名最终可用性、许可证选择和真实模型效果。
 - Windows、Linux、其他 pi 版本及其进程清理。
-- `pi` 版本无法解析与 `sections` 缺失的宿主级回退只由单元测试覆盖。
+- 前台子代理记忆注入；`pi` 版本无法解析与 `sections` 缺失的宿主级回退只由单元测试覆盖。
 
-因此当前状态是「已实现、隔离宿主验证通过」，不是「已支持 pi」。完成 §9.4 的真实会话验证后，才能在 [开发状态](./STATUS.md) 中标记 `verified`。
+因此当前状态是「`F-5` 在 pi `1.3.0`/darwin arm64 完成验证」，不等于宣称所有平台和所有子代理形态已支持。
 
 ## 12. 参考
 

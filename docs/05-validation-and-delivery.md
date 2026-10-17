@@ -155,7 +155,7 @@
 | H12 | pi 原生插件生命周期 | `session_start` 注入、`agent_settled` 同步、`session_shutdown` 收尾各一次；`reload` 不执行 `end` |
 | H13 | pi 上下文注入与缓存稳定 | 首个请求存在 `memctl` section；正文不变不产生新 delta；不伪造 user message；`forceSystemPrompt` 时有回退 |
 | H14 | pi 并发与失败 | 多轮快速结束只保留一个有界同步；二进制缺失、超时、非法 JSON、锁忙、断网不阻塞会话 |
-| H15 | pi 会话边界与子代理 | `new/resume/fork` 使用正确 SID；子代理不因 `parentSession` 被误跳过；显式开关行为可验证 |
+| H15 | pi 会话边界与子代理 | `new/resume/fork` 使用正确 SID；后台子代理获得独立 SID 与生命周期；前台 in-process 子代理不触发会话事件，不按 `parentSession` 误跳过；显式开关行为可验证 |
 | H11 | 宿主会话结束映射 | `SessionEnd`、`session.deleted`、`agent/disposed` 与插件卸载兜底各触发一次 `end`；回合结束、空闲与压缩只触发 `sync`，不触发 `end` |
 | A01 | 注册全部 REST 路由 | Go ServeMux 不 panic，参数可取出，方法匹配正确 |
 | A02 | 缺失 Token、跨源 Origin、伪造 Host、PATCH 绕过 | 所有 API 包括读取和 SSE 都按规则拒绝 |
