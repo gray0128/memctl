@@ -1,6 +1,6 @@
 # 07. dsh 专用插件：分发、安装与实现方案
 
-> 状态：已实现（`T048`，2026-10-17）。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；当前实际可用的安装通道是内嵌 tarball，npm 包、独立 GitHub 仓库与 Discover 索引尚未发布。实现与验证边界见 [§13](#13-实现状态)。
+> 状态：已实现（`T048`，2026-10-17），npm 包 `memctl-dsh@0.5.1` 与 `v0.5.1` Release 已发布（`T064`）。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，独立 GitHub 仓库与 Discover 索引尚未发布。实现与验证边界见 [§13](#13-实现状态)。
 
 ## 1. 结论
 
@@ -30,7 +30,9 @@
 
 ## 3. 为什么需要自建插件
 
-### 3.1 当前链路的事实
+### 3.1 自建插件之前的链路事实
+
+下表是 `T047` 调研时旧 `dsh-hooks-plugin` 链路的事实，不代表 `memctl-dsh` 的当前状态；当前实现与验证见 [§13](#13-实现状态)。
 
 | 事实 | 证据 | 影响 |
 | --- | --- | --- |
@@ -485,7 +487,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 | `E-1` | 包骨架、`package.json`、patch、locale、icon、单元测试 | `npm pack` 文件清单正确；假 ctx 测试通过 |
 | `E-2` | 生命周期、上下文注入、同步/收尾、进程管理 | 假宿主集成测试覆盖 H07–H10 |
 | `E-3` | 适配器探测、状态、安装提示、旧 hooks 共存 | `install --status` 区分原生/旧/缺失；无自动写 profile |
-| `E-4` | npm/tarball 产物、运行时 tarball/目录生成、CI、可选 GitHub 仓库和市场索引 | Release 附件和校验和；`go:embed` 源文件随二进制构建；隔离 profile 安装测试 |
+| `E-4` | tarball 产物、运行时 tarball/目录生成、CI、Release 附件与可选 GitHub 仓库和市场索引；npm 发布由后续发布轮次完成 | Release 附件和校验和；`go:embed` 源文件随二进制构建；隔离 profile 安装测试 |
 | `E-5` | 真实 DSH 会话验证、文档、发布 | H07–H10、I03–I06 有真实宿主证据；至少一次从「添加插件」界面安装；未验证项如实记录 |
 
 实现前需要：
@@ -495,7 +497,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 3. 更新 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的验收 ID 和阶段计划。
 4. `D1` 已确认取 A；`D2`、`D3` 可先按可选处理，后续再确认。
 
-上述 `E-1` 至 `E-4` 已由 `T048` 实现；`E-5` 已由 `T052` 完成：本机 `desktop` 与隔离 web 会话验证注入、轮次同步、受管写入提交、恢复、锁忙/断网与 tarball 界面安装；`agent/disposed` 事件受宿主限制。实现状态见 [§13](#13-实现状态)。
+上述 `E-1` 至 `E-4` 已由 `T048` 实现，`E-5` 已由 `T052` 完成：本机 `desktop` 与隔离 web 会话验证注入、轮次同步、受管写入提交、恢复、锁忙/断网与 tarball 界面安装；`agent/disposed` 事件受宿主限制。npm 包由 `T064` 发布。实现状态见 [§13](#13-实现状态)。
 
 ## 11. 类似项目调研
 
@@ -534,7 +536,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 
 已落地：
 
-- `plugins/dsh/` 保存 `package.json`、`cordis.patch.yml`、`index.js`、`locale/en.json`、`locale/zh.json`、`icon.svg`、Node 单元测试与 `embed.go`。包无 `dependencies`、`install`、`postinstall` 或 `prepare`；`files` 只包含运行时文件。
+- `plugins/dsh/` 保存 `package.json`、`cordis.patch.yml`、`index.js`、`locale/en.json`、`locale/zh.json`、`icon.svg`、`README.md`、`LICENSE`、Node 单元测试与 `embed.go`。包无 `dependencies`、`install`、`postinstall` 或 `prepare`；`files` 只包含运行时文件。
 - `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
@@ -546,4 +548,4 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 
 - 真实 DSH 会话中的 `agent/disposed` 事件路径（DSH 0.2.1-rc.2 无单会话销毁入口，仅单元测试覆盖），以及 npm 包名与绝对目录的界面安装。`systemPrompt.context` 快照、`turn/end` 后同步、受管写入提交、恢复、锁忙/断网降级与 tarball 界面安装已有真实验证，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
-- npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。
+- 独立 GitHub 仓库与 Discover 市场索引未发布；`D2`、`D3` 仍为可选。

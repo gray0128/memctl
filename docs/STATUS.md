@@ -1,17 +1,23 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`、`T062`、`T063`、`T064`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T065`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
-- 版本：`v0.5.1` 为当前二进制发布版本（2026-10-18 发布）；npm 包 `memctl-pi@0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 已发布，`latest` 分别为 `0.5.1` 与 `0.5.1`。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话中的注入与每轮同步已在本机 `desktop` 验证，收尾仍待复验；阶段 F 的 `F-1`–`F-4` 已由 `T060` 交付，`F-5` 真实 pi 会话验证待执行。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–08 为准。
-- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射；`T055` 发布 `v0.2.1`；`T056` 新增 `update`/`update --check` 自更新；`T057` 发布 `v0.3.0`；`T058` 新增面向 Agent 的 CLI 帮助体系、中英 i18n 与 `help --json` 目录；`T059` 发布 `v0.4.0`；`T060` 增加 `memctl-pi` 扩展、`memctl pi plugin-dir`、pi 原生插件探测与 Release 审计 tarball；`T061` 发布 `v0.5.0`；`T062` 完成 pi 真实宿主验证；`T063` 发布 `memctl-pi@0.5.1` 到 npm；`T064` 发布 `v0.5.1` 与 `memctl-dsh@0.5.1` npm 包；`T065` 删除 npm 占位版本。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
+- 版本：`v0.5.1` 为当前二进制发布版本（2026-10-18 发布）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
+- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–08 为准。
+- 发布后改动：`T040`–`T065` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布与版本发布均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
-- 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。DSH 0.2.1-rc.2 已通过隔离 profile 安装 `memctl-dsh`，并在本机 `desktop` 真实会话确认 `[agent-memory]` 注入、`turn/end` 后同步与子代理跳过。`memctl-pi` 原生扩展、`memctl pi plugin-dir` 与 pi 适配器探测已随 `v0.5.0` 发布，npm 包 `0.5.1` 已发布；本机 pi 已迁移到原生插件 `0.5.0`，`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`：真实会话确认 `<memctl>` 注入、每轮 `sync`、收尾、恢复、分叉、后台子代理与失败降级；前台 in-process 子代理不触发会话事件，不注入记忆。`memctl-dsh@0.3.0` 的复验确认：headless 与 web host 正常退出都触发一次 `end`（来自 `T054` 的插件卸载兜底，未观察到 `agent/disposed`）；隔离 web 会话完成两次成功模型轮次，会话日志的 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`desktop` profile 更新到 `0.4.0` 后，当前真实会话的 `runtime-context` 快照仍包含 `memctl:memory`，同步缓存于 23:20:24 更新为 `synced`。隔离 `0.4.0` 会话确认轮次内 `memctl write` 产生提交 `61fd68e`，`turn/end` 后触发 `sync`；锁忙时 `sync --wait` 在 3.1 秒内返回 `BUSY`，会话继续且本地提交保留；断网时缓存记录 `NETWORK_UNAVAILABLE`，会话继续且本地提交保留。`agent/disposed` 事件因 DSH 当前没有单会话销毁入口而无法真实触发，由插件单元测试覆盖，真实退出以卸载兜底为准。
-- 未验证：pi 前台子代理记忆注入、Windows/Linux 进程清理；`memctl-pi` 的 `agent_settled` 同步在 `pi -p` 立即退出时由 `end` 兜底；真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `agent/disposed` 事件路径（宿主不可触发）与 DSH 界面安装；Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；DSH 插件卸载兜底已在 headless/web 正常退出生效，`agent/disposed` 事件仍未观察到；`systemPrompt.context` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步已在真实会话验证，失败降级仅覆盖模型凭据缺失；`update` 仅在 darwin/arm64 真实执行，其他平台为交叉编译与单元测试；本机 `~/.agent-memory` 中的 memctl 已升级到 `v0.5.1`，`desktop` profile 中的 `memctl-dsh` 仍为 `0.4.0`。
-- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 已发布 npm 包，但没有独立 GitHub 仓库或 Discover 索引；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义仍待真实宿主确认。
-- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
+- 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end` 及绝对 tarball 界面安装；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
+- 宿主（pi）：`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`，真实会话确认 `<memctl>` 注入、每轮 `sync`、收尾、恢复、分叉、后台子代理与失败降级；前台 in-process 子代理不触发会话事件，不注入记忆。证据见 [T062 验证记录](./validation/t062-pi-real-session.md) 与 [pi 专用插件](./08-pi-plugin.md#11-实现状态)。
+- 未验证：
+  - 平台与进程：macOS amd64、Linux amd64、Windows amd64 的运行、生命周期与隔离；Windows/Linux 进程清理。
+  - DSH：`agent/disposed` 真实事件路径；npm 包名与绝对目录的界面安装；`desktop` profile 的 `memctl-dsh` 仍为 `0.4.0`。
+  - pi：前台子代理记忆注入；`agent_settled` 在 `pi -p` 立即退出时由 `end` 兜底；`sections` 缺失的宿主级回退仅由单元测试覆盖。
+  - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
+  - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
+- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引。
+- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.1`。
 
 ## 任务
 
@@ -74,41 +80,33 @@
 | T055 | 已完成 | 发布 `v0.2.1`（含 `T054`）：插件版本提升到 `0.2.1`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t055发布-v021) |
 | T056 | 已完成 | 新增 CLI `update` 命令：查询 GitHub Releases 最新版本，按平台下载并校验 SHA-256 后原子替换当前二进制，`--check` 只报告；[归档记录](./validation/stage-e.md#t056新增-update-命令) |
 | T057 | 已完成 | 发布 `v0.3.0`（含 `T056`）：插件版本同步到 `0.3.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t057发布-v030) |
-| T058 | 已完成 | 面向 Agent 的 CLI 帮助与中英 i18n：`help <command>`、`<command> --help`、`help --json`、`--lang`/`MEMCTL_LANG`/locale 选择；补 `R06`；[完成记录](#t058面向-agent-的-cli-帮助与中英-i18n) |
+| T058 | 已完成 | 面向 Agent 的 CLI 帮助与中英 i18n：`help <command>`、`<command> --help`、`help --json`、`--lang`/`MEMCTL_LANG`/locale 选择；补 `R06`；[归档记录](./validation/stage-e.md#t058面向-agent-的-cli-帮助与中英-i18n) |
 | T059 | 已完成 | 发布 `v0.4.0`（含 `T058`）：插件版本同步到 `0.4.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t059发布-v040) |
 | T060 | 已完成 | 对应阶段 F 的 `F-1` 至 `F-4`：`memctl-pi` 扩展、`memctl pi plugin-dir`、pi 原生与旧路径探测、版本门槛、安装提示、`make pi-plugin-*` 与 Release 审计产物；[归档记录](./validation/stage-f.md#t060实现-pi-专用插件) |
-| T061 | 已完成 | 发布 `v0.5.0`（含 `T060`）：插件版本同步到 `0.5.0`，全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；[完成记录](#t061发布-v050) |
+| T061 | 已完成 | 发布 `v0.5.0`（含 `T060`）：插件版本同步到 `0.5.0`，全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-f.md#t061发布-v050) |
 | T062 | 已完成 | 对应 `F-5`：本机 pi 迁移到 `memctl-pi`，真实验证注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级；前台子代理不注入登记为宿主限制；[归档记录](./validation/stage-f.md#t062真实-pi-会话验证) |
 | T063 | 已完成 | 发布 `memctl-pi@0.5.1` 到 npm 官方仓库：MIT 许可证、npm 元数据、staged 审批与隔离安装验证；[归档记录](./validation/stage-f.md#t063发布-memctl-pi-到-npm) |
 | T064 | 已完成 | 发布 `memctl-dsh@0.5.1` 到 npm 与 `v0.5.1` Release：MAC 二进制、两个插件 tarball、MIT 与 npm 元数据、隔离安装与适配器探测通过；[归档记录](./validation/stage-f.md#t064发布-memctl-dsh-到-npm-与-v051-release) |
-| T065 | 已完成 | 删除 npm 上 `memctl-pi@0.0.0-stage` 占位版本；registry 保留 `0.5.0`、`0.5.1`，`latest` 为 `0.5.1`；[完成记录](#t065删除-npm-占位版本) |
+| T065 | 已完成 | 删除 npm 上 `memctl-pi@0.0.0-stage` 占位版本；registry 保留 `0.5.0`、`0.5.1`，`latest` 为 `0.5.1`；[归档记录](./validation/stage-f.md#t065删除-npm-占位版本) |
+| T066 | 已完成 | 文档一致性检查与整理：修正发布状态、`F-5` 状态、Makefile 与发布产物描述、DSH/pi 状态段和失效链接，补全验证记录索引；不改变产品行为；[完成记录](#t066文档一致性检查与整理) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T061：发布 v0.5.0
+## T066：文档一致性检查与整理
 
-- 目标与范围：把 `T060` 的 `memctl-pi` 扩展、`memctl pi plugin-dir` 与 pi 适配器探测作为 `v0.5.0` 发布；`memctl-dsh` 与 `memctl-pi` 包版本同步到 `0.5.0`，pi 原生插件最低支持版本提升到 `0.5.0`；运行全量测试与 `make release`，校验四个候选二进制、两个插件 tarball、校验和与元数据，推送 tag 触发 GitHub Release。不改变 `T060` 之外的运行时行为。
-- 契约：[pi 专用插件](./08-pi-plugin.md)、[dsh 专用插件](./07-dsh-plugin.md)、[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.5.0` 指向 `59a23ff`。
-- 命令与结果：`VERSION=v0.5.0 make release` 通过（前端 16 文件 85 项；插件 Node 测试 dsh 14 项、pi 15 项；Go 测试全部通过，`tests/integration` 命中同一文件内容的缓存结果）；生成四个平台候选二进制、`memctl-dsh-0.5.0.tgz`、`memctl-pi-0.5.0.tgz` 与三个元数据文件；`dist/SHA256SUMS` 六个产物全部 `OK`，本机与下载的 `memctl-darwin-arm64` 均输出 `memctl v0.5.0`，`update --check` 输出 `current: v0.5.0`、`latest: v0.5.0`、`up to date`；两个插件 tarball 版本均为 `0.5.0`。tag 推送后 [GitHub Actions 运行 39050077059](https://github.com/gray0128/memctl/actions/runs/39050077059) 成功并创建 [Release v0.5.0](https://github.com/gray0128/memctl/releases/tag/v0.5.0)；下载 Release 附件后按发布 `SHA256SUMS` 校验，六个产物全部 `OK`，附件含四个平台二进制、两个插件 tarball、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.0`。
-- 验收：发布前测试与校验通过；`I09` 的包清单与本地目录场景包含在发布测试中；`v0.5.0` 的 CI Release 成功。
-- 未验证与遗留：npm 发布未执行；macOS amd64、Linux 与 Windows 仅交叉编译；`memctl-pi` 真实 pi 会话、真实模型、恢复/分叉/子代理仍待 `F-5`。
-- 下一步：执行 `F-5` 真实 pi 会话验证；npm 发布、包名与许可证确认留给后续发布轮次。
+- 目标与范围：核对根 `README.md`、`AGENTS.md`、`docs/01`–`08`、`docs/README.md`、`docs/STATUS.md`、`docs/validation/` 索引与两个插件 README 的事实、版本、链接和结构；修正过期的发布状态、`F-5` 状态、Makefile 与发布产物描述、DSH/pi 状态段和历史章节措辞；归档 `T061`、`T065` 并补全验证记录索引。不改变产品行为。
+- 契约：[方案索引](./README.md)、[开发循环](./06-development-loop.md#1-最小记录结构)、[验收与交付](./05-validation-and-delivery.md)。
+- 验证日期与环境：2026-10-18，macOS arm64；仅文档检查。
+- 命令与结果：对项目内全部 Markdown 文件检查相对链接与页内锚点，修正 `T058` 的失效锚点；核对 `git tag`、`dist/`、`plugins/*/package.json` 与文档中的 `v0.5.1`、插件版本和 Release 产物一致；`git diff --check` 通过。
+- 验收：链接、锚点、版本引用与跨文档状态一致；文档检查项通过。
+- 未验证与遗留：未运行二进制、平台或宿主测试（纯文档轮次）；`desktop` profile 的 `memctl-dsh` 仍为 `0.4.0`，DSH 界面 npm 安装未验证。
+- 下一步：按需把 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1` 并复验；验证 DSH 界面 npm 包名安装。
 
-## T065：删除 npm 占位版本
+## 近期待办与下一步
 
-- 目标与范围：删除 npm 上由 staged publishing 创建的 `memctl-pi@0.0.0-stage` 占位版本，使 registry 只保留真实版本；不改变源码、二进制或插件行为。
-- 契约：[pi 专用插件](./08-pi-plugin.md#81-npm-主通道)。
-- 验证日期与环境：2026-10-18，npm 账号 `gray0128`，npm 官方 registry。
-- 命令与结果：维护者执行 `npm unpublish memctl-pi@0.0.0-stage --registry=https://registry.npmjs.org` 并完成 2FA。`npm view memctl-pi versions` 返回 `['0.5.0', '0.5.1']`，`dist-tags` 为 `{ latest: '0.5.1' }`；`https://registry.npmjs.org/memctl-pi/0.0.0-stage` 返回 404。删除占位版本后，先前发布的 `0.5.0` 恢复可见。
-- 验收：占位版本已删除，真实版本与 `latest` 正确；任务完成。
-- 未验证与遗留：`0.5.0` 与 `0.5.1` 内容接近，`latest` 保持 `0.5.1`；无其他遗留。
-- 下一步：无需额外操作。
-
-## 近期实施任务
-
-`T058` 已完成：面向 Agent 的 CLI 帮助、中英 i18n 与 `help --json` 目录已交付，`R06` 在无仓库、空 `PATH` 的隔离环境通过。`T052` 已完成：真实 DSH 会话已确认注入、成功轮次 `turn/end` 后同步、轮次内受管写入提交 `61fd68e`、恢复注入、子代理跳过、正常退出兜底、锁忙/断网降级与 tarball 界面安装；`agent/disposed` 因 DSH 没有单会话销毁入口而由单元测试覆盖，npm/目录界面未覆盖，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。`T059` 已完成：`v0.4.0` 已发布，插件版本同步到 `0.4.0`；`desktop` profile 的插件已更新到 `0.4.0`，当前会话 `runtime-context` 快照包含 `memctl:memory`，同步缓存更新为 `synced`。`T060` 已完成并归档到 [阶段 F 归档](./validation/stage-f.md#t060实现-pi-专用插件)：`memctl-pi` 与 `memctl pi plugin-dir` 已实现，隔离 pi `1.3.0` 会话完成注入与收尾验证。`T061` 已完成：`v0.5.0` 已发布，GitHub Actions 运行 `39050077059` 成功，六个发布产物校验通过，本机 memctl 已升级到 `v0.5.0`。`T062` 已完成并归档到 [阶段 F 归档](./validation/stage-f.md#t062真实-pi-会话验证)：pi `1.3.0`/darwin arm64 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级通过，`memctl-pi` 标记为 `verified`；前台子代理不注入登记为宿主限制。`T063` 已完成并归档：`memctl-pi@0.5.1` 已在 npm 官方仓库发布。`T064` 已完成并归档：`v0.5.1` 已发布并通过下载校验，`memctl-dsh@0.5.1` 与 `memctl-pi@0.5.1` 均已在 npm 发布。`T065` 已完成：`memctl-pi@0.0.0-stage` 占位版本已从 npm 删除，`versions` 为 `0.5.0`、`0.5.1`，`latest` 为 `0.5.1`。
-
-未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
+- 没有待实现的交付任务；阶段 A–F 的任务均已完成，最近一轮为 `T066`。
+- 待复验：把本机 `desktop` profile 的 `memctl-dsh` 从 `0.4.0` 升级到 `0.5.1`；在 DSH 界面用 npm 包名安装插件（当前已验证 tarball 界面安装与 npm CLI 安装）。
+- 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
+- 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

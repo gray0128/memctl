@@ -133,6 +133,8 @@ memctl/
     04-ui-and-cli-specification.md
     05-validation-and-delivery.md
     06-development-loop.md   # 开发过程与完成条件
+    07-dsh-plugin.md         # dsh 专用插件
+    08-pi-plugin.md          # pi 专用插件
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配
@@ -171,12 +173,15 @@ memctl/
       index.js
       locale/
       icon.svg
+      README.md
+      LICENSE
       test/       # Node 单元测试，不进入 npm 包
       embed.go
     pi/           # memctl-pi 源文件；npm 包与本地目录共用同一份入口
       package.json
       index.js
       README.md
+      LICENSE
       test/       # Node 单元测试，不进入 npm 包
       embed.go
   scripts/        # 按需：已有重复操作的自动化（如 next-round.sh、release.sh），不放业务逻辑

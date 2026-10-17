@@ -33,7 +33,9 @@
 
 ## 3. 为什么需要独立插件
 
-### 3.1 当前 pi 接入的事实
+### 3.1 原生插件之前的 pi 接入事实
+
+下表是 `T060` 实施前旧 `pi-yaml-hooks` 接入的事实，不代表当前默认接入；迁移后的状态见 [§11](#11-实现状态)。
 
 | 事实 | 证据 | 影响 |
 | --- | --- | --- |
@@ -641,9 +643,9 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 
 ## 11. 实现状态
 
-已实现（`F-1` 至 `F-4`，2026-10-18）：
+已实现并验证（`F-1` 至 `F-5`，2026-10-18）：
 
-- `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
+- `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、`LICENSE`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
 - 生命周期：`start` 后台执行并有 20 秒上限；首个 `before_agent_start` 最多等待 8 秒；正文写入 `sections["memctl"]`，`sections` 缺失或 `forceSystemPrompt` 时回退到替换 `systemPrompt`；`agent_settled` 与 `agent_end` 共用一个 pending 去重；`session_shutdown` 的 `reload` 只清理子进程，其余 reason 分离执行 `end` 并最多等待 1.5 秒。
 - 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.5.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
 - 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1` Release 的插件 tarball 为 `0.5.1`。
@@ -654,7 +656,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 - `go test ./internal/... ./plugins/... -count=1` 与 `go test ./tests/integration -count=1` 通过，覆盖 `I07`、`I08`、`I10` 的合成状态矩阵。
 - 隔离 `PI_CODING_AGENT_DIR` 下 `pi install <plugins/pi>`、`pi list`、`pi remove` 可用；settings 写入相对路径后适配器仍能探测到原生插件。
 - 隔离 pi `1.3.0` 会话使用本地 mock OpenAI 兼容端点和假 memctl：观察到 `start` → 模型请求包含 `<memctl>` section → 进程退出触发 `end`；`agent_settled` 的 `sync` 在 `-p` 立即退出时被 shutdown 取消，最终同步由 `end` 承担，假 memctl 只验证了调用参数。
-- 本机真实 `install --status`：旧路径存在时报告 `configured`、`plugin@2026.9.26` 并提示迁移；迁移到原生插件后报告 `configured`、`plugin@0.5.0`，无 `needs_attention`。
+- 本机真实 `install --status`：旧路径存在时报告 `configured`、`plugin@2026.9.26` 并提示迁移；迁移到原生插件后报告 `configured`、`plugin@0.5.0`（`T062` 验证时），`0.5.1` 已发布到 npm，无 `needs_attention`。
 - 真实 pi `1.3.0`（`deepseek/deepseek-flash`）会话：system sections 含 `<memctl>` 与 `[agent-memory]` 正文；交互式会话两次 `memctl write` 产生提交并同步到远端。
 - RPC 长会话验证 `agent_settled` 后的 `sync` 在 settle 后约 0.7 秒完成、退出码 0；`new_session`、`clone`、`resume` 各自获得正确 SID，每个会话 `start`/`sync`/`end` 各一次。
 - 后台子代理获得独立 SID 与 `start`/`end`；前台子代理不触发会话事件，因此不注入、不单独同步。
@@ -662,9 +664,8 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 
 未验证：
 
-- 非 macOS 平台的运行与进程清理；`memctl-dsh` 的 npm 包；真实模型效果。
-- Windows、Linux、其他 pi 版本及其进程清理。
-- 前台子代理记忆注入；`pi` 版本无法解析与 `sections` 缺失的宿主级回退只由单元测试覆盖。
+- 非 macOS 平台（Windows、Linux）的运行与进程清理；其他 pi 版本。
+- 真实模型效果；前台子代理记忆注入；`pi` 版本无法解析与 `sections` 缺失的宿主级回退只由单元测试覆盖。
 
 因此当前状态是「`F-5` 在 pi `1.3.0`/darwin arm64 完成验证」，不等于宣称所有平台和所有子代理形态已支持。
 
