@@ -201,7 +201,7 @@ CLI 使用同一 `resolve` 接口，不由 Hook 指示 Agent 自行执行不受�
 
 安装器依据明确的宿主和插件版本选择模板，先读取配置并生成计划；检测到不支持的格式或版本时只输出说明。没有插件的宿主不自动被宣称支持 Hook。
 
-支持的宿主为 Claude Code、Codex、Grok、Antigravity、Command Code、OpenCode、pi 与 dsh，各内嵌一份版本匹配的模板。安装器按宿主可执行文件探测版本，按插件清单探测插件版本；两者均可在目标机器上缺失。宿主未探测到，或配置中尚无本工具条目时状态为 `not_installed`；宿主可用但缺少必需插件，或目标配置结构无法安全合并时状态为 `needs_attention`；检测到未内嵌模板的宿主、无法解析的版本或未支持的配置格式时状态为 `unsupported`。写入配置只得到 `configured`，只有宿主实测成功才是 `verified`；宿主实测不在本轮范围。安装不要求已初始化记忆仓库，也不依赖 Node.js。
+支持的宿主为 Claude Code、Codex、Grok、Antigravity、Command Code、OpenCode、pi 与 dsh，各内嵌一份版本匹配的模板。Codex 与 Command Code 的 SessionStart 使用 `--json`，否则宿主会把 Hook 判为失败或忽略注入内容；Antigravity 读取 `$HOME/.gemini/config/hooks.json` 中以 `agent-memory` 为键的命名 Hook，使用 `--agy` 输出宿主所需的 `injectSteps`；OpenCode 2 要求插件默认导出 `{id, setup}` 并订阅 `session.execution.started/succeeded`。安装器按宿主可执行文件探测版本，按插件清单探测插件版本；两者均可在目标机器上缺失。dsh 的插件清单同时探测 `$HOME/.dsh/node_modules`、`$HOME/.dsh/plugins` 与 `$HOME/.dsh/profiles/*/node_modules`，以覆盖按 profile 安装的插件。宿主未探测到，或配置中尚无本工具条目时状态为 `not_installed`；宿主可用但缺少必需插件，或目标配置结构无法安全合并时状态为 `needs_attention`；检测到未内嵌模板的宿主、无法解析的版本或未支持的配置格式时状态为 `unsupported`。写入配置只得到 `configured`，只有宿主实测成功才是 `verified`；各宿主的实测结果记录在 [开发状态](./STATUS.md)，不从 `configured` 推导 `verified`。安装不要求已初始化记忆仓库，也不依赖 Node.js。
 
 每个规范化配置路径使用独立锁，不持仓库锁等待配置安装。安装计划记录每个目标文件的内容修订作为基线；实际写入前重读并比对基线。仅管理带稳定标识的条目：JSON 事件项以命令串包含 `memctl` 识别，YAML 条目以 `id` 前缀 `agent-memory-` 识别，TOML 以 `[features]` 表层下的固定键识别。重复安装不增加重复项，也不覆盖同事件下的用户自有条目、非本工具配置或原有权限。
 

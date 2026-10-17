@@ -339,6 +339,7 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	capture := false
 	wait := false
 	useStdin := false
+	agy := false
 	agent := ""
 	sid := ""
 
@@ -351,6 +352,8 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			wait = true
 		case arg == "--stdin":
 			useStdin = true
+		case arg == "--agy":
+			agy = true
 		case arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "sync", arg+" requires a value")
@@ -381,7 +384,11 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	if !capture && !wait {
-		return runBackgroundSync(stdout, stderr)
+		code := runBackgroundSync(stdout, stderr)
+		if agy {
+			fmt.Fprint(stdout, "{}")
+		}
+		return code
 	}
 
 	cfg, err := loadConfig()
@@ -420,7 +427,11 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		background := os.Getenv("MEMCTL_SYNC_BACKGROUND") == "1"
 		result, err := service.SyncWithOptions(ctx, app.SyncOptions{Interactive: hasTerminal(), Background: background})
 		if !background {
-			printSyncResult(stdout, result)
+			if agy {
+				fmt.Fprint(stdout, "{}")
+			} else {
+				printSyncResult(stdout, result)
+			}
 		}
 		if err != nil {
 			if background {

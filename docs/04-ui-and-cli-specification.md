@@ -11,10 +11,10 @@ memctl <subcommand> [flags] [-- command...]
 | 命令 | 参数 | 行为 |
 | --- | --- | --- |
 | `init [remote-url]` | `--confirm-private` | 按初始化分支创建、克隆或复用；无 URL 默认仅本地；提供 URL 时要求显式私有性与所有权确认 |
-| `start` | `--agent NAME --sid ID --stdin --json` | 尝试同步并输出指引、入口与状态；不捕获外部编辑 |
+| `start` | `--agent NAME --sid ID --stdin --json --agy` | 尝试同步并输出指引、入口与状态；不捕获外部编辑；`--agy` 输出 Antigravity 的 `injectSteps` envelope |
 | `context` | 同 start，另有 `--once` | 按会话缓存同步成功与注入状态；默认每轮注入，`--once` 只控制正文重复输出 |
 | `pull` | `--agent NAME --sid ID --stdin --once` | 与 start 使用同一同步流程，保持 stdout 为空；保留名字但实际可补推本地提交 |
-| `sync` / `end` | `--agent NAME --sid ID --stdin` | 自动路径只尽力触发后台同步，stdout 为空 |
+| `sync` / `end` | `--agent NAME --sid ID --stdin` | 自动路径只尽力触发后台同步，stdout 为空；`sync --agy` 输出 `{}` 供 Antigravity Hook 使用 |
 | `sync` | 另有 `--wait --capture` | `--wait` 等待同步结果；`--capture` 显式接收串行外部编辑；可组合，两者都不适用于低延迟 Hook |
 | `tag` | `--agent NAME --sid ID` | 输出 `agent://<device>/<agent>/<sid>`；身份不能唯一确定时失败 |
 | `wrap` | `--agent NAME -- <cmd...>` | 运行前同步，向子进程传入会话环境，结束后尽力同步，透传退出码和信号语义 |
@@ -56,7 +56,7 @@ memctl <subcommand> [flags] [-- command...]
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
 | `DSH_HOOK_SESSION_ID` | dsh 的兼容身份来源 |
 
-SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如 pi 的 `PI_SESSION_ID`。
+SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如 pi 的 `PI_SESSION_ID`。
 
 缺少 SID 时，start/context 仍可只读注入，但来源标签标为不可用，不做跨进程去重；`tag` 返回错误。受管写入允许人工或未知来源，不伪造 source。`wrap` 可以生成随机会话 ID，并向其子进程导出 `AGENT_MEMORY_SID`、`AGENT_MEMORY_AGENT` 和规范化仓库路径。
 
@@ -77,7 +77,21 @@ URI 每一段分别转义；会话缓存键对完整元组做摘要，不用有�
 }
 ```
 
-`context --json` 使用 `UserPromptSubmit`。各 adapter 决定是否能消费该 envelope；不是所有宿主都支持相同结构。start/context 的 stdout 只包含上下文或单个 JSON 对象，Git 输出与诊断进入脱敏 stderr。
+`context --json` 使用 `UserPromptSubmit`。`start --agy` 输出 Antigravity 要求的另一种 envelope：
+
+```json
+{
+  "injectSteps": [
+    {
+      "systemMessage": {
+        "systemMessage": "[agent-memory] repo=... sync=local\n..."
+      }
+    }
+  ]
+}
+```
+
+各 adapter 决定是否能消费对应 envelope；不是所有宿主都支持相同结构。start/context 的 stdout 只包含上下文或单个 JSON 对象，Git 输出与诊断进入脱敏 stderr。
 
 | 情况 | 退出行为 |
 | --- | --- |

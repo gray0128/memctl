@@ -37,6 +37,7 @@
 - 已完成 `T039`：登记并修复 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1` 快照过期不重试、`P2-2` 冲突解决后同步摘要未刷新、`P3-1` 无上游 ahead/behind 返回 `0`、`P3-2` 图谱标签重叠、`P3-3` 窄屏顶栏错位）；前端新增 `web/src/refresh.js` 的有界过期重试、图谱标签改用文件名并保留完整路径、顶栏窄屏单列布局，后端在 `internal/app/resolve.go` 持久化解决后的同步摘要、`syncSummaryDTO` 改用可空计数；通过 `tests/integration/t039_ui_state_test.go`、`web/src/refresh.test.js` 与 `web/src/graph.test.js` 回归；详见 [T039 归档记录](./validation/stage-d.md#t039ego-browser-端到端-uiux-验证问题收口)。
 - 已完成 `T040`：将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 的应用外壳、导航、顶栏、概览、条目浏览、知识图谱、冲突解决、审计、诊断与整理接入视图的布局、图标、配色与排版，不改变 REST 契约、状态字段与交互流程；前端 14 文件 79 项测试与 `go test ./... -count=1` 全量通过，详见 [T040 完成记录](#t040前端界面重设计)。
 - 已完成 `T041`：新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release` 构建四平台候选包并上传 `dist/` 产物，推送 `v*` 标签时创建 GitHub Release；`v0.1.0` 标签已推送并在 `macos-latest` 上 4 分 34 秒通过，[Release v0.1.0](https://github.com/gray0128/memctl/releases/tag/v0.1.0) 附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`，校验和全部通过，详见 [T041 完成记录](#t041github-构建流水线与-v010-发布)。
+- 已完成 `T042`：修复 v0.1.0 在真实宿主验证中暴露的 adapter 协议偏差（Codex/Command Code 的 `--json`、Antigravity 的 `~/.gemini/config/hooks.json` 命名 Hook 与 `--agy` envelope、OpenCode 2 的 default `setup` 导出与 `session.execution.*` 事件、dsh 的 profile 插件探测），补齐回归并发布 `v0.1.1`；依赖用户「修复并发布新版 release」指令。
 - 阶段 A、B、C、D 的交付与实现审查收口（`T022`、`T027`、`T034`、`T038`）均已完成；跨平台发布候选包、校验和与许可证清单已产出并接入 GitHub 构建流水线，`v0.1.0` 已发布；第 4 节发布前检查逐项有结论；macOS amd64、Linux amd64、Windows amd64 的运行时支持、真实宿主 Hook 与真实 Dreaming runner 未验证；阶段 D 审查发现的 `P3-11`–`P3-16`、`P3-1`/`P3-18` 剩余部分、`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试为已知限制；`G05`/`G07` 沿用 A-3/A-4 场景。
 
 ## 任务
@@ -83,9 +84,10 @@
 | T038 | 已完成 | 收口 [阶段 D 实现审查](./validation/stage-d-review.md) 的 `P1-1`–`P1-4`、`P2-1`–`P2-12`、`P3-2`–`P3-10` 与 `P3-17`，`P3-1`、`P3-18` 部分修复，`P3-11`–`P3-16` 登记为已知限制；只修复既有契约违背并补齐回归证据，不新增产品能力；依赖阶段 D 全部实现；[归档证据](./validation/stage-d.md#t038阶段-d-实现审查收口修复) |
 | T039 | 已完成 | 收口 [ego-browser 端到端 UI/UX 验证](./validation/ui-ux-verification.md) 发现的 5 项问题（`P2-1`、`P2-2`、`P3-1`–`P3-3`）：快照过期有界重试、冲突解决后刷新同步摘要、无上游 ahead/behind 返回 `null`、图谱标签改用文件名、窄屏顶栏布局；依赖 `T038` 与用户确认的收口指令；[归档记录](./validation/stage-d.md#t039ego-browser-端到端-uiux-验证问题收口) |
 | T040 | 已完成 | 将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 各视图的布局、图标、配色与排版；不改变 REST 契约、状态字段与交互流程；依赖用户「纳入发布」指令；[完成记录](#t040前端界面重设计) |
+| T042 | 已完成 | 修复 v0.1.0 的 Codex/Command Code `--json`、Antigravity 命名 Hook 与 `--agy` envelope、OpenCode 2 插件协议、dsh profile 插件探测；补回归并发布 `v0.1.1`；依赖用户「修复并发布新版 release」指令；[完成记录](#t042修复真实宿主-adapter-协议并发布-v011) |
 | T041 | 已完成 | 新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签与手动触发时调用 `make release` 构建四平台候选包并上传产物，`v*` 标签发布 GitHub Release；依赖 `T040` 与用户「版本号 0.1.0」指令；[完成记录](#t041github-构建流水线与-v010-发布) |
 
-任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040`、`T041` 已完成并发布 `v0.1.0`；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040`、`T041` 已完成并发布 `v0.1.0`，`T042` 已完成并交付 `v0.1.1`；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
@@ -109,8 +111,18 @@
 - 未验证与遗留：流水线只在 GitHub 托管 runner 上验证；`macos-latest` 之外的平台仍只做交叉编译，运行、生命周期与隔离保持未验证。
 - 下一步：本轮完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户确认。
 
+
+## T042：修复真实宿主 adapter 协议并发布 v0.1.1
+
+- 目标与范围：修复真实宿主验证暴露的 adapter 协议偏差，并发布 `v0.1.1`。Codex 与 Command Code 的 SessionStart 增加 `--json`；Antigravity 改为读写 `$HOME/.gemini/config/hooks.json` 的 `agent-memory` 命名 Hook，新增 `start --agy` 的 `injectSteps` envelope 与 `sync --agy` 的 `{}` 输出，并把 `conversationId` 纳入 SID；OpenCode 插件改为兼容 OpenCode 2 的 default `{id, setup}` 导出，订阅 `session.execution.started/succeeded`，同时保留 v1 命名导出；dsh 插件清单支持 `$HOME/.dsh/profiles/*/node_modules`。同步修正 `install --status` 的模板识别，并补对应单元与集成测试。不新增业务功能，不改变记忆仓库格式、REST 契约或同步状态机。
+- 契约：[Agent 配置安装](./03-workflows-and-dataflows.md#7-agent-配置安装)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[Hook 输入输出](./04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[会话身份](./04-ui-and-cli-specification.md#2-环境变量与会话身份)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；真实宿主：Codex 0.160.0、Command Code 1.84.0、Antigravity 1.4.0、OpenCode 2.0.26、pi 1.3.0（插件 2026.9.26）、Grok 1.0.60、dsh 0.2.1-rc.1（插件 0.2.15）；执行者为主会话。
+- 命令与结果：`make test` 全量通过（前端 14 文件 79 项；Go 含 `tests/integration` 259.1 秒）；新增 `TestT042AntigravityHookProtocol`（`conversationId` 作为 SID、`start --agy` 输出 `injectSteps`、`sync --agy` 输出 `{}`）、`TestAntigravityNamedHookMerge`（保留 `orca-status`、命名 Hook 幂等、陈旧受管项替换）、`TestDshPluginProfileDetection`（profile 插件探测与写入）、`TestRegistryHostProtocols`（Codex/Command Code `--json`、Antigravity 路径与 envelope、OpenCode 2 导出与事件、dsh profile glob）；`TestC3EmbeddedTemplatesCoverR01` 扩展为从内嵌模板安装 Codex、Command Code、Antigravity 与 OpenCode 2 并检查关键协议。真实宿主复验：pi、Grok、Antigravity、OpenCode、Command Code 启动并触发 Hook；Codex 在 `--dangerously-bypass-hook-trust` 下 `SessionStart Completed`，会话缓存记录注入成功，模型调用因账号额度限制未完成；dsh 插件加载并注册 `dsh-hooks-authoring` 技能，`/dsh-hooks/recent` 返回 200，`memctl` 以样例载荷验证 SessionStart/SessionEnd。`VERSION=v0.1.1 scripts/release.sh` 产出四个候选二进制与三个元数据文件。
+- 未验证与遗留：Codex 模型回复受账号额度限制（提示 2026-10-22 恢复）；dsh 当前会话启动早于全局 `hooks.json` 写入，SessionStart 需重启或新会话触发；macOS amd64、Linux amd64、Windows amd64 仍只有交叉编译；`dsh-hooks-plugin@0.2.15` 与 DSH 0.2.1-rc.1 的 peer 版本不匹配，已按用户授权使用精确版本豁免安装。
+- 下一步：`v0.1.1` 发布完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
 ## 近期实施任务
 
-阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
+阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)；`T042` 见 [修复真实宿主 adapter 协议](#t042修复真实宿主-adapter-协议并发布-v011)。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，`T042` 已完成并发布 `v0.1.1`；按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
 
-剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；真实宿主 Hook 注入与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计未做浏览器端 UI/UX 复验，浏览器视觉交互结论仍以 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与单元测试为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
+剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；Codex 模型额度限制下的完整回复、dsh 重启后的 SessionStart 事件与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计未做浏览器端 UI/UX 复验，浏览器视觉交互结论仍以 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与单元测试为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。

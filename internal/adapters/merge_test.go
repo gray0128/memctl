@@ -278,3 +278,61 @@ hooks:
 		t.Fatalf("second merge must be a no-op, got:\n%s", second)
 	}
 }
+
+func antigravitySpec() ArtifactSpec {
+	return ArtifactSpec{Kind: KindMerge, ContainerPath: []string{"agent-memory"}, Asset: "antigravity/hooks.json"}
+}
+
+// TestAntigravityNamedHookMerge covers the real Antigravity 1.4 layout:
+// ~/.gemini/config/hooks.json is a map of hook names, and memctl owns the
+// "agent-memory" entry without touching other named hooks.
+func TestAntigravityNamedHookMerge(t *testing.T) {
+	src := `{
+  "orca-status": {
+    "Stop": [
+      { "type": "command", "command": "orca-hook" }
+    ]
+  }
+}
+`
+	merged, changed := mustMerge(t, antigravitySpec(), src)
+	if !changed {
+		t.Fatal("first antigravity merge must change the file")
+	}
+	for _, want := range []string{
+		`"orca-status"`,
+		`"agent-memory"`,
+		"start --agent antigravity --stdin --agy",
+		"sync --agent antigravity --stdin --agy",
+		`"PostInvocation"`,
+		`"Stop"`,
+	} {
+		if !strings.Contains(merged, want) {
+			t.Fatalf("merged output missing %q:\n%s", want, merged)
+		}
+	}
+	if count := strings.Count(merged, "memctl"); count != 3 {
+		t.Fatalf("expected three managed antigravity commands, got %d:\n%s", count, merged)
+	}
+
+	second, changed := mustMerge(t, antigravitySpec(), merged)
+	if changed {
+		t.Fatalf("second antigravity merge must be a no-op, got:\n%s", second)
+	}
+
+	stale := `{
+  "agent-memory": {
+    "SessionStart": [
+      { "type": "command", "command": "old /opt/memctl start --agent antigravity --stdin" }
+    ]
+  }
+}
+`
+	merged, changed = mustMerge(t, antigravitySpec(), stale)
+	if !changed || strings.Contains(merged, "/opt/memctl") {
+		t.Fatalf("stale antigravity command was not replaced:\n%s", merged)
+	}
+	if count := strings.Count(merged, "memctl"); count != 3 {
+		t.Fatalf("expected exactly three managed antigravity commands after replacement, got %d:\n%s", count, merged)
+	}
+}

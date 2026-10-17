@@ -27,12 +27,13 @@ type sessionFlags struct {
 	sid      string
 	useStdin bool
 	asJSON   bool
+	agy      bool
 	once     bool
 }
 
 // parseSessionFlags parses the Hook command flags. allowJSON is false for pull;
-// allowOnce is false for start.
-func parseSessionFlags(cmd string, args []string, allowJSON, allowOnce bool, stderr io.Writer) (sessionFlags, int) {
+// allowOnce is false for start; allowAGY is true only for start.
+func parseSessionFlags(cmd string, args []string, allowJSON, allowOnce, allowAGY bool, stderr io.Writer) (sessionFlags, int) {
 	var flags sessionFlags
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -44,6 +45,11 @@ func parseSessionFlags(cmd string, args []string, allowJSON, allowOnce bool, std
 				return flags, usageError(stderr, cmd, "--json is not supported for this command")
 			}
 			flags.asJSON = true
+		case arg == "--agy":
+			if !allowAGY {
+				return flags, usageError(stderr, cmd, "--agy is not supported for this command")
+			}
+			flags.agy = true
 		case arg == "--once":
 			if !allowOnce {
 				return flags, usageError(stderr, cmd, "--once is not supported for this command")
@@ -73,7 +79,7 @@ func parseSessionFlags(cmd string, args []string, allowJSON, allowOnce bool, std
 // runStart implements `start --agent NAME --sid ID --stdin --json`, the
 // SessionStart hook.
 func runStart(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	flags, code := parseSessionFlags("start", args, true, false, stderr)
+	flags, code := parseSessionFlags("start", args, true, false, true, stderr)
 	if code != ExitOK {
 		return code
 	}
@@ -83,7 +89,7 @@ func runStart(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // runContext implements `context [--once] --agent NAME --sid ID --stdin
 // --json`, the UserPromptSubmit hook.
 func runContext(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	flags, code := parseSessionFlags("context", args, true, true, stderr)
+	flags, code := parseSessionFlags("context", args, true, true, false, stderr)
 	if code != ExitOK {
 		return code
 	}
@@ -93,7 +99,7 @@ func runContext(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // runPull implements `pull --agent NAME --sid ID --stdin --once`. It uses the
 // same synchronization flow as start but writes nothing to stdout.
 func runPull(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	flags, code := parseSessionFlags("pull", args, false, true, stderr)
+	flags, code := parseSessionFlags("pull", args, false, true, false, stderr)
 	if code != ExitOK {
 		return code
 	}
@@ -137,12 +143,19 @@ func runSessionCommand(cmd string, flags sessionFlags, event string, stdin io.Re
 	}
 
 	if cmd != "pull" && outcome.Inject {
-		if flags.asJSON {
+		switch {
+		case flags.agy:
+			if err := hookio.EncodeInjectSteps(stdout, outcome.Body); err != nil {
+				return fail(stderr, cmd, err)
+			}
+		case flags.asJSON:
 			if err := hookio.Encode(stdout, event, outcome.Body); err != nil {
 				return fail(stderr, cmd, err)
 			}
-		} else if _, err := io.WriteString(stdout, outcome.Body); err != nil {
-			return fail(stderr, cmd, err)
+		default:
+			if _, err := io.WriteString(stdout, outcome.Body); err != nil {
+				return fail(stderr, cmd, err)
+			}
 		}
 		service.MarkSessionInjected(agent, sid)
 	}

@@ -372,3 +372,30 @@ func TestRecoverSkipsJournalPathsOutsideRegistry(t *testing.T) {
 		t.Fatalf("unregistered content changed: %q (%v)", got, err)
 	}
 }
+
+// TestDshPluginProfileDetection covers the real dsh layout: the plugin is
+// installed under a named profile directory, not directly under ~/.dsh.
+func TestDshPluginProfileDetection(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.1\n"})
+	manifest := filepath.Join(home, ".dsh", "profiles", "desktop", "node_modules", "dsh-hooks-plugin", "package.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte(`{"name":"dsh-hooks-plugin","version":"0.2.15"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if !plan.Applicable || plan.Status != StatusNotInstalled || plan.PluginVersion != "0.2.15" {
+		t.Fatalf("dsh plan must detect the profile plugin: %+v", plan)
+	}
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); err != nil {
+		t.Fatalf("dsh hooks config was not written: %v", err)
+	}
+}

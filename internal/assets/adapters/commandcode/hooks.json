@@ -1,7 +1,7 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent commandcode --stdin" }] }
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent commandcode --stdin --json" }] }
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent commandcode --stdin" }] }

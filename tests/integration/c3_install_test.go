@@ -264,7 +264,7 @@ func TestC3EmbeddedTemplatesCoverR01(t *testing.T) {
 		}
 	}
 
-	harness.addHost("opencode", "1.0.0")
+	harness.addHost("opencode", "2.0.26")
 	code, stdout, stderr = harness.run("install", "opencode")
 	if code != 0 {
 		t.Fatalf("opencode install exit = %d (stderr=%q)", code, stderr)
@@ -274,7 +274,50 @@ func TestC3EmbeddedTemplatesCoverR01(t *testing.T) {
 	if err != nil {
 		t.Fatalf("embedded opencode template was not written: %v", err)
 	}
-	if !strings.Contains(string(data), "memctl") {
-		t.Fatalf("opencode plugin is not the embedded template:\n%s", data)
+	for _, want := range []string{"memctl", "export default", "session.execution.started"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("opencode plugin missing %q:\n%s", want, data)
+		}
+	}
+
+	harness.addHost("codex", "0.160.0")
+	code, _, stderr = harness.run("install", "codex")
+	if code != 0 {
+		t.Fatalf("codex install exit = %d (stderr=%q)", code, stderr)
+	}
+	codexHooks, err := os.ReadFile(filepath.Join(harness.home, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatalf("codex hooks were not written: %v", err)
+	}
+	if !strings.Contains(string(codexHooks), "start --agent codex --stdin --json") {
+		t.Fatalf("codex hooks do not request the JSON envelope:\n%s", codexHooks)
+	}
+
+	harness.addHost("commandcode", "1.84.0")
+	code, _, stderr = harness.run("install", "commandcode")
+	if code != 0 {
+		t.Fatalf("commandcode install exit = %d (stderr=%q)", code, stderr)
+	}
+	commandcodeSettings, err := os.ReadFile(filepath.Join(harness.home, ".commandcode", "settings.json"))
+	if err != nil {
+		t.Fatalf("commandcode settings were not written: %v", err)
+	}
+	if !strings.Contains(string(commandcodeSettings), "start --agent commandcode --stdin --json") {
+		t.Fatalf("commandcode hooks do not request the JSON envelope:\n%s", commandcodeSettings)
+	}
+
+	harness.addHost("agy", "1.4.0")
+	code, _, stderr = harness.run("install", "antigravity")
+	if code != 0 {
+		t.Fatalf("antigravity install exit = %d (stderr=%q)", code, stderr)
+	}
+	agyHooks, err := os.ReadFile(filepath.Join(harness.home, ".gemini", "config", "hooks.json"))
+	if err != nil {
+		t.Fatalf("antigravity hooks were not written: %v", err)
+	}
+	for _, want := range []string{`"agent-memory"`, "start --agent antigravity --stdin --agy", `"PostInvocation"`} {
+		if !strings.Contains(string(agyHooks), want) {
+			t.Fatalf("antigravity hooks missing %q:\n%s", want, agyHooks)
+		}
 	}
 }

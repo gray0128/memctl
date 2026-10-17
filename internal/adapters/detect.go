@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -101,8 +102,8 @@ func (env Env) detect(spec AdapterSpec) detection {
 	if spec.Plugin == nil {
 		return result
 	}
-	for _, manifest := range spec.Plugin.Manifests {
-		data, err := env.readFile(env.expand(manifest))
+	for _, manifest := range env.expandManifests(spec.Plugin.Manifests) {
+		data, err := env.readFile(manifest)
 		if err != nil {
 			continue
 		}
@@ -117,6 +118,26 @@ func (env Env) detect(spec AdapterSpec) detection {
 		break
 	}
 	return result
+}
+
+// expandManifests resolves $HOME and expands glob candidates. Profile-based
+// hosts such as dsh store plugins under a named profile directory, so a fixed
+// manifest list cannot cover every profile name.
+func (env Env) expandManifests(templates []string) []string {
+	out := make([]string, 0, len(templates))
+	for _, template := range templates {
+		expanded := env.expand(template)
+		if !strings.ContainsAny(expanded, "*?[") {
+			out = append(out, expanded)
+			continue
+		}
+		matches, err := filepath.Glob(expanded)
+		if err != nil {
+			continue
+		}
+		out = append(out, matches...)
+	}
+	return out
 }
 
 func (env Env) runVersion(path string) string {

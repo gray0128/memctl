@@ -118,10 +118,10 @@ var registry = []AdapterSpec{
 		Agent:        "antigravity",
 		HostCommands: []string{"antigravity", "agy"},
 		Artifacts: []ArtifactSpec{{
-			PathTemplate:  "$HOME/.gemini/settings.json",
+			PathTemplate:  "$HOME/.gemini/config/hooks.json",
 			Kind:          KindMerge,
 			Capability:    CapabilityHooks,
-			ContainerPath: []string{"hooks"},
+			ContainerPath: []string{"agent-memory"},
 			Asset:         "antigravity/hooks.json",
 		}},
 	},
@@ -168,6 +168,7 @@ var registry = []AdapterSpec{
 			Manifests: []string{
 				"$HOME/.dsh/node_modules/dsh-hooks-plugin/package.json",
 				"$HOME/.dsh/plugins/dsh-hooks-plugin/package.json",
+				"$HOME/.dsh/profiles/*/node_modules/dsh-hooks-plugin/package.json",
 			},
 		},
 		Artifacts: []ArtifactSpec{{

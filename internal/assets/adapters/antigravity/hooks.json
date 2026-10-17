@@ -1,13 +1,25 @@
 {
-  "hooks": {
+  "agent-memory": {
     "SessionStart": [
-      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent antigravity --stdin" }] }
+      {
+        "type": "command",
+        "command": "\"$HOME/.agent-memory/bin/memctl\" start --agent antigravity --stdin --agy",
+        "timeout": 30
+      }
     ],
-    "AfterAgent": [
-      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent antigravity --stdin" }] }
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent antigravity --stdin --agy",
+        "timeout": 30
+      }
     ],
-    "SessionEnd": [
-      { "matcher": "*", "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent antigravity --stdin" }] }
+    "Stop": [
+      {
+        "type": "command",
+        "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent antigravity --stdin --agy",
+        "timeout": 30
+      }
     ]
   }
 }

@@ -21,6 +21,7 @@ func TestReadInputSessionIDPriority(t *testing.T) {
 		{name: "session_id", input: `{"session_id":"a"}`, want: "a"},
 		{name: "sessionId", input: `{"sessionId":"b"}`, want: "b"},
 		{name: "sessionID", input: `{"sessionID":"c"}`, want: "c"},
+		{name: "conversationId", input: `{"conversationId":"d"}`, want: "d"},
 		{name: "session_id wins over sessionId", input: `{"session_id":"a","sessionId":"b"}`, want: "a"},
 		{name: "empty session_id falls through", input: `{"session_id":"","sessionId":"b"}`, want: "b"},
 		{name: "null falls through", input: `{"session_id":null,"sessionId":"b"}`, want: "b"},
@@ -132,6 +133,26 @@ func TestTagEscapesSegments(t *testing.T) {
 	want := "agent://dev%20ice/a%2Fb/s:1"
 	if got != want {
 		t.Fatalf("Tag = %q, want %q", got, want)
+	}
+}
+
+func TestEncodeInjectSteps(t *testing.T) {
+	var buf bytes.Buffer
+	if err := EncodeInjectSteps(&buf, "hello \"world\""); err != nil {
+		t.Fatalf("EncodeInjectSteps: %v", err)
+	}
+	var decoded struct {
+		InjectSteps []struct {
+			SystemMessage struct {
+				SystemMessage string `json:"systemMessage"`
+			} `json:"systemMessage"`
+		} `json:"injectSteps"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode injectSteps: %v", err)
+	}
+	if len(decoded.InjectSteps) != 1 || decoded.InjectSteps[0].SystemMessage.SystemMessage != "hello \"world\"" {
+		t.Fatalf("unexpected injectSteps payload: %s", buf.String())
 	}
 }
 

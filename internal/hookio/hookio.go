@@ -31,7 +31,7 @@ const (
 )
 
 // sessionIDKeys are the payload keys consumed in priority order.
-var sessionIDKeys = []string{"session_id", "sessionId", "sessionID"}
+var sessionIDKeys = []string{"session_id", "sessionId", "sessionID", "conversationId"}
 
 // Input is the session identity subset of a Hook payload.
 type Input struct {
@@ -146,6 +146,30 @@ func Encode(w io.Writer, eventName, additionalContext string) error {
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(payload); err != nil {
 		return memerr.Wrap(memerr.IOFailed, err, "cannot write the hook output envelope")
+	}
+	return nil
+}
+
+// EncodeInjectSteps writes the Antigravity SessionStart envelope. Antigravity
+// expects a JSON object on stdout and only consumes system messages from
+// injectSteps; `start --agy` uses this shape instead of hookSpecificOutput.
+func EncodeInjectSteps(w io.Writer, additionalContext string) error {
+	type systemMessage struct {
+		SystemMessage string `json:"systemMessage"`
+	}
+	type injectStep struct {
+		SystemMessage systemMessage `json:"systemMessage"`
+	}
+	payload := struct {
+		InjectSteps []injectStep `json:"injectSteps"`
+	}{
+		InjectSteps: []injectStep{{SystemMessage: systemMessage{SystemMessage: additionalContext}}},
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(payload); err != nil {
+		return memerr.Wrap(memerr.IOFailed, err, "cannot write the Antigravity hook output envelope")
 	}
 	return nil
 }
