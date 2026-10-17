@@ -27,8 +27,8 @@
 | [P2-8](#p2-8dreampanel-把任何-unsupported-当作缺沙箱并永久禁用) | P2 | `web/src` | 缺少 runner 的 `UNSUPPORTED` 被当成沙箱不可用，生成被永久禁用 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui)、`D01` |
 | [P2-9](#p2-9生成任务并发无上限) | P2 | `internal/server` | 每次 preview 无上限派生沙箱 runner | [HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全) |
 | [P2-10](#p2-10release-info-硬编码-darwinarm64-为已验证) | P2 | `scripts/release.sh` | 在非 darwin/arm64 构建宿主上仍声称该平台已运行验收 | [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查) |
-| [P2-11](#p2-11go-list-失败被吞掉产出无-go-许可证的完整-release) | P2 | `scripts/release.sh` | 进程替换失败不触发 `set -e`，许可证文件可不含任何 Go 条目 | [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包) |
-| [P2-12](#p2-12直接运行-release-可内嵌过期前端) | P2 | `scripts/release.sh` | 缺少 `web/dist` 新鲜度检查，可直接重跑并打包旧 UI | [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包) |
+| [P2-11](#p2-11go-list-失败被吞掉产出无-go-许可证的完整release) | P2 | `scripts/release.sh` | 进程替换失败不触发 `set -e`，许可证文件可不含任何 Go 条目 | [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包) |
+| [P2-12](#p2-12直接运行-releasesh-可内嵌过期前端) | P2 | `scripts/release.sh` | 缺少 `web/dist` 新鲜度检查，可直接重跑并打包旧 UI | [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包) |
 | [P3-1](#p3-1重复-apply-结果缺少-required-字段) | P3 | `internal/app` | 幂等重复 apply 返回空 `syncState`，缺 `transactionId`/`revision` | [MutationResult](../02-domain-models-and-contracts.md#22-同步与恢复) |
 | [P3-2](#p3-2sse-客户端丢弃-dreamupdated) | P3 | `web/src` | 客户端只处理 `vault.updated`/`resync.required`，`dream.updated` 被丢弃 | [SSE 与缓存](../02-domain-models-and-contracts.md#5-sse-与缓存) |
 | [P3-3](#p3-3查询当前提案-id-永久停留在加载态) | P3 | `web/src` | 查询同一 proposalId 时 effect 不重跑，界面停在加载 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui) |

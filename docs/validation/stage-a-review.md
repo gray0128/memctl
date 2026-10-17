@@ -52,7 +52,7 @@
 
 ### P1-3：前台 Git 子进程未经过统一环境白名单过滤
 
-- **位置**：[`internal/git/exec.go`](../../internal/git/exec.go)（`childEnv` 第 109–115 行）、[`internal/git/git.go`](../../internal/git/git.go)（`scrubEnv` 第 270–280 行）对比 [`internal/syncer/env.go`](../../internal/syncer/env.go)（`SyncEnv` 第 11–55 行）
+- **位置**：[`internal/git/exec.go`](../../internal/git/exec.go)（`childEnv` 第 109–115 行）、[`internal/git/git.go`](../../internal/git/git.go)（`scrubEnv` 第 270–280 行）对比 [`internal/git/env.go`](../../internal/git/env.go)（`SyncEnv` 第 55 行；审查时位于 `internal/syncer/env.go`，`T022` 收口后下沉至 `internal/git`）
 - **关联契约**：[凭据与信任边界](../01-architecture-and-modules.md#34-凭据与信任边界) 与 [凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理) 规定：「凭据与网络环境另按固定白名单传递……前台使用调用方环境中的白名单项；后台派生只获得父进程传入的白名单快照……该白名单是全项目唯一定义」。
 - **触发与机制**：`syncer.SyncEnv` 仅在后台派生的 [`internal/syncer/spawn.go`](../../internal/syncer/spawn.go)（第 36 行）中被调用；前台 Git 命令通过 `childEnv` 启动，仅调用 `scrubEnv` 剔除了 9 个仓库重定向变量（`GIT_DIR` 等），将调用方环境中其余全部变量（包括宿主私有 API Key、`GIT_EXEC_PATH`、`GIT_EXTERNAL_DIFF`、`GIT_TEMPLATE_DIR` 等）原样透传给 Git 及其派生的钩子与凭据辅助进程。
 - **修复建议**：将单一环境白名单下沉或共享至 `internal/git`，使前台与后台 Git 子进程统一按同一份白名单构造环境变量。

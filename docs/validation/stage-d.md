@@ -196,3 +196,12 @@
 - 命令与结果：本文件与 [阶段 D 归档](./stage-d.md) 的本地链接、标题锚点逐条校验全部有效（全仓 20 份文档 854 条本地链接，另有 4 条既有失效链接记入遗留）；`STATUS.md` 只剩 `T049` 一条完成记录，`T040`–`T047` 记录位于阶段 D 归档；`git diff --check` 无输出，行尾空白与弯引号扫描无匹配。
 - 未验证与遗留：产品行为未变，验证结论沿用 `T046` 与各归档记录；[阶段 D 归档](./stage-d.md) 中 `T037`、`T039` 记录原有 21 处指向 `./0x-` 与 `./validation/` 的相对链接因目录层级错误已失效，本轮一并修正；全仓仍有 4 处既有失效链接未修：[阶段 A 审查](./stage-a-review.md) 指向不存在的 `internal/syncer/env.go`，[阶段 C 审查](./stage-c-review.md) 的 `P1-4`、[阶段 D 审查](./stage-d-review.md) 的 `P2-11`、`P2-12` 标题锚点与正文标题不一致；`T048` 仍等待用户确认。
 - 下一步：`T048` 待开始，按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
+### T050：根 README 重构
+
+- 目标与范围：把根 [README](../../README.md) 从按阶段堆叠的进度叙述改为当前可用方式说明：新增版本与平台状态、下载或构建入口、快速开始、能力表、平台与限制、文档入口；删除 2160 字的单段进度流水和 `internal/` 全量目录注释，改为简短目录概览并链接 [架构文档](../01-architecture-and-modules.md#5-目录结构与依赖)；命令行为细节压为 4 条要点并链接 [CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令) 与 [REST 契约](../02-domain-models-and-contracts.md#4-rest-契约)。不改产品代码与契约。
+- 契约：[最小记录结构](../06-development-loop.md#1-最小记录结构)（根 README 只记录入口与可用方式）、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[方案索引](../README.md)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64；执行者为主会话。纯文档任务，未运行 Go 与前端构建测试。
+- 命令与结果：全仓 20 份文档的本地链接与标题锚点逐条校验通过，[根 README](../../README.md) 内链接全部有效；`README.md` 由 157 行降至 126 行，原 2160 字进度段落已移除；命令、参数、退出码与发布产物名称逐项对照 [CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令) 与 [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)；`git diff --check` 无输出，行尾空白与弯引号扫描无匹配。
+- 未验证与遗留：未在真实终端或浏览器中执行 README 的示例命令；[Web UI](../04-ui-and-cli-specification.md#4-web-ui) 的视图表只列 5 个业务视图，与当前 7 个导航视图（含概览、诊断）不一致，属契约文档遗留，本轮未改；`T048` 仍未开始。
+- 下一步：`T048` 待开始，按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
