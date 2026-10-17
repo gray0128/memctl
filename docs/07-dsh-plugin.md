@@ -494,7 +494,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 3. 更新 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的验收 ID 和阶段计划。
 4. `D1` 已确认取 A；`D2`、`D3` 可先按可选处理，后续再确认。
 
-上述 `E-1` 至 `E-4` 已由 `T048` 实现；`E-5` 的真实 DSH 会话验证未执行，登记为 `T052`。实现状态见 [§13](#13-实现状态)。
+上述 `E-1` 至 `E-4` 已由 `T048` 实现；`E-5` 已在本机 `desktop` 真实会话确认上下文注入，剩余项由进行中的 `T052` 跟踪。实现状态见 [§13](#13-实现状态)。
 
 ## 11. 类似项目调研
 
@@ -538,10 +538,10 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
 - `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.2.0` Release 已附带 `memctl-dsh-0.2.0.tgz`，本机安装的 darwin/arm64 二进制与发布校验和一致。
-- 验证证据：插件 Node 单元测试 13 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。
+- 验证证据：插件 Node 单元测试 13 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.2.0`。
 
 未验证：
 
-- 真实 DSH 会话中的 `systemPrompt.context` 快照、首轮前注入、`turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；当前只有假宿主单元测试，`T052` 跟踪。
+- 真实 DSH 会话中的 `turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；`systemPrompt.context` 快照已在本机 `desktop` 会话出现，其余项由 `T052` 跟踪。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
 - npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。
