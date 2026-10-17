@@ -100,8 +100,8 @@
 
 - 目标与范围：按 `tech-doc-style-chinese` 检查 `internal/cli/help_data.go` 的中文帮助（概览与 21 个命令页），优化术语、引号、留白与信息层级，并修正与 [帮助契约](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n) 和实现不一致的表述；只改中文帮助文本，不改命令行为、英文帮助与 JSON 结构。
 - 契约：[面向 Agent 的帮助与中英 i18n](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)、[环境变量与会话身份](./04-ui-and-cli-specification.md#2-环境变量与会话身份)。
-- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，`memctl v0.5.1` 工作树。
-- 命令与结果：`gofmt -l internal/cli`、`go vet ./internal/cli/` 无输出；`go test ./...` 全部通过（`tests/integration` 237.2 s）；`./bin/memctl help` 与 20 个 `help <command> --lang zh` 逐页人工复核，并以脚本检查中西文留白、直角引号与重复空格，0 处问题；`help --lang en` 与 `help --lang zh --json` 输出结构不变（`schemaVersion` 1、21 个命令条目）。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，`memctl v0.5.1` 工作树（发布前）。
+- 命令与结果：`gofmt -l internal/cli`、`go vet ./internal/cli/` 无输出；`go test ./...` 全部通过（`tests/integration` 237.2 s）；`./bin/memctl help` 与 21 个 `help <command> --lang zh` 逐页人工复核，并以脚本检查中西文留白、直角引号与重复空格，0 处问题；`help --lang en` 与 `help --lang zh --json` 输出结构不变（`schemaVersion` 1、21 个命令条目）。
 - 主要修改：把 `--sid`、`AGENT_MEMORY_*`、`~/memory`、`0`/`false` 等机器可读值统一改为行内代码；删除 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`MEMCTL_LANG`、`LC_ALL/LC_MESSAGES/LANG` 四项与实现不符的 `none`/`auto` 默认值（实现只打印非空默认值）；把分散在各选项里的互斥规则合并到「说明」，删去逐项重复；`update` 示例由「然后重启 memctl」改为「重启 memctl 后生效」，与实现一致；全角引号改为直角引号；「逃逸路径」「首推」「环回」等表述改为「越出仓库的路径」「首次推送」「回环」，并补全 `wrap`、`resolve`、`install` 等页面缺失的主语与动作。
 - 验收：中文帮助术语、排版与事实一致；帮助渲染与 JSON 结构未变；Go 全量测试通过。
 - 未验证与遗留：未验证终端宽度、颜色或字体渲染（帮助文本不使用 ANSI 颜色，也不探测终端宽度）；未改变英文帮助文本。
