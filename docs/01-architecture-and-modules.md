@@ -156,6 +156,7 @@ memctl/
   web/
     embed.go      # 前端内嵌入口
     src/          # 前端源码及组件测试
+    scripts/      # 发布辅助：npm 依赖许可证清单生成
     vite.config.js
     package.json
     package-lock.json
@@ -163,7 +164,7 @@ memctl/
   tests/
     integration/  # CLI、Git、HTTP 和故障恢复集成测试
     testdata/     # 跨模块使用的合成输入和预期输出
-  scripts/        # 按需：已有重复操作的自动化，不放业务逻辑
+  scripts/        # 按需：已有重复操作的自动化（如 next-round.sh、release.sh），不放业务逻辑
   .github/
     workflows/    # 按需：调用真实构建入口的 CI
   脚本化实现参考/  # 原始参考，不作为源码、fixture 或发布资产

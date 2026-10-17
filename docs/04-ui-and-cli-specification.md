@@ -167,13 +167,14 @@ func DistFS() (fs.FS, error) {
 
 兼容读取 `$STATE/INSTRUCTIONS.md` 作为用户显式创建的附加指引，不覆盖内嵌安全规则、不自动执行其中命令，输出时标明来源。升级不改写该文件；不存在时全部功能仍可运行。
 
-以下 Makefile 是 POSIX 构建机上的候选产物构建示例，Windows 运行支持仍需对应平台测试：
+以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试再由 `scripts/release.sh` 交叉编译四个候选二进制并生成发布元数据。Windows 运行支持仍需对应平台测试。
 
 ```makefile
+GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install release
+.PHONY: all ui build test install clean release
 all: build
 
 ui:
@@ -181,22 +182,23 @@ ui:
 
 test: ui
 	cd web && npm test
-	go test ./...
+	$(GO) test ./...
 
 build: ui
 	mkdir -p bin
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/memctl ./cmd/memctl
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/memctl ./cmd/memctl
 
 install: build
 	mkdir -p "$(HOME)/.agent-memory/bin"
 	install -m 755 bin/memctl "$(HOME)/.agent-memory/bin/memctl"
 
 release: test
-	mkdir -p dist
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/memctl-darwin-arm64 ./cmd/memctl
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/memctl-darwin-amd64 ./cmd/memctl
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/memctl-linux-amd64 ./cmd/memctl
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/memctl-windows-amd64.exe ./cmd/memctl
+	VERSION="$(VERSION)" scripts/release.sh
+
+clean:
+	rm -rf bin dist coverage web/dist
 ```
+
+`make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及三个元数据文件：`SHA256SUMS`（四个二进制的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
 运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。
