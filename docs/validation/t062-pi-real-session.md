@@ -44,6 +44,21 @@ pi: configured host=pi@1.3.0 plugin@0.5.0
 
 `agent_settled` 触发的 `sync` 在 `-p` 立即退出时被 shutdown 取消并记录 `sync exited with SIGTERM`；最终同步由 `end` 完成。该行为符合 [§6.9](../08-pi-plugin.md#69-进程超时与输出) 的设计，交互式会话的 `sync` 完成路径仍待验证。
 
+### 交互式写入与同步（H12 部分）
+
+用户在真实 pi TUI 会话 `01a14ac7-3efe-77d2-acd2-e93421199c6c` 中通过 `memctl write` 写入两次，产生提交 `ff2d05d`（00:56:55）与 `4a0f82a`（00:57:04）。同步缓存随后更新：
+
+```json
+{
+  "remoteState": "synced",
+  "localState": "clean",
+  "head": "4a0f82aa1543bc35ab053b1a00876255675a949e",
+  "lastSuccessAt": "2026-10-17T16:57:07Z"
+}
+```
+
+会话文件的 system sections 同样包含 `<memctl>` 与 `[agent-memory]` 正文。同步发生在提交后 3 秒内；当前日志不能区分该次同步由 `agent_settled` 还是退出时的 `end` 触发，但可确认本地提交没有丢失、远端已同步。
+
 ## 未验证
 
 - 交互式会话中 `agent_settled` 的 `sync` 完成与提交、推送。
