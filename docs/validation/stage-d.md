@@ -1,6 +1,6 @@
 # 阶段 D 已完成任务归档
 
-本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 D 期间已完成任务的历史验收记录。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
+本文件按 [最小记录结构](../06-development-loop.md#1-最小记录结构) 归档阶段 D 期间（`T035`–`T039`）与阶段 D 结束后、自 `v0.1.0` 起的发布和 UI 轮次（`T040`–`T047`）的已完成任务历史验收记录。当前进度、待办任务与最近一轮记录见 [开发状态](../STATUS.md)。
 
 ## T035：Dreaming 隔离生成与持久化提案预览（`D-1`）
 
@@ -22,8 +22,8 @@
 
 ## T037：跨平台发布工程与全量交付验收（`D-2` 子任务 2）
 
-- 目标与范围：完成 `D-2` 子任务 2（阶段 D 的最后一个子任务），前置为 `T036`。新增 `scripts/release.sh` 与 `Makefile` 的 `release` 目标（依赖 `test`，先构建前端并跑全量测试），按 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 交叉编译 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制到 `dist/`，生成 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识；前端部分由 `web/scripts/npm-licenses.mjs` 生成）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）；新增 `Makefile` 的 `install` 目标以对齐 04 已文档化入口。新增 `tests/integration/t037_release_test.go` 的路由契约测试 `TestRoutesContractCoversT037`，用 TRACE 请求逐条断言 02 §4.2 与 04 §5 的 25 条路由已注册且方法匹配。执行降级与恢复演练、阶段 A–D 全量回归与第 4 节发布前检查，并按第 3 节记录性能基线与平台/宿主适配状态。
-- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[REST 契约](./02-domain-models-and-contracts.md#4-rest-契约)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)、[性能与适配记录](./05-validation-and-delivery.md#3-性能与适配记录)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[阶段步骤的子任务切分](./05-validation-and-delivery.md#阶段步骤的子任务切分)、[阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。
+- 目标与范围：完成 `D-2` 子任务 2（阶段 D 的最后一个子任务），前置为 `T036`。新增 `scripts/release.sh` 与 `Makefile` 的 `release` 目标（依赖 `test`，先构建前端并跑全量测试），按 [单文件打包](../04-ui-and-cli-specification.md#6-单文件打包) 交叉编译 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制到 `dist/`，生成 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识；前端部分由 `web/scripts/npm-licenses.mjs` 生成）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）；新增 `Makefile` 的 `install` 目标以对齐 04 已文档化入口。新增 `tests/integration/t037_release_test.go` 的路由契约测试 `TestRoutesContractCoversT037`，用 TRACE 请求逐条断言 02 §4.2 与 04 §5 的 25 条路由已注册且方法匹配。执行降级与恢复演练、阶段 A–D 全量回归与第 4 节发布前检查，并按第 3 节记录性能基线与平台/宿主适配状态。
+- 契约：[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[REST 契约](../02-domain-models-and-contracts.md#4-rest-契约)、[HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)、[性能与适配记录](../05-validation-and-delivery.md#3-性能与适配记录)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[阶段步骤的子任务切分](../05-validation-and-delivery.md#阶段步骤的子任务切分)、[阶段 D 性能与适配记录](./stage-d.md#阶段-d-性能与适配记录)。
 - 验证日期与环境：2026-10-17，macOS 26.6.2 arm64（MacBook Pro `MacBookPro18,3`，Apple M1 Pro，16 GiB），Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；执行者为主会话。
 - 命令与结果：
   - 发布链路：`make release` 退出码 `0`；`make test` 通过（`vite build` 72 模块，`vitest run` 13 文件 72 项，`go test ./... -count=1` 含 `tests/integration` 186.8 秒），随后生成四个二进制与三个元数据文件；由 `scripts/release.sh` 独立重跑后 `shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`。
@@ -33,9 +33,9 @@
   - 降级演练：发布二进制在 `--no-open --readonly` 下无图形浏览器仍正常服务首页，`POST /api/v1/sync` 与 `POST /api/v1/dream:apply` 均返回 403 `READ_ONLY`；无 remote 的 `sync --wait` 返回 `remote: local_only`；PATH 无 runner 的 `dream --runner claude` 返回 `UNSUPPORTED`；缺沙箱由 `internal/dream.TestServiceRejectsMissingSandbox` 覆盖；缺 Git 由 `R02` 覆盖。
   - 恢复演练：`internal/app.TestRecoverRollsBackInterruptedWrite`（`W04`）、`TestRecoverRecognizesCommittedTransaction`（`W05`）、`TestRecoverRefusesUserEditedFile`（`W06`）、`TestMoveInterruptionRollsBack`（`W04`）与 `TestApplyDreamRecoversInterruptedApplyCoversD04`（`D04`）通过；`TestA3RecoverCli` 与 `TestC3InstallRecoversInterruptedInstallCoversI02`（`I02`）通过；演练使用故障注入，未以手工删除锁或强制重置仓库作为通过条件。
   - 发布前检查逐项结论：文档命令、参数、状态字段与 REST 路由同实现一致（新增全路由契约测试）；同步与写入测试使用临时 HOME 与本地裸远端/桩，不接触真实用户配置或公网；单文件包含默认指引与全部 8 个 adapter 模板，首页与 CSP 无外部 CDN；`--readonly`、无 remote、无 runner、无沙箱、无 Git 降级路径都有明确结果；事务与配置安装恢复演练通过；视觉 UI/UX 验证未开展（未明确安排），以协议与业务测试为准。
-  - 性能与适配：性能基线、平台矩阵与宿主/adapter 状态见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。
-- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证；真实宿主（claude/codex 等）未安装 Hook、未触发事件，Dreaming 真实 runner 在隔离 scratch HOME 下退出 `1`，模型端点与凭据环境未验证；仅 macOS Seatbelt 为已验证隔离后端；未开展浏览器视觉 UI/UX 验证；`P3-6`、`P3-7`、`P3-13`（见 [阶段 C 实现审查报告](./validation/stage-c-review.md)）与组件级 DOM 测试为已知限制，本轮未引入。
-- 下一步：阶段 D 结束、阶段 A–D 全部完成，触发 [停止条件](./06-development-loop.md#3-状态与推进)，暂停自动接续并通知用户确认。
+  - 性能与适配：性能基线、平台矩阵与宿主/adapter 状态见 [阶段 D 性能与适配记录](./stage-d.md#阶段-d-性能与适配记录)。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证；真实宿主（claude/codex 等）未安装 Hook、未触发事件，Dreaming 真实 runner 在隔离 scratch HOME 下退出 `1`，模型端点与凭据环境未验证；仅 macOS Seatbelt 为已验证隔离后端；未开展浏览器视觉 UI/UX 验证；`P3-6`、`P3-7`、`P3-13`（见 [阶段 C 实现审查报告](./stage-c-review.md)）与组件级 DOM 测试为已知限制，本轮未引入。
+- 下一步：阶段 D 结束、阶段 A–D 全部完成，触发 [停止条件](../06-development-loop.md#3-状态与推进)，暂停自动接续并通知用户确认。
 
 ## T038：阶段 D 实现审查收口修复
 
@@ -103,9 +103,87 @@
 
 ## T039：ego-browser 端到端 UI/UX 验证问题收口
 
-- 目标与范围：登记并修复 [ego-browser 端到端 UI/UX 验证报告](./validation/ui-ux-verification.md) 发现的 5 项问题，只修复既有契约违背并补齐回归证据，不新增产品能力。`P2-1`：外部写入的失效提示在写入方仍持锁时到达，客户端读到 `stale: true` 缓存后不再重试，UI 定格旧计数；新增 `web/src/refresh.js` 的 `loadFreshSnapshot` 做有界指数退避重试，`web/src/app.jsx` 的 `refresh` 与 `refreshSnapshot` 改用该函数。`P2-2`：冲突解决、中止与过期分支只清除冲突状态，未更新 `$STATE` 同步摘要，顶栏持续显示 `conflict`；`internal/app/resolve.go` 新增 `persistResolveSyncState`，无上游记为 `local_only`，有上游按 `git.AheadBehind` 写入计数，并在 `finishResolve` 用 `defer` 覆盖提前返回路径。`P3-1`：`POST /api/v1/sync` 的 `syncSummaryDTO` 改用 `*int`，`hasUpstream` 为假时输出 `null`，与 `GET /api/v1/snapshot` 一致。`P3-2`：`web/src/graph.js` 新增 `graphLabel`，节点标签改用文件名并保留 `fullPath`，`KnowledgeGraph.jsx` 增加标签省略上限、节点斥力与容器高度，选中面板显示完整路径。`P3-3`：`TopBar.jsx` 在 `sm` 以下改为纵向布局与整行状态网格。文档补充 [同步与恢复](./02-domain-models-and-contracts.md#22-同步与恢复) 的 ahead/behind 可空语义与 [Web UI](./04-ui-and-cli-specification.md#4-web-ui) 的过期重试与图谱标签说明。
-- 契约：[UI/UX 验证报告](./validation/ui-ux-verification.md)、[同步与恢复](./02-domain-models-and-contracts.md#22-同步与恢复)、[REST 契约](./02-domain-models-and-contracts.md#42-路由)、[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[REST 契约路由](./02-domain-models-and-contracts.md#42-路由)。
+- 目标与范围：登记并修复 [ego-browser 端到端 UI/UX 验证报告](./ui-ux-verification.md) 发现的 5 项问题，只修复既有契约违背并补齐回归证据，不新增产品能力。`P2-1`：外部写入的失效提示在写入方仍持锁时到达，客户端读到 `stale: true` 缓存后不再重试，UI 定格旧计数；新增 `web/src/refresh.js` 的 `loadFreshSnapshot` 做有界指数退避重试，`web/src/app.jsx` 的 `refresh` 与 `refreshSnapshot` 改用该函数。`P2-2`：冲突解决、中止与过期分支只清除冲突状态，未更新 `$STATE` 同步摘要，顶栏持续显示 `conflict`；`internal/app/resolve.go` 新增 `persistResolveSyncState`，无上游记为 `local_only`，有上游按 `git.AheadBehind` 写入计数，并在 `finishResolve` 用 `defer` 覆盖提前返回路径。`P3-1`：`POST /api/v1/sync` 的 `syncSummaryDTO` 改用 `*int`，`hasUpstream` 为假时输出 `null`，与 `GET /api/v1/snapshot` 一致。`P3-2`：`web/src/graph.js` 新增 `graphLabel`，节点标签改用文件名并保留 `fullPath`，`KnowledgeGraph.jsx` 增加标签省略上限、节点斥力与容器高度，选中面板显示完整路径。`P3-3`：`TopBar.jsx` 在 `sm` 以下改为纵向布局与整行状态网格。文档补充 [同步与恢复](../02-domain-models-and-contracts.md#22-同步与恢复) 的 ahead/behind 可空语义与 [Web UI](../04-ui-and-cli-specification.md#4-web-ui) 的过期重试与图谱标签说明。
+- 契约：[UI/UX 验证报告](./ui-ux-verification.md)、[同步与恢复](../02-domain-models-and-contracts.md#22-同步与恢复)、[REST 契约](../02-domain-models-and-contracts.md#42-路由)、[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[REST 契约路由](../02-domain-models-and-contracts.md#42-路由)。
 - 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；执行者为主会话，浏览器复验使用 ego-browser。
 - 命令与结果：`gofmt -l internal cmd tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过；`go test ./... -count=1` 全量通过（含 `tests/integration` 223.9 秒）；`cd web && npm test` 14 文件 79 项通过；`npm run build` 产出 `web/dist`；`go build -o bin/memctl ./cmd/memctl` 通过。新增回归：`tests/integration/t039_ui_state_test.go` 的 `TestT039SyncSummaryHasUnknownCountsWithoutUpstream`（`P3-1`）与 `TestT039ConflictResolveRefreshesSyncState`（`P2-2`）；`web/src/refresh.test.js` 覆盖 `P2-1` 的重试、退避、耗尽与错误传播；`web/src/graph.test.js` 覆盖 `P3-2` 的文件名标签与完整路径。浏览器复验：无上游同步提示「领先 未知 · 落后 未知」，与顶栏一致；UI 解决冲突后顶栏显示「远端状态 synced」「领先 0 · 落后 0」；连续 6 次外部 `memctl write` 后 UI 计数每次收敛且无过期横幅；390 px 顶栏字段单行、无横向溢出；连通子图标签不再重叠。
 - 未验证与遗留：图谱中大量同名长文件名的孤立节点簇仍会拥挤，节点间距不随标签宽度自动扩张，仅由标签省略上限截断；真实 Dreaming runner、多阶段冲突递进、adapter `REVISION_MISMATCH` 重探测与跨进程并发写未在本轮浏览器验证中覆盖，沿用既有协议回归；浏览器截图仅存在于会话临时目录，未提交，视觉结论以本记录与单元测试为证。
-- 下一步：本轮为用户确认的收口任务；完成后总计划无待办，触发 [停止条件](./06-development-loop.md#3-状态与推进)，暂停自动接续并等待用户确认。
+- 下一步：本轮为用户确认的收口任务；完成后总计划无待办，触发 [停止条件](../06-development-loop.md#3-状态与推进)，暂停自动接续并等待用户确认。
+
+## 发布后轮次记录（`T040`–`T047`）
+
+本节按时间顺序记录阶段 D 之后的发布与 UI 轮次，字段结构与上文任务记录一致。
+
+### T040：前端界面重设计
+
+- 目标与范围：将工作区既有、尚未提交的前端界面重设计纳入本轮提交与 v0.1.0 发布。只调整 `web/src` 的应用外壳、导航、顶栏、概览、条目浏览、知识图谱、冲突解决、审计、诊断与整理接入视图的布局、图标、配色与排版，不改变 REST 契约、状态字段、前端交互流程或后端行为。
+- 契约：[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；执行者为主会话。
+- 命令与结果：`cd web && npm ci && npm run build && npm test` 通过（14 文件 79 项，`web/dist` 产出 `index-*.css` 78.65 kB 与 `index-*.js` 141.43 kB）；`gofmt -l internal cmd tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过；`go test ./... -count=1` 全量通过（含 `tests/integration` 256.3 秒）。
+- 未验证与遗留：未做浏览器端 UI/UX 复验，视觉结论以构建与组件测试为证，交互流程沿用既有实现。
+- 下一步：作为 v0.1.0 发布内容随 `T041` 提交、推送并发布。
+
+### T041：GitHub 构建流水线与 v0.1.0 发布
+
+- 目标与范围：新增 GitHub Actions 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release`，构建 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制并上传 `dist/` 构建产物；推送 `v*` 标签时用 `gh release create` 创建 GitHub Release，附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。同步更新根 `README.md`、[CLI 与 UI 打包](../04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](../05-validation-and-delivery.md#4-发布前检查) 的 CI 说明。
+- 契约：[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[目录规划](../01-architecture-and-modules.md#5-目录结构与依赖)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64（本地 `scripts/release.sh`）与 GitHub Actions `macos-latest`；Go 1.27.1，Node v26.10.0 / npm 11.19.1。
+- 命令与结果：本地 `VERSION=v0.1.0 scripts/release.sh` 产出四个候选二进制与三个元数据文件，`shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`；首次 GitHub Actions 运行暴露宿主机差异并修复，修复后在 `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null` 隔离环境下 `go test ./... -count=1` 全量通过（`tests/integration` 256.5 秒）；[GitHub Actions 运行 39016504087](https://github.com/gray0128/memctl/actions/runs/39016504087) 在 `macos-latest` 上 4 分 34 秒通过，[Release v0.1.0](https://github.com/gray0128/memctl/releases/tag/v0.1.0) 已发布，附带四个候选二进制与三个元数据文件；下载后 `shasum -a 256 -c SHA256SUMS` 四个文件全部 `OK`，`RELEASE-INFO.txt` 记录 runtime-verified `darwin/arm64`（构建提交 `b404eeb`），`memctl-darwin-arm64 version` 输出 `memctl v0.1.0`。
+- 首次流水线运行发现的环境依赖：GitHub 托管 macOS runner 无全局 `init.defaultBranch=main`，测试用 `git init --bare` 建的裸远端默认指向 `master`，`RemoteDefaultBranch` 读不到默认分支；`newBareRemote` 改用 `git init --bare -b main` 固定裸远端 HEAD。`TestB2WatchStreamsExternalEditCoversA05` 在 watcher 注册完成前写入外部文件会丢失事件；改为在等待事件期间有界重试写入，watcher 每次突发仍发布一个 `vault.updated`。两项均为测试隔离加固，不改变产品行为。
+- 未验证与遗留：流水线只在 GitHub 托管 runner 上验证；`macos-latest` 之外的平台仍只做交叉编译，运行、生命周期与隔离保持未验证。
+- 下一步：本轮完成后按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并通知用户确认。
+
+
+### T042：修复真实宿主 adapter 协议并发布 v0.1.1
+
+- 目标与范围：修复真实宿主验证暴露的 adapter 协议偏差，并发布 `v0.1.1`。Codex 与 Command Code 的 SessionStart 增加 `--json`；Antigravity 改为读写 `$HOME/.gemini/config/hooks.json` 的 `agent-memory` 命名 Hook，新增 `start --agy` 的 `injectSteps` envelope 与 `sync --agy` 的 `{}` 输出，并把 `conversationId` 纳入 SID；OpenCode 插件改为兼容 OpenCode 2 的 default `{id, setup}` 导出，订阅 `session.execution.started/succeeded`，同时保留 v1 命名导出；dsh 插件清单支持 `$HOME/.dsh/profiles/*/node_modules`。同步修正 `install --status` 的模板识别，并补对应单元与集成测试。不新增业务功能，不改变记忆仓库格式、REST 契约或同步状态机。
+- 契约：[Agent 配置安装](../03-workflows-and-dataflows.md#7-agent-配置安装)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[Hook 输入输出](../04-ui-and-cli-specification.md#3-hook-输入输出与时限)、[会话身份](../04-ui-and-cli-specification.md#2-环境变量与会话身份)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Git 2.54.0，Node v26.10.0 / npm 11.19.1；真实宿主：Codex 0.160.0、Command Code 1.84.0、Antigravity 1.4.0、OpenCode 2.0.26、pi 1.3.0（插件 2026.9.26）、Grok 1.0.60、dsh 0.2.1-rc.1（插件 0.2.15）；执行者为主会话。
+- 命令与结果：`make test` 全量通过（前端 14 文件 79 项；Go 含 `tests/integration` 259.1 秒）；新增 `TestT042AntigravityHookProtocol`（`conversationId` 作为 SID、`start --agy` 输出 `injectSteps`、`sync --agy` 输出 `{}`）、`TestAntigravityNamedHookMerge`（保留 `orca-status`、命名 Hook 幂等、陈旧受管项替换）、`TestDshPluginProfileDetection`（profile 插件探测与写入）、`TestRegistryHostProtocols`（Codex/Command Code `--json`、Antigravity 路径与 envelope、OpenCode 2 导出与事件、dsh profile glob）；`TestC3EmbeddedTemplatesCoverR01` 扩展为从内嵌模板安装 Codex、Command Code、Antigravity 与 OpenCode 2 并检查关键协议。真实宿主复验：pi、Grok、Antigravity、OpenCode、Command Code 启动并触发 Hook；Codex 在 `--dangerously-bypass-hook-trust` 下 `SessionStart Completed`，会话缓存记录注入成功，模型调用因账号额度限制未完成；dsh 插件加载并注册 `dsh-hooks-authoring` 技能，`/dsh-hooks/recent` 返回 200，`memctl` 以样例载荷验证 SessionStart/SessionEnd。`VERSION=v0.1.1 scripts/release.sh` 产出四个候选二进制与三个元数据文件；[GitHub Actions 运行 39019936416](https://github.com/gray0128/memctl/actions/runs/39019936416) 在 `macos-latest` 上 4 分 0 秒通过并创建 [Release v0.1.1](https://github.com/gray0128/memctl/releases/tag/v0.1.1)，发布四个候选二进制与三个元数据文件；下载 `memctl-darwin-arm64` 校验和 `6c433b37…f6bd` 与 `SHA256SUMS` 一致，`version` 输出 `memctl v0.1.1`，该二进制已安装到 `~/.agent-memory/bin/memctl`。
+- 未验证与遗留：Codex 模型回复受账号额度限制（提示 2026-10-22 恢复）；dsh 当前会话启动早于全局 `hooks.json` 写入，SessionStart 需重启或新会话触发；macOS amd64、Linux amd64、Windows amd64 仍只有交叉编译；`dsh-hooks-plugin@0.2.15` 与 DSH 0.2.1-rc.1 的 peer 版本不匹配，已按用户授权使用精确版本豁免安装。
+- 下一步：`v0.1.1` 发布完成后按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
+### T043：第二轮 ego-browser 端到端 UI/UX 验证
+
+- 目标与范围：对 `v0.1.1` 发布候选二进制复验七个视图与主要写路径，确认 `T040` 界面重设计与 `T042` 适配器修复后的视觉与交互状态；只记录问题，不改变产品代码。
+- 契约：[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，`dist/memctl-darwin-arm64`（v0.1.1），ego-browser v2.1.0；临时 HOME 与临时记忆仓库，读写 `127.0.0.1:18420`、只读 `127.0.0.1:18421`；本地裸远端加 peer 克隆制造冲突。
+- 命令与结果：浏览器会话遍历七个视图，执行条目编辑与 412 草稿差异、文件原文编辑、审计 Diff 与回滚、冲突解决、adapter 预览、只读、深色与 390 px；通过项见 [第二轮验证](./ui-ux-verification.md#52-通过项)。发现 2 项 P2 与 4 项 P3，登记 `T044`。
+- 未验证与遗留：图谱节点拆分、Dreaming 真实 runner、多阶段冲突递进、adapter 安装应用、非 macOS arm64 平台；截图保存在临时目录，未提交。
+- 下一步：等待用户确认是否按 `T044` 收口；确认前不修改产品代码。
+
+### T044：收口第二轮 UI/UX 验证问题
+
+- 目标与范围：修复第二轮验证的 `R2-P2-1`、`R2-P2-2` 与 `R2-P3-1`–`R2-P3-4`；代码只改 `web/src` 的样式、布局测量、只读重试与时间格式，并在 [Web UI](../04-ui-and-cli-specification.md#4-web-ui) 补充时间格式与 `BUSY` 重试说明；不改 REST 契约、状态字段与写入流程。
+- 契约：[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，ego-browser v2.1.0；临时 HOME 与临时记忆仓库，读写 `127.0.0.1:18420`、只读 `127.0.0.1:18421`。
+- 命令与结果：`npx vitest run` 16 文件 85 项通过；`npm run build`、`go build -o bin/memctl ./cmd/memctl`、`gofmt -l`、`go vet` 通过；ego-browser 复验审计 Diff 文本边界（426 > 414）、横幅下滚动时 header 与导航不重叠（0–103 / 103–148）、冲突解决后横幅清除、BUSY 短锁透明与长锁友好提示、`最近同步 2026-10-17 17:54`、图谱连续 3 次布局无标签压盖、只读、深色与 390 px 无回归；详见 [复验记录](./ui-ux-verification.md#6-第二轮问题的收口与复验t044)。
+- 未验证与遗留：更密集知识图谱的标签拥挤仍为已知限制；未重跑 `go test ./...`（无 Go 变更）。
+- 下一步：提交推送本轮修复后按停止条件暂停并等待用户确认。
+
+### T045：概览对齐、指标卡跳转与来源提示
+
+- 目标与范围：修复用户报告的 4 项界面问题：概览导航与正文左侧未对齐、选中导航项左边框被滚动容器裁切、概览指标卡不可跳转、来源 URI 截断后无法查看完整值。代码只改 `web/src` 的布局与交互，并在 [Web UI](../04-ui-and-cli-specification.md#4-web-ui) 补充卡片跳转与来源悬停说明；不改 REST 契约。
+- 契约：[Web UI](../04-ui-and-cli-specification.md#4-web-ui)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，ego-browser v2.1.0；`bin/memctl ui` 指向真实 `~/memory` 仓库。
+- 命令与结果：`npx vitest run` 16 文件 85 项通过；`npm run build` 与 `go build` 通过；ego-browser 在 1100/1315/1440/1784 px 下导航首项与 `h1` 左边界一致（24/41.5/104/276），390 px 下均为 16，选中项圆角边框完整；点击「原子条目」「图谱节点」「错误诊断」分别进入条目、知识图谱、诊断视图；条目来源 chip 的 `title` 为完整 `agent://` URI；详见 [验证记录](./ui-ux-verification.md#7-概览对齐指标卡跳转与来源提示t045)。
+- 未验证与遗留：悬停提示使用浏览器原生标题，样式由浏览器决定，未做自定义浮层；组件级 DOM 测试仍缺失。
+- 下一步：提交推送本轮修复后按停止条件暂停并等待用户确认。
+
+### T046：发布 v0.1.2
+
+- 目标与范围：把 `T044`（第二轮 UI/UX 收口）与 `T045`（概览对齐、指标卡跳转、来源提示）以补丁版本发布；不改变 REST 契约、状态字段与记忆仓库格式。
+- 契约：[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.1.2` 指向 `fec40b3`。
+- 命令与结果：`VERSION=v0.1.2 make release` 全量通过（前端 16 文件 85 项；Go 含 `tests/integration` 234.0 秒），生成四个候选二进制与三个元数据文件；本地 `shasum -a 256 -c SHA256SUMS` 四个文件 `OK`，`dist/memctl-darwin-arm64 version` 输出 `memctl v0.1.2`。tag 推送后 [GitHub Actions 运行 39025243278](https://github.com/gray0128/memctl/actions/runs/39025243278) 在 3 分 30 秒内通过并创建 [Release v0.1.2](https://github.com/gray0128/memctl/releases/tag/v0.1.2)；发布附件含四个二进制与三个元数据文件，下载 `memctl-darwin-arm64` 后与发布 `SHA256SUMS` 校验一致、`version` 输出 `memctl v0.1.2`。该二进制已覆盖安装到 `~/.agent-memory/bin/memctl`，本地 UI 也以 v0.1.2 运行。本地候选包与 CI 产物的校验和不同（构建环境差异），两者各自与对应 `SHA256SUMS` 一致。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只做交叉编译；UI 视觉交互证据沿用 `T044`/`T045` 记录。
+- 下一步：发布完成后按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停并等待用户确认。
+
+### T047：dsh 专用插件设计
+
+- 目标与范围：只做设计，不写插件代码、不安装真实插件。核对 DSH 0.2.1-rc.1 的事件与上下文接入点，并按「插件 → 添加插件」对话框实际接受的 spec（npm 包名、GitHub 仓库根、绝对目录、绝对 tarball 路径）比较 npm、内嵌 tarball、Release tarball、独立 GitHub 仓库、本地 link、Discover 索引和直接改 profile 的分发方式；给出 `memctl-dsh` 的包结构、生命周期、上下文注入、同步、适配器探测和发布验收方案。
+- 契约：[dsh 专用插件设计提案](../07-dsh-plugin.md)、[Agent 配置安装](../03-workflows-and-dataflows.md#7-agent-配置安装)、[验收与交付](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，DSH 0.2.1-rc.1，`dsh-hooks-plugin@0.2.15`，Node v26.10.0；调研来源为 DSH 官方开发文档、DSH 0.2.1-rc.1 的 `app.asar`、`dsh-context-memory`、`dsh-hooks-plugin`、`claude-mem`、`basic-memory` 和 Claude Code 插件市场文档。
+- 命令与结果：设计文档内部链接与锚点检查通过；外部参考 URL 均返回 HTTP 200（含 DSH `install-spec.ts`）；正文无弯引号，无行尾空白。纯文档任务，未运行 Go/Node 构建或宿主测试。
+- 未验证与遗留：插件未实现；未在真实 DSH 会话中验证 `systemPrompt.context`、`agent/created` 时序或 `turn/end` 触发次数；`D1` 已确认 A（npm 主 + 内嵌 tarball 备用）；独立 GitHub 仓库 `D2`、Discover 市场索引 `D3` 未决定。
+- 下一步：等待用户明确进入开发后再启动 `T048`；实现前按设计提案第 10 节更新目录规划、适配器契约和验收 ID。
