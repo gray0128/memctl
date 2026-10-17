@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理。
 
-当前版本 `v0.5.1`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布，`memctl-pi` 与 `memctl-dsh` 的 npm 包和 `v0.5.1` Release 均已发布，pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.5.1`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布，`memctl-pi` 与 `memctl-dsh` 的 npm 包和 `v0.5.1` Release 均已发布，pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -103,7 +103,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 - Dreaming：仅 macOS Seatbelt 为已验证隔离后端，Linux 与 Windows 返回 `UNSUPPORTED`；真实 runner 与模型端点未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.1`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
-- dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；`agent/disposed` 事件受宿主限制，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
+- dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。
 

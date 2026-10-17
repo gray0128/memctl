@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）各任务的完成记录，含 `T060`–`T065`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T066`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -50,8 +50,8 @@
 - 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.5.1` 指向 `71ebf75`；npm 账号 `gray0128`。
 - 命令与结果：`VERSION=v0.5.1 make release` 通过（前端 16 文件 85 项；插件 Node 测试 dsh 14 项、pi 15 项；Go 测试全部通过）；生成四个平台二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件，`SHA256SUMS` 六个产物全部 `OK`，二进制输出 `memctl v0.5.1`。tag 推送后 [GitHub Actions 运行 39053620948](https://github.com/gray0128/memctl/actions/runs/39053620948) 成功并创建 [Release v0.5.1](https://github.com/gray0128/memctl/releases/tag/v0.5.1)；下载附件重新校验，六个产物全部 `OK`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.1`。维护者用 OTP 完成 `npm publish`；`npm view memctl-dsh@0.5.1` 输出 `0.5.1`，`dist-tags` 为 `{ latest: '0.5.1' }`，npm tarball 含 8 个运行时文件。隔离 `HOME` 下通过 npm 安装到 `~/.dsh/profiles/test/node_modules` 后，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
 - 验收：`v0.5.1` 二进制、两个插件 tarball、npm 包与适配器探测均通过；`T064` 完成。
-- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；DSH 界面安装与 `desktop` profile 升级未复验。
-- 下一步：按需把本机 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1`，或在 DSH 界面验证 npm 包安装。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；DSH 界面安装与 `desktop` profile 升级未复验（后续 `T067` 已复验 npm 包名界面安装与 `desktop` `0.5.1`）。
+- 下一步：按需把本机 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1`，或在 DSH 界面验证 npm 包安装；两项均已由 `T067` 覆盖，绝对目录界面安装仍未验证。
 
 ## T065：删除 npm 占位版本
 
@@ -62,3 +62,13 @@
 - 验收：占位版本已删除，真实版本与 `latest` 正确；任务完成。
 - 未验证与遗留：`0.5.0` 与 `0.5.1` 内容接近，`latest` 保持 `0.5.1`；无其他遗留。
 - 下一步：无需额外操作。
+
+## T066：文档一致性检查与整理
+
+- 目标与范围：核对根 `README.md`、`AGENTS.md`、`docs/01`–`08`、`docs/README.md`、`docs/STATUS.md`、`docs/validation/` 索引与两个插件 README 的事实、版本、链接和结构；修正过期的发布状态、`F-5` 状态、Makefile 与发布产物描述、DSH/pi 状态段和历史章节措辞；归档 `T061`、`T065` 并补全验证记录索引。不改变产品行为。
+- 契约：[方案索引](../README.md)、[开发循环](../06-development-loop.md#1-最小记录结构)、[验收与交付](../05-validation-and-delivery.md)。
+- 验证日期与环境：2026-10-18，macOS arm64；仅文档检查。
+- 命令与结果：对项目内全部 Markdown 文件检查相对链接与页内锚点，修正 `T058` 的失效锚点；核对 `git tag`、`dist/`、`plugins/*/package.json` 与文档中的 `v0.5.1`、插件版本和 Release 产物一致；`git diff --check` 通过。
+- 验收：链接、锚点、版本引用与跨文档状态一致；文档检查项通过。
+- 未验证与遗留：未运行二进制、平台或宿主测试（纯文档轮次）；`desktop` profile 的 `memctl-dsh` 当时仍为 `0.4.0`，DSH 界面 npm 安装未验证（后续由 `T067` 复验）。
+- 下一步：把 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1` 并复验 DSH 界面 npm 包名安装（已由 `T067` 完成）。
