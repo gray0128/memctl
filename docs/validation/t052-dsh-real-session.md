@@ -1,4 +1,4 @@
-# T052：真实 DSH 会话验证（进行中）
+# T052：真实 DSH 会话验证（已完成）
 
 环境：macOS arm64，DSH 0.2.1-rc.2；早期记录使用 `memctl-dsh@0.2.0` 与 `desktop` profile，会话 `session-16337cf7-3d27-4493-8c79-09ecea6e5fb0`，记忆仓库 `~/memory`；2026-10-17 22:35–22:49 的复验使用 `memctl-dsh@0.3.0` 与隔离 profile，见下文。
 
@@ -122,21 +122,26 @@ dsh: configured host=dsh@0.2.1-rc.2 plugin@0.4.0
 
 DSH 桌面进程在 23:20:16 重启；当前会话 `session-d0cf71d5-7fea-4b71-a82b-f39bb2392021` 的 `runtime-context` 快照于 23:22:21 记录 `memctl:memory`，文本以 `[agent-memory] repo=/Users/libo/memory sync=ok device=MacBookPro.lan` 开头。同步缓存的 `lastAttemptAt` 与 `lastSuccessAt` 均为 23:20:24，`remoteState=synced`。这表明 `0.4.0` 已在真实 desktop 会话加载并完成注入与同步。
 
-本轮没有产生新的记忆提交；`agent/disposed`、轮次内受管写入提交、锁忙与断网仍未验证。
+该轮没有产生新的记忆提交；后续 `0.4.0` 受管写入、锁忙与断网复验见下节。
 
-## 未验证
+### 0.4.0 受管写入、锁忙与断网复验（2026-10-17 23:24–23:26）
 
-- 父会话 `agent/disposed` 事件本身。两轮真实退出都只观察到插件 `dispose` 兜底，没有 `disposed` trace；DSH 当前没有单会话关闭入口，退出应用走插件卸载路径。`agent/disposed` 仍只有插件单元测试覆盖，不能记为真实宿主通过。
-- 成功轮次中的记忆写入提交。两轮模型都只回复 `OK`，没有写记忆；`turn/end` 后的 `sync` 已确认被调用，但没有新增 `memctl` 提交。需要让模型或调用方在轮次内完成一次受管写入，再确认提交与去重。
-- 断网与锁忙降级。锁忙在人工持锁测试中表现为约 245 秒延迟，测试被中止，未取得可用结论；断网未单独构造。
-- 通过「插件 → 添加插件」安装 npm 包名与绝对目录路径。绝对 tarball 路径已通过界面完成。
+环境：隔离 `t052web` profile、临时仓库 `/tmp/t052-memory`、临时状态 `/tmp/t052-state`，官方 `memctl-dsh@0.4.0` 的临时插桩副本（仅 trace `created`/`disposed`/`dispose`/`end`），`MEMCTL_DSH_BIN` 指向记录调用的包装脚本；模型为 `DeepSeek-V4.1-Flash`。
+
+1. **轮次内受管写入**：提示模型用终端执行 `memctl read MEMORY.md --json` 和 `memctl write`。模型实际执行了终端命令并回复 `OK`；仓库产生提交 `61fd68e memctl write`，`MEMORY.md` 包含新增的 `t052 managed write test`。会话日志出现 `turn/end`（turn 1，`completed`），调用日志随后出现 `sync`；同步缓存 head 为 `61fd68e`，`lastAttemptAt` 为 23:24:55，工作树干净。这补齐了 H07 的轮次内受管写入提交。
+2. **锁忙**：人工持有 `/tmp/t052-memory/.git/memctl.lock` 时，直接运行 `memctl sync --wait` 在 3.1 秒内返回 `BUSY: lock ... is held by another process`。在持锁期间再发送一轮提示，模型仍返回 `OK`，插件在 `turn/end` 后调用 `sync`，会话未被阻断；同步缓存没有写入新的成功时间，HEAD 仍为 `61fd68e`。这验证了锁忙失败不会回滚本地提交或阻塞会话。
+3. **断网**：临时仓库配置一个已确认的本地远端并完成首推，然后把远端目录移走；下一轮模型仍返回 `OK`，插件调用 `sync` 后缓存记录 `remoteState=pending`、`reasonCode=NETWORK_UNAVAILABLE`、`head=61fd68e`、`localState=clean`。会话继续，本地提交保留。这验证了断网降级。
+4. **`agent/disposed` 可达性**：会话头部「更多操作」菜单只有「下载 Session 日志」和「反馈」，没有关闭或删除会话入口；DSH 0.2.1-rc.2 未提供单会话销毁入口。正常 web/headless 退出仍只观察到插件 `dispose` 兜底，没有 `disposed` trace。因此 `agent/disposed` 事件本身无法在当前宿主复现，只能由插件单元测试覆盖；真实退出由 `T054` 的卸载兜底保证恰好一次 `end`。
+
+## 未验证与已知限制
+
+- `agent/disposed` 事件本身无法在当前 DSH 0.2.1-rc.2 复现：会话菜单没有关闭或删除入口，正常退出只触发插件 `dispose` 兜底。该事件由插件单元测试覆盖，真实退出由兜底保证一次 `end`；这是宿主限制，不按产品缺陷处理。
+- 通过「插件 → 添加插件」安装 npm 包名与绝对目录路径。绝对 tarball 路径已通过界面完成；npm 包尚未发布，绝对目录未单独走界面。
 - 插件卸载清理子进程、旧 hooks 共存与 DSH 范围外版本的界面拒绝。`T054`/`T048` 的假宿主测试覆盖部分行为，真实宿主未复验。
+- macOS amd64、Linux 与 Windows 的运行时行为未验证；仅交叉编译。
 
-## 下一步
+## 结论
 
-1. 在成功轮次内完成一次受管记忆写入，确认 `turn/end` 后出现预期提交，并在恢复后确认不重复提交。
-2. 确认 DSH 是否存在可触发 `agent/disposed` 的宿主入口；若没有，把 `agent/disposed` 明确记录为仅单元测试覆盖，真实退出以插件卸载兜底为准。
-3. 用可控短时持锁和插件自有日志复现锁忙延迟，区分 memctl 锁等待、插件 20 秒超时与测试脚本问题；再单独构造断网。
-4. 通过同一界面对 npm 包名和绝对目录路径各安装一次；保持 `desktop` 与真实记忆仓库不变。
+`H07`–`H10` 的真实宿主路径已覆盖：注入、成功轮次后的 `turn/end` 同步、轮次内受管写入提交、恢复注入、子代理跳过、正常退出兜底、锁忙与断网降级。`agent/disposed` 事件因 DSH 当前没有可触发的会话销毁入口而保留为单元测试覆盖，真实退出以插件卸载兜底为准。`I03`–`I06` 的 tarball 界面安装、版本探测与兼容拒绝已有证据；npm 包名和绝对目录界面仍未覆盖。
 
-验证完成前 `T052` 保持「进行中」，不把部分证据计入 `H07`–`H10` 全部通过。
+`T052` 按上述边界完成，不再把部分证据计入 `H07`–`H10` 全部通过；剩余项登记为已知限制。
