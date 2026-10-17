@@ -63,10 +63,10 @@
 
 | 输入 | 示例 | 约束 |
 | --- | --- | --- |
-| npm 包名 | `memctl-dsh`、`memctl-dsh@0.2.1` | 可带版本或范围；走 registry，对话框可选镜像源 |
+| npm 包名 | `memctl-dsh`、`memctl-dsh@0.3.0` | 可带版本或范围；走 registry，对话框可选镜像源 |
 | GitHub 仓库根地址 | `https://github.com/<owner>/<repo>`、`github:<owner>/<repo>` | Host 只接受 host/owner/repo 两段路径；仓库根必须有 `package.json` 和 bundle patch；不支持仓库子目录 |
-| 本地目录 | `/Users/me/.agent-memory/dsh/0.2.1` | 必须是绝对路径，`~` 和相对路径被拒绝；以 link 依赖安装，目录必须长期存在 |
-| 本地或远程 tarball | `/Users/me/.agent-memory/dsh/memctl-dsh-0.2.1.tgz`、`https://example.com/memctl-dsh-0.2.1.tgz` | 必须是绝对路径或 http(s) URL；对话框文案没有列出 tarball，但当前解析器和 Host 接受；当前安装可用，重装或升级需重新提供 tarball |
+| 本地目录 | `/Users/me/.agent-memory/dsh/0.3.0` | 必须是绝对路径，`~` 和相对路径被拒绝；以 link 依赖安装，目录必须长期存在 |
+| 本地或远程 tarball | `/Users/me/.agent-memory/dsh/memctl-dsh-0.3.0.tgz`、`https://example.com/memctl-dsh-0.3.0.tgz` | 必须是绝对路径或 http(s) URL；对话框文案没有列出 tarball，但当前解析器和 Host 接受；当前安装可用，重装或升级需重新提供 tarball |
 
 界面输入的是安装 spec，不是市场索引 URL。Discover 页面才读取市场索引；两者不能混用。
 
@@ -111,7 +111,7 @@
 在「插件 → 添加插件」对话框安装：
 
 1. **npm 包名（推荐）**：输入 `memctl-dsh`，需要固定版本时输入 `memctl-dsh@<version>`；网络受限时在「安装源」选择镜像。点击安装并确认信任提示。
-2. **内嵌 tarball（离线）**：先运行只读命令 `memctl dsh plugin-path` 取得绝对路径，例如 `/Users/me/.agent-memory/dsh/memctl-dsh-0.2.1.tgz`；把该路径粘贴到同一个输入框，点击安装。安装完成后当前会话可用；重装或升级时需重新提供 tarball，建议保留到确认稳定。
+2. **内嵌 tarball（离线）**：先运行只读命令 `memctl dsh plugin-path` 取得绝对路径，例如 `/Users/me/.agent-memory/dsh/memctl-dsh-0.3.0.tgz`；把该路径粘贴到同一个输入框，点击安装。安装完成后当前会话可用；重装或升级时需重新提供 tarball，建议保留到确认稳定。
 3. **随 Release 下载的 tarball**：下载 `memctl-dsh-<version>.tgz`，粘贴其绝对路径；效果与内嵌 tarball 相同。
 4. **独立 GitHub 仓库**：粘贴仓库根 URL，例如 `https://github.com/<owner>/memctl-dsh`；仓库根必须有 `package.json`、bundle patch 和预构建入口，不能依赖 `prepare` 构建。
 5. **本地目录（开发或 tarball 被拒绝时的回退）**：粘贴绝对目录路径；DSH 会以 link 依赖安装，目录不能移动或删除。
@@ -538,7 +538,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
-- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.2.1` Release 已附带 `memctl-dsh-0.2.1.tgz`。
+- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.2.1` Release 已附带 `memctl-dsh-0.2.1.tgz`；`v0.3.0` 候选包使用 `memctl-dsh-0.3.0.tgz`。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
 - 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.2.0`；`v0.2.1` 已发布，但本机插件尚未升级。
 

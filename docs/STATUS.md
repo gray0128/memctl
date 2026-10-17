@@ -73,8 +73,9 @@
 | T054 | 已完成 | 统一宿主会话结束映射：补 Codex `SessionEnd`/`PreCompact`、OpenCode `session.deleted`/`session.compacted` 与 DSH 插件卸载时对仍 live 会话的 `end` 兜底；补回归与契约；[归档记录](./validation/stage-e.md#t054宿主会话结束映射与-dsh-收尾兜底) |
 | T055 | 已完成 | 发布 `v0.2.1`（含 `T054`）：插件版本提升到 `0.2.1`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t055发布-v021) |
 | T056 | 已完成 | 新增 CLI `update` 命令：查询 GitHub Releases 最新版本，按平台下载并校验 SHA-256 后原子替换当前二进制，`--check` 只报告；[完成记录](#t056新增-update-命令) |
+| T057 | 进行中 | 发布 `v0.3.0`（含 `T056`）：插件版本同步到 `0.3.0`，全量测试与 `make release`，校验四平台候选包、插件 tarball、校验和与 CI Release；[本轮定义](#t057发布-v030) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`；`T056` 为已完成的发布后能力补充。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`；`T056` 为已完成的发布后能力补充；`T057` 为进行中的发布轮次。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
@@ -88,8 +89,14 @@
 - 未验证与遗留：macOS amd64、Linux amd64 与 Windows amd64 的运行时替换；Windows 的 `UNSUPPORTED` 分支只做单元测试与交叉编译；断网、GitHub 403 速率限制与目标目录无写权限未做真实故障注入；`update` 只依赖发布校验和，不额外校验新二进制的可执行性。
 - 下一步：下次发布后用安装位置的实际二进制验证一次 `update`；`T052` 继续真实 DSH 会话收尾验证。
 
+## T057：发布 v0.3.0
+
+- 目标与范围：把 `T056` 的 `update`/`update --check` 作为 `v0.3.0` 发布；插件包版本同步到 `0.3.0`，运行全量测试与 `make release`，校验四个候选二进制和插件 tarball，推送 tag 触发 GitHub Release。不改变 `update` 的行为或新增 CLI 能力。
+- 契约：[单文件打包](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](./07-dsh-plugin.md)。
+- 验收：`make test` 全量通过；`dist/SHA256SUMS` 校验全部 `OK`；tag `v0.3.0` 推送后 GitHub Actions 创建 Release，附件中的二进制与 `SHA256SUMS` 一致。
+
 ## 近期实施任务
 
-`T056` 已完成：`update` 与 `update --check` 已实现，真实 Release 下载、校验与原子替换在本机验证通过。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，`T054` 的卸载兜底已随 `v0.2.1` 发布，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+`T057` 进行中：把 `T056` 的 `update`/`update --check` 发布为 `v0.3.0`。`T056` 已完成：`update` 与 `update --check` 已实现，真实 Release 下载、校验与原子替换在本机验证通过。`T052` 进行中：已确认注入、`turn/end` 后同步与子代理跳过；退出应用时未观察到 `end`，`T054` 的卸载兜底已随 `v0.2.1` 发布，剩余真实退出复验、恢复、失败路径与界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
