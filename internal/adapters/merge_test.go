@@ -235,3 +235,46 @@ func TestLineDiffReportsAddedLines(t *testing.T) {
 		t.Fatalf("unexpected diff: added=%d removed=%d", added, removed)
 	}
 }
+
+// TestYAMLMergeRecognizesManagedPrefixAndIDComments covers the documented
+// `agent-memory-` id prefix: a managed entry keeps its identity even when the
+// id line carries a comment, a stale managed id is replaced instead of
+// duplicated, and the merge is idempotent.
+func TestYAMLMergeRecognizesManagedPrefixAndIDComments(t *testing.T) {
+	spec := ArtifactSpec{Kind: KindMerge, Asset: "pi/hooks.yaml"}
+	src := `# user header
+hooks:
+  - id: user-hook
+    event: session.idle
+    actions:
+      - bash:
+          command: echo hi
+  - id: agent-memory-sync # keep this one
+    event: session.idle
+    actions:
+      - bash:
+          command: memctl sync
+  - id: agent-memory-legacy
+    event: session.deleted
+    actions:
+      - bash:
+          command: memctl end
+`
+	merged, changed := mustMerge(t, spec, src)
+	if !changed {
+		t.Fatal("first merge must change the file")
+	}
+	if strings.Contains(merged, "agent-memory-legacy") {
+		t.Fatalf("stale managed entry survived the merge:\n%s", merged)
+	}
+	if count := strings.Count(merged, "id: agent-memory-"); count != 3 {
+		t.Fatalf("managed entries = %d, want 3:\n%s", count, merged)
+	}
+	if !strings.Contains(merged, "- id: user-hook") {
+		t.Fatalf("user item dropped:\n%s", merged)
+	}
+	second, changed := mustMerge(t, spec, merged)
+	if changed {
+		t.Fatalf("second merge must be a no-op, got:\n%s", second)
+	}
+}

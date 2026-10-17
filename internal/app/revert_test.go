@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -144,4 +145,58 @@ func readOperationRecord(t *testing.T, repo string) (state.Operation, bool, erro
 		t.Fatalf("git dir: %v", err)
 	}
 	return state.OpenStore(gitDir).LoadOperation()
+}
+
+// TestRevertRecoveryFailureKeepsOwnership covers docs/03 section 5.3: when the
+// abort or the recovery verification cannot be proven, the revert ownership
+// record must survive so doctor and recover can explain the leftover Git state.
+func TestRevertRecoveryFailureKeepsOwnership(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+	applyPut(t, service, repo, "alpha.md", "# Alpha\n\n- v1\n", vault.AbsentRevision)
+	reverted := applyUpdate(t, service, "alpha.md", "# Alpha\n\n- v2\n")
+	applyUpdate(t, service, "alpha.md", "# Alpha\n\n- v3\n")
+
+	service.testFault = func(stage string) error {
+		if stage == "revert-abort" {
+			return errors.New("simulated abort failure")
+		}
+		return nil
+	}
+	_, err := service.Revert(ctx, reverted.Commit, snapshotRevision(t, service), "", "", "")
+	service.testFault = nil
+	requireContractCode(t, err, memerr.RecoveryRequired)
+
+	record, has, err := readOperationRecord(t, repo)
+	if err != nil {
+		t.Fatalf("read operation record: %v", err)
+	}
+	if !has {
+		t.Fatal("a recovery failure deleted the revert ownership record")
+	}
+	if record.Kind != state.KindRevert || record.Owner != state.OwnerMemctl || record.OriginalHead == "" {
+		t.Fatalf("unexpected operation record: %+v", record)
+	}
+}
+
+// TestRevertRejectsUnrelatedHistory covers NOT_FOUND for a commit whose history
+// shares no ancestor with HEAD: Git answers "no common ancestor" instead of a
+// merge base, and that must not surface as a Git failure.
+func TestRevertRejectsUnrelatedHistory(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+	applyPut(t, service, repo, "alpha.md", "# Alpha\n\n- v1\n", vault.AbsentRevision)
+
+	runGit(t, repo, "checkout", "-q", "--orphan", "unrelated")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "unrelated root")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "unrelated child")
+	unrelated := runGit(t, repo, "rev-parse", "HEAD")
+	runGit(t, repo, "checkout", "-q", "-f", "main")
+
+	if out, err := gitCommand(t, repo, "", "merge-base", unrelated, "HEAD"); err == nil {
+		t.Fatalf("fixture histories unexpectedly share %q", out)
+	}
+
+	_, err := service.Revert(ctx, unrelated, snapshotRevision(t, service), "", "", "")
+	requireContractCode(t, err, memerr.NotFound)
 }

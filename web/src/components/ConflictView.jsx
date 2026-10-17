@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import {
   buildResolvedFiles,
   canResolve,
@@ -133,6 +133,9 @@ export function ConflictView({ api, refreshKey, onChanged }) {
   const [notice, setNotice] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [confirmAbort, setConfirmAbort] = useState(false)
+  // conflictIdRef lets a refresh keep the operator's merge choices while the
+  // same stage is still active; a new stage resets them.
+  const conflictIdRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -141,8 +144,10 @@ export function ConflictView({ api, refreshKey, onChanged }) {
       .conflict()
       .then((result) => {
         if (cancelled) return
+        const sameStage = Boolean(result) && conflictIdRef.current === result.conflictId
+        conflictIdRef.current = result ? result.conflictId : null
         setConflict(result)
-        setChoices(result ? initialChoices(result) : {})
+        if (!sameStage) setChoices(result ? initialChoices(result) : {})
       })
       .catch((requestError) => {
         if (!cancelled) setError(requestError)
@@ -177,10 +182,12 @@ export function ConflictView({ api, refreshKey, onChanged }) {
         resolvedFiles: buildResolvedFiles(conflict, choices),
       })
       if (result.conflict) {
+        conflictIdRef.current = result.conflict.conflictId
         setConflict(result.conflict)
         setChoices(initialChoices(result.conflict))
         setNotice({ tone: 'warn', text: '本阶段已完成，重放进入下一提交后再次冲突，请继续处理新的三方快照。' })
       } else {
+        conflictIdRef.current = null
         setConflict(null)
         setChoices({})
         setNotice({
@@ -191,9 +198,11 @@ export function ConflictView({ api, refreshKey, onChanged }) {
       onChanged?.()
     } catch (requestError) {
       if (requestError.code === 'CONFLICT_STALE') {
+        conflictIdRef.current = null
         setConflict(null)
         setChoices({})
         setNotice({ tone: 'warn', text: '该冲突阶段已变化，已丢弃旧快照；请重新同步后读取新的冲突。' })
+        onChanged?.()
       } else {
         setActionError(requestError)
       }
@@ -226,11 +235,27 @@ export function ConflictView({ api, refreshKey, onChanged }) {
   if (conflict === undefined) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">正在读取冲突状态…</p>
   }
+
+  const noticeBlock = notice && (
+    <p
+      className={`text-sm ${
+        notice.tone === 'ok'
+          ? 'text-emerald-700 dark:text-emerald-300'
+          : notice.tone === 'warn'
+            ? 'text-amber-700 dark:text-amber-300'
+            : 'text-slate-500 dark:text-slate-400'
+      }`}
+    >
+      {notice.text}
+    </p>
+  )
+
   if (conflict === null) {
     return (
       <section className="space-y-3">
         <h1 className="text-xl font-semibold">冲突解决</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">当前没有待解决的冲突。</p>
+        {noticeBlock}
       </section>
     )
   }
@@ -281,19 +306,7 @@ export function ConflictView({ api, refreshKey, onChanged }) {
         </ul>
       )}
 
-      {notice && (
-        <p
-          className={`text-sm ${
-            notice.tone === 'ok'
-              ? 'text-emerald-700 dark:text-emerald-300'
-              : notice.tone === 'warn'
-                ? 'text-amber-700 dark:text-amber-300'
-                : 'text-slate-500 dark:text-slate-400'
-          }`}
-        >
-          {notice.text}
-        </p>
-      )}
+      {noticeBlock}
       {actionError && (
         <p className="text-sm text-rose-700 dark:text-rose-300">
           冲突操作失败：{actionError.message}

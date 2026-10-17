@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -58,6 +59,13 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, "pending recovery: an earlier install was interrupted; run install without --dry-run to recover it")
 		}
 	} else {
+		// Serialize recovery and every write with the install-level lock so a
+		// concurrent CLI or UI install cannot recover this journal mid-write.
+		held, err := env.AcquireInstallLock(context.Background())
+		if err != nil {
+			return fail(stderr, "install", err)
+		}
+		defer held.Release()
 		recovery, err := env.Recover()
 		if err != nil {
 			return fail(stderr, "install", err)
@@ -145,14 +153,23 @@ func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 			fmt.Fprintf(stdout, "    note: %s\n", artifact.Note)
 		}
 		if artifact.Patch != "" {
-			for _, line := range strings.Split(strings.TrimSuffix(artifact.Patch, "\n"), "\n") {
-				if line == "" {
-					continue
+			if artifact.Action == adapters.ActionManual {
+				// A manual patch is a snippet the operator pastes, not a diff, so
+				// every line is printed instead of filtering for changed lines.
+				fmt.Fprintln(stdout, "    patch:")
+				for _, line := range strings.Split(strings.TrimSuffix(artifact.Patch, "\n"), "\n") {
+					fmt.Fprintf(stdout, "      %s\n", line)
 				}
-				if line[0] == ' ' {
-					continue
+			} else {
+				for _, line := range strings.Split(strings.TrimSuffix(artifact.Patch, "\n"), "\n") {
+					if line == "" {
+						continue
+					}
+					if line[0] == ' ' {
+						continue
+					}
+					fmt.Fprintf(stdout, "    %s\n", line)
 				}
-				fmt.Fprintf(stdout, "    %s\n", line)
 			}
 		}
 	}

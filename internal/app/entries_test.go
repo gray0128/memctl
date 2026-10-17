@@ -237,7 +237,7 @@ func TestDoctorFixRecreatesEntryPoint(t *testing.T) {
 		t.Fatalf("expected an auto-fixable ENTRY_MISSING issue: %+v", report.Issues)
 	}
 
-	fixed, err := service.DoctorFix(ctx, DoctorFixRequest{})
+	fixed, err := service.DoctorFix(ctx, DoctorFixRequest{BaseRevision: report.Revision})
 	if err != nil {
 		t.Fatalf("doctor fix: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestDoctorFixRecreatesEntryPoint(t *testing.T) {
 	}
 
 	// A code without a deterministic repair is refused, not guessed.
-	_, err = service.DoctorFix(ctx, DoctorFixRequest{IssueCodes: []string{"ORPHAN_FILE"}})
+	_, err = service.DoctorFix(ctx, DoctorFixRequest{IssueCodes: []string{"ORPHAN_FILE"}, BaseRevision: fixed.Report.Revision})
 	requireContractCode(t, err, memerr.Unsupported)
 }
 
@@ -293,4 +293,60 @@ func hasIssue(issues []doctor.Issue, code string, autoFixable bool) bool {
 		}
 	}
 	return false
+}
+
+// TestEntryTextRejectsNewlines covers the single-line bullet format: a newline
+// in a fact, heading or source would shift line numbers and corrupt the trailing
+// metadata of every following line, so it is refused before any write.
+func TestEntryTextRejectsNewlines(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+	applyPut(t, service, repo, "topic.md", "# Topic\n\n", vault.AbsentRevision)
+	file, err := service.ReadFile(ctx, "topic.md")
+	if err != nil {
+		t.Fatalf("read topic.md: %v", err)
+	}
+
+	if _, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "topic.md",
+		FactText:         "a\nb",
+		ExpectedRevision: file.FileRevision,
+	}); err == nil {
+		t.Fatal("CreateEntry accepted a multi-line factText")
+	} else {
+		requireContractCode(t, err, memerr.InvalidArgument)
+	}
+	if _, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "topic.md",
+		Heading:          "a\nb",
+		FactText:         "fact",
+		ExpectedRevision: file.FileRevision,
+	}); err == nil {
+		t.Fatal("CreateEntry accepted a multi-line heading")
+	} else {
+		requireContractCode(t, err, memerr.InvalidArgument)
+	}
+
+	if _, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "topic.md",
+		FactText:         "kept",
+		ExpectedRevision: file.FileRevision,
+	}); err != nil {
+		t.Fatalf("create entry: %v", err)
+	}
+	entry := firstEntry(t, service, "topic.md")
+	if _, err := service.PatchEntry(ctx, PatchEntryRequest{
+		ID:           entry.ID,
+		FilePath:     "topic.md",
+		FactText:     "a\nb",
+		FileRevision: entry.FileRevision,
+	}); err == nil {
+		t.Fatal("PatchEntry accepted a multi-line factText")
+	} else {
+		requireContractCode(t, err, memerr.InvalidArgument)
+	}
+
+	if status := runGit(t, repo, "status", "--porcelain"); status != "" {
+		t.Fatalf("a rejected entry left the repository dirty: %q", status)
+	}
 }

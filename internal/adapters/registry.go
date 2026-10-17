@@ -107,7 +107,7 @@ var registry = []AdapterSpec{
 		Agent:        "grok",
 		HostCommands: []string{"grok"},
 		Artifacts: []ArtifactSpec{{
-			PathTemplate:  "$HOME/.grok/hooks.json",
+			PathTemplate:  "$HOME/.grok/hooks/memctl.json",
 			Kind:          KindMerge,
 			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},

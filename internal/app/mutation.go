@@ -374,10 +374,11 @@ type plannedChange struct {
 
 // records returns the pre-image records one change contributes to the
 // transaction. A move contributes two: the source it removes and the
-// destination it creates.
+// destination it creates. A case-only rename also records the intermediate name
+// so a crash between the two renames can remove the leftover.
 func (p plannedChange) records() []state.PathRecord {
 	if p.action == actionMove {
-		return []state.PathRecord{
+		records := []state.PathRecord{
 			{
 				Path:            p.moveFrom,
 				Existed:         true,
@@ -392,6 +393,15 @@ func (p plannedChange) records() []state.PathRecord {
 				PlannedRevision: p.plannedRevision,
 			},
 		}
+		if intermediate, caseOnly := vault.MoveIntermediatePath(p.moveFrom, p.path); caseOnly {
+			records = append(records, state.PathRecord{
+				Path:            intermediate,
+				Existed:         false,
+				Mode:            p.gitMode,
+				PlannedRevision: p.plannedRevision,
+			})
+		}
+		return records
 	}
 	return []state.PathRecord{{
 		Path:            p.path,

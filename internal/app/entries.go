@@ -70,6 +70,17 @@ func (a *App) CreateEntry(ctx context.Context, req CreateEntryRequest) (EntryRes
 	if factText == "" {
 		return EntryResult{}, memerr.New(memerr.InvalidArgument, "factText must not be empty")
 	}
+	if err := requireSingleLine("factText", factText); err != nil {
+		return EntryResult{}, err
+	}
+	if err := requireSingleLine("heading", req.Heading); err != nil {
+		return EntryResult{}, err
+	}
+	for _, source := range req.Sources {
+		if err := requireSingleLine("sources", source); err != nil {
+			return EntryResult{}, err
+		}
+	}
 
 	session, err := a.beginWrite(ctx)
 	if err != nil {
@@ -93,11 +104,13 @@ func (a *App) CreateEntry(ctx context.Context, req CreateEntryRequest) (EntryRes
 	if err != nil {
 		return EntryResult{}, err
 	}
-	entry, err := session.entryAt(change.Path, lineNumber)
-	if err != nil {
-		return EntryResult{}, err
-	}
+	entry, entryErr := session.entryAt(change.Path, lineNumber)
 	a.finishWrite(session, result)
+	if entryErr != nil {
+		// The transaction is committed; report it next to the read failure
+		// instead of pretending nothing was written.
+		return EntryResult{Result: result}, entryErr
+	}
 	return EntryResult{Entry: entry, Result: result}, nil
 }
 
@@ -112,6 +125,9 @@ func (a *App) PatchEntry(ctx context.Context, req PatchEntryRequest) (EntryResul
 	factText := strings.TrimSpace(req.FactText)
 	if factText == "" {
 		return EntryResult{}, memerr.New(memerr.InvalidArgument, "factText must not be empty")
+	}
+	if err := requireSingleLine("factText", factText); err != nil {
+		return EntryResult{}, err
 	}
 	moving := req.MoveToFilePath != "" && req.MoveToFilePath != req.FilePath
 	if moving && req.BaseRevision == "" {
@@ -145,11 +161,13 @@ func (a *App) PatchEntry(ctx context.Context, req PatchEntryRequest) (EntryResul
 	if moving {
 		entryPath = req.MoveToFilePath
 	}
-	entry, err := session.entryAt(entryPath, entryLine)
-	if err != nil {
-		return EntryResult{}, err
-	}
+	entry, entryErr := session.entryAt(entryPath, entryLine)
 	a.finishWrite(session, result)
+	if entryErr != nil {
+		// The transaction is committed; report it next to the read failure
+		// instead of pretending nothing was written.
+		return EntryResult{Result: result}, entryErr
+	}
 	return EntryResult{Entry: entry, Result: result}, nil
 }
 
@@ -359,6 +377,17 @@ func findEntry(parsed vault.ParsedFile, id string) (vault.MemoryEntry, bool) {
 		}
 	}
 	return vault.MemoryEntry{}, false
+}
+
+// requireSingleLine rejects text that would break the single-line bullet format
+// of docs/02-domain-models-and-contracts.md section 1.2. A newline in a fact,
+// heading or source would shift line numbers and corrupt the trailing metadata
+// of every following line, so it is refused before the transaction starts.
+func requireSingleLine(field, value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return memerr.New(memerr.InvalidArgument, "%s must be a single line", field)
+	}
+	return nil
 }
 
 // buildEntryLine builds one bullet with the recommended trailing metadata. The

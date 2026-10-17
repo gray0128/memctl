@@ -1,26 +1,36 @@
 import { useEffect, useState } from 'preact/hooks'
-import { isRevisionConflict, lineAt } from '../edits.js'
+import { isRevisionConflict, lineAt, matchCurrentEntry } from '../edits.js'
 import { suggestSplitPath } from '../splits.js'
 import { DraftDiff } from './DraftDiff.jsx'
 
 // SplitPanel is the knowledge-graph action that moves one entry of the selected
 // file into a new file. It reuses PATCH /api/v1/entries/{id} with
 // moveToFilePath, which creates the target file when it does not exist. A stale
-// baseline keeps the draft decision to the operator. See
-// docs/04-ui-and-cli-specification.md section 4.
+// baseline keeps the draft decision to the operator and rebinds the entry id
+// before retrying. See docs/04-ui-and-cli-specification.md section 4.
 export function SplitPanel({ api, sourcePath, refreshKey }) {
   const [entries, setEntries] = useState([])
   const [revision, setRevision] = useState('')
+  const [files, setFiles] = useState([])
   const [error, setError] = useState(null)
   const [active, setActive] = useState(null)
   const [conflict, setConflict] = useState(null)
   const [notice, setNotice] = useState(null)
 
+  // A draft keeps the list frozen so an SSE refresh cannot replace the entries
+  // and discard the pending decision.
+  const drafting = Boolean(active || conflict)
+
+  // Selecting another graph node drops the drafts of the previous file.
   useEffect(() => {
-    let cancelled = false
     setActive(null)
     setConflict(null)
     setNotice(null)
+  }, [api, sourcePath])
+
+  useEffect(() => {
+    if (drafting) return
+    let cancelled = false
     api
       .entries({ file: sourcePath, limit: 200 })
       .then((page) => {
@@ -32,10 +42,18 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
       .catch((requestError) => {
         if (!cancelled) setError(requestError)
       })
+    api
+      .snapshot()
+      .then((snap) => {
+        if (!cancelled) setFiles(((snap && snap.files) || []).map((file) => file.relPath))
+      })
+      .catch(() => {
+        // The existing-target hint is advisory; a failed snapshot keeps it off.
+      })
     return () => {
       cancelled = true
     }
-  }, [api, sourcePath, refreshKey])
+  }, [api, sourcePath, refreshKey, drafting])
 
   async function freshBaselines(entry) {
     const current = await api.file(entry.filePath)
@@ -44,6 +62,44 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
       rawContent: current.rawContent,
       fileRevision: current.file.fileRevision,
       repoRevision: snapshot.revision,
+    }
+  }
+
+  async function currentEntriesFor(entry) {
+    const page = await api.entries({ file: entry.filePath, q: entry.factText, limit: 200, offset: 0 })
+    return page.items || []
+  }
+
+  // handleConflict keeps the pending split and rebinds the entry id, which the
+  // file revision change invalidated, before allowing a retry.
+  async function handleConflict(entry, target) {
+    try {
+      const current = matchCurrentEntry(await currentEntriesFor(entry), entry) || entry
+      const fresh = await freshBaselines(current)
+      setConflict({
+        currentText: lineAt(fresh.rawContent, current.lineNumber),
+        draftText: '',
+        busy: false,
+        error: null,
+        retry: async () => {
+          const latest = matchCurrentEntry(await currentEntriesFor(entry), entry)
+          if (!latest) {
+            throw new Error('条目已被改写，无法定位；请刷新后重建草稿。')
+          }
+          return split(latest, target, await freshBaselines(latest))
+        },
+      })
+    } catch (refreshError) {
+      setError(refreshError)
+    }
+  }
+
+  async function runConflictRetry() {
+    setConflict((current) => (current ? { ...current, busy: true, error: null } : current))
+    try {
+      await conflict.retry()
+    } catch (retryError) {
+      setConflict((current) => (current ? { ...current, busy: false, error: retryError } : current))
     }
   }
 
@@ -66,16 +122,7 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
     } catch (requestError) {
       if (isRevisionConflict(requestError)) {
         setActive(null)
-        try {
-          const fresh = await freshBaselines(entry)
-          setConflict({
-            currentText: lineAt(fresh.rawContent, entry.lineNumber),
-            draftText: '',
-            retry: () => split(entry, target, fresh),
-          })
-        } catch (refreshError) {
-          setError(refreshError)
-        }
+        await handleConflict(entry, target)
       } else {
         setActive((current) => (current ? { ...current, busy: false, error: requestError } : current))
       }
@@ -89,6 +136,9 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">该文件没有可拆分的条目。</p>
   }
 
+  const target = active ? active.target.trim() : ''
+  const targetExists = target !== '' && files.includes(target)
+
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">拆分条目为新文件</h3>
@@ -97,6 +147,12 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
         <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-900/20">
           <p className="text-sm text-amber-900 dark:text-amber-100">基线已过期，拆分未提交，草稿已保留。</p>
           <DraftDiff currentText={conflict.currentText} draftText={conflict.draftText} />
+          {conflict.error && (
+            <p className="text-sm text-rose-700 dark:text-rose-300">
+              重试失败：{conflict.error.message}
+              {conflict.error.code ? `（${conflict.error.code}）` : ''}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -107,8 +163,9 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
             </button>
             <button
               type="button"
-              onClick={() => conflict.retry()}
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white"
+              onClick={runConflictRetry}
+              disabled={conflict.busy}
+              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             >
               用草稿重试拆分
             </button>
@@ -155,13 +212,18 @@ export function SplitPanel({ api, sourcePath, refreshKey }) {
                       className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </label>
+                  {targetExists && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      目标文件已存在；确认后条目会被追加到该文件，而不是新建文件。
+                    </p>
+                  )}
                   <button
                     type="button"
-                    disabled={active.busy || active.target.trim() === ''}
-                    onClick={() => split(entry, active.target.trim())}
+                    disabled={active.busy || target === '' || api.readOnly}
+                    onClick={() => split(entry, target)}
                     className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
                   >
-                    确认拆分
+                    {targetExists ? '确认追加到该文件' : '确认拆分'}
                   </button>
                   {active.error && (
                     <p className="text-sm text-rose-700 dark:text-rose-300">{active.error.message}</p>

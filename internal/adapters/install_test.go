@@ -314,3 +314,61 @@ func TestApplyRefusesWhileRecoveryPending(t *testing.T) {
 		t.Fatalf("expected RECOVERY_REQUIRED, got %v", err)
 	}
 }
+
+// TestPlanRequiresHome covers the environment boundary: an unresolvable HOME
+// must fail instead of expanding every template to a filesystem-root path.
+func TestPlanRequiresHome(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{"claude": "/usr/bin/claude"}, map[string]string{"/usr/bin/claude": "claude 2.1.0\n"})
+	env.Home = ""
+	_, err := env.Plan("claude-code")
+	if err == nil {
+		t.Fatal("Plan accepted an empty HOME")
+	}
+	var contractErr *memerr.Error
+	if !errors.As(err, &contractErr) || contractErr.Code != memerr.InvalidArgument {
+		t.Fatalf("Plan error = %v, want INVALID_ARGUMENT", err)
+	}
+}
+
+// TestRecoverSkipsJournalPathsOutsideRegistry covers the recovery boundary: a
+// journal record that does not name a registered configuration target is
+// reported and left untouched instead of becoming an arbitrary write.
+func TestRecoverSkipsJournalPathsOutsideRegistry(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{}, nil)
+	outside := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(outside, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	journal := installJournal{
+		InstallID: "test-install",
+		StartedAt: "2026-01-01T00:00:00Z",
+		Agent:     "claude-code",
+		Files: []journalRecord{{
+			Path:              outside,
+			Existed:           true,
+			InstalledRevision: vault.FileRevision("100644", []byte("keep me")),
+		}},
+	}
+	if err := env.saveJournal(&journal); err != nil {
+		t.Fatal(err)
+	}
+	result, err := env.Recover()
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if len(result.Restored) != 0 || len(result.Removed) != 0 {
+		t.Fatalf("recover touched an unregistered path: %+v", result)
+	}
+	skipped := false
+	for _, path := range result.Skipped {
+		if path == outside {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("unregistered path was not reported as skipped: %+v", result)
+	}
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "keep me" {
+		t.Fatalf("unregistered content changed: %q (%v)", got, err)
+	}
+}

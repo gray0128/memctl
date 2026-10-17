@@ -111,7 +111,7 @@ func TestC1UiEditFlowCoversIntegration(t *testing.T) {
 		t.Fatalf("unexpected entries after patch: %+v", afterPatch)
 	}
 	sourceRevision := fixture.fileRevisionOf(t, "alpha.md")
-		split := fixture.send(t, http.MethodPatch, "/api/v1/entries/"+afterPatch.Items[0].ID,
+	split := fixture.send(t, http.MethodPatch, "/api/v1/entries/"+afterPatch.Items[0].ID,
 		`{"filePath":"alpha.md","factText":"entry patched","moveToFilePath":"split topic.md","baseRevision":"`+afterPatch.Revision+`"}`,
 		map[string]string{"If-Match": `"` + sourceRevision + `"`})
 	mustStatus(t, split.status, http.StatusOK)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
-import { isRevisionConflict, lineAt, replaceEntryFactLine } from '../edits.js'
+import { isRevisionConflict, lineAt, matchCurrentEntry, replaceEntryFactLine } from '../edits.js'
+import { sourceProtocol } from '../sources.js'
 import { suggestSplitPath } from '../splits.js'
 import { DraftDiff } from './DraftDiff.jsx'
 import { FileEditor } from './FileEditor.jsx'
@@ -36,13 +37,49 @@ function SourceList({ sources }) {
   if (!sources || sources.length === 0) return <span className="text-slate-400">来源未知</span>
   return (
     <span>
-      {sources.map((source) => (
-        <span key={source.raw} className="mr-2 break-all font-mono text-xs text-slate-500 dark:text-slate-400">
-          {source.raw}
-        </span>
-      ))}
+      {sources.map((source) => {
+        const protocol = sourceProtocol(source.raw)
+        if (protocol === 'https') {
+          return (
+            <a
+              key={source.raw}
+              href={source.raw}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="mr-2 break-all font-mono text-xs text-indigo-700 underline dark:text-indigo-300"
+            >
+              {source.raw}
+            </a>
+          )
+        }
+        return (
+          <span
+            key={source.raw}
+            className="mr-2 break-all font-mono text-xs text-slate-500 dark:text-slate-400"
+          >
+            {source.raw}
+            {protocol === 'agent' && (
+              <button
+                type="button"
+                onClick={() => copySource(source.raw)}
+                className="ml-1 rounded border border-slate-300 px-1 text-xs dark:border-slate-700"
+              >
+                复制
+              </button>
+            )}
+          </span>
+        )
+      })}
     </span>
   )
+}
+
+// copySource offers the agent:// reference for copying; it never navigates to an
+// unverified custom scheme.
+function copySource(raw) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    navigator.clipboard.writeText(raw).catch(() => {})
+  }
 }
 
 // EntryBrowser is the entry search and edit view. It sends the documented
@@ -63,7 +100,12 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
   const [actionError, setActionError] = useState(null)
   const [notice, setNotice] = useState(null)
 
+  // A draft keeps the list frozen: an SSE refresh would otherwise replace the
+  // entries with new ids and make the editor disappear.
+  const draftOpen = Boolean(active)
+
   useEffect(() => {
+    if (draftOpen) return
     let cancelled = false
     setLoading(true)
     api
@@ -82,7 +124,7 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
     return () => {
       cancelled = true
     }
-  }, [api, applied, offset, refreshKey])
+  }, [api, applied, offset, refreshKey, draftOpen])
 
   function submit(event) {
     event.preventDefault()
@@ -107,22 +149,48 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
     return { rawContent: current.rawContent, fileRevision: current.file.fileRevision, repoRevision: snapshotNow.revision }
   }
 
+  // currentEntriesFor re-reads one file's entries so a stale draft can be
+  // rebound to the entry's new id, which the file revision change invalidated.
+  async function currentEntriesFor(entry) {
+    const result = await api.entries({ file: entry.filePath, q: entry.factText, limit: 200, offset: 0 })
+    return result.items || []
+  }
+
   // handleConflict keeps the draft in the conflict panel and offers an explicit
-  // retry against the fresh baselines. It never reapplies without confirmation.
-  async function handleConflict(entry, error, description) {
+  // retry against the current entry. It never reapplies without confirmation,
+  // and it rebinds the entry id before retrying.
+  async function handleConflict(entry, description) {
     try {
-      const fresh = await freshBaselines(entry)
+      const current = matchCurrentEntry(await currentEntriesFor(entry), entry) || entry
+      const fresh = await freshBaselines(current)
       setConflict({
         message: description.message,
-        currentLabel: description.currentLabel,
+        currentLabel: `服务器当前第 ${current.lineNumber} 行`,
         draftLabel: description.draftLabel,
-        currentText: description.currentText(fresh.rawContent),
+        currentText: lineAt(fresh.rawContent, current.lineNumber),
         draftText: description.draftText,
         actionLabel: description.actionLabel,
-        retry: () => description.retry(fresh),
+        busy: false,
+        error: null,
+        retry: async () => {
+          const latest = matchCurrentEntry(await currentEntriesFor(entry), entry)
+          if (!latest) {
+            throw new Error('条目已被改写，无法定位；请刷新后重建草稿。')
+          }
+          return description.retry(latest, await freshBaselines(latest))
+        },
       })
     } catch (refreshError) {
       setActionError(refreshError)
+    }
+  }
+
+  async function runConflictRetry() {
+    setConflict((current) => (current ? { ...current, busy: true, error: null } : current))
+    try {
+      await conflict.retry()
+    } catch (retryError) {
+      setConflict((current) => (current ? { ...current, busy: false, error: retryError } : current))
     }
   }
 
@@ -147,14 +215,12 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
     } catch (requestError) {
       if (isRevisionConflict(requestError)) {
         setActive(null)
-        await handleConflict(entry, requestError, {
+        await handleConflict(entry, {
           message: '条目所在文件已被其他写入改变，草稿已保留。',
-          currentLabel: `服务器当前第 ${entry.lineNumber} 行`,
           draftLabel: '草稿条目',
-          currentText: (rawContent) => lineAt(rawContent, entry.lineNumber),
           draftText: replaceEntryFactLine(entry.rawLine, factText),
           actionLabel: '用草稿覆盖当前',
-          retry: (fresh) => saveEdit(entry, factText, fresh),
+          retry: (current, fresh) => saveEdit(current, factText, fresh),
         })
       } else {
         setActive((current) => (current ? { ...current, busy: false, error: requestError } : current))
@@ -181,14 +247,12 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
     } catch (requestError) {
       if (isRevisionConflict(requestError)) {
         setActive(null)
-        await handleConflict(entry, requestError, {
+        await handleConflict(entry, {
           message: '条目或仓库基线已过期，草稿未提交。',
-          currentLabel: `服务器当前第 ${entry.lineNumber} 行`,
           draftLabel: '草稿：从源文件移除',
-          currentText: (rawContent) => lineAt(rawContent, entry.lineNumber),
           draftText: '',
           actionLabel: '用草稿重试移动',
-          retry: (fresh) => saveMove(entry, target, fresh),
+          retry: (current, fresh) => saveMove(current, target, fresh),
         })
       } else {
         setActive((current) => (current ? { ...current, busy: false, error: requestError } : current))
@@ -209,14 +273,12 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
       reportWrite(result)
     } catch (requestError) {
       if (isRevisionConflict(requestError)) {
-        await handleConflict(entry, requestError, {
+        await handleConflict(entry, {
           message: '条目所在文件已被其他写入改变，未删除。',
-          currentLabel: `服务器当前第 ${entry.lineNumber} 行`,
           draftLabel: '草稿：删除该行',
-          currentText: (rawContent) => lineAt(rawContent, entry.lineNumber),
           draftText: '',
           actionLabel: '重试删除',
-          retry: (fresh) => removeEntry(entry, fresh),
+          retry: (current, fresh) => removeEntry(current, fresh),
         })
       } else {
         setActionError(requestError)
@@ -243,6 +305,12 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
             <span>{conflict.draftLabel}</span>
           </div>
           <DraftDiff currentText={conflict.currentText} draftText={conflict.draftText} />
+          {conflict.error && (
+            <p className="text-sm text-rose-700 dark:text-rose-300">
+              重试失败：{conflict.error.message}
+              {conflict.error.code ? `（${conflict.error.code}）` : ''}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -253,8 +321,9 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
             </button>
             <button
               type="button"
-              onClick={() => conflict.retry()}
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white"
+              onClick={runConflictRetry}
+              disabled={conflict.busy}
+              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             >
               {conflict.actionLabel}
             </button>
@@ -362,8 +431,9 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
                       <>
                         <button
                           type="button"
+                          disabled={api.readOnly}
                           onClick={() => removeEntry(entry)}
-                          className="rounded bg-rose-600 px-2 py-1 text-xs font-medium text-white"
+                          className="rounded bg-rose-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
                         >
                           确认删除
                         </button>

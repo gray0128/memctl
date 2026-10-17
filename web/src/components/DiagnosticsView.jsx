@@ -55,6 +55,9 @@ export function DiagnosticsView({ api, refreshKey }) {
         issueCodes: autofixableCodes(report),
         baseRevision: report.revision,
       })
+      // The response carries the post-fix report; showing it keeps the list and
+      // the next baseline current instead of repeating a stale request.
+      if (result.report) setReport(result.report)
       if (result.result) {
         const commit = result.result.commit
         setFixMessage({

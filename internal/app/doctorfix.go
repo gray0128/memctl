@@ -11,8 +11,8 @@ import (
 
 // DoctorFixRequest is the input of POST /api/v1/doctor:fix and `doctor --fix`.
 // IssueCodes selects which diagnostic codes to repair; an empty list selects
-// every code with a deterministic repair. BaseRevision optionally binds the
-// whole-repository baseline.
+// every code with a deterministic repair. BaseRevision binds the whole-repository
+// baseline and is required, so a repair cannot start from a stale view.
 type DoctorFixRequest struct {
 	IssueCodes   []string
 	BaseRevision string
@@ -34,6 +34,10 @@ type DoctorFixResult struct {
 // eliminates contradictory facts. The entry file may be missing, so it opens
 // the session without requiring the entry point.
 func (a *App) DoctorFix(ctx context.Context, req DoctorFixRequest) (DoctorFixResult, error) {
+	if req.BaseRevision == "" {
+		return DoctorFixResult{}, memerr.New(memerr.PreconditionRequired,
+			"the deterministic repair requires the repository baseRevision")
+	}
 	session, err := a.beginProtected(ctx, false, false)
 	if err != nil {
 		return DoctorFixResult{}, err

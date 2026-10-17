@@ -171,7 +171,7 @@ export function AdapterView({ api, refreshKey }) {
               <button
                 type="button"
                 onClick={() => preview(adapter.agent)}
-                disabled={busy}
+                disabled={busy || api.readOnly}
                 className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40 dark:border-slate-700"
               >
                 预览计划

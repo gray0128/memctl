@@ -48,7 +48,7 @@ export function FileEditor({ api, files }) {
       setDraft(result.rawContent)
       setStatus({ tone: 'info', message: `已载入 ${value}` })
     } catch (error) {
-      if (error.status === 404) {
+      if (error.status === 404 && error.code === 'NOT_FOUND') {
         // A path that does not exist yet is a new file. Saving uses
         // If-None-Match: * so a concurrent creation is still a version conflict.
         setPath(value)

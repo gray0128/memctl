@@ -62,6 +62,20 @@ func (f *b1Fixture) revisionOf(t *testing.T) string {
 	return snapshot.Revision
 }
 
+// doctorRevisionOf returns the repository revision a doctor report carries. It
+// works when the entry file is missing, unlike the snapshot revision.
+func (f *b1Fixture) doctorRevisionOf(t *testing.T) string {
+	t.Helper()
+	var report struct {
+		Revision string `json:"revision"`
+	}
+	f.decode(t, f.get(t, "/api/v1/doctor"), &report)
+	if report.Revision == "" {
+		t.Fatal("doctor report did not include a revision")
+	}
+	return report.Revision
+}
+
 // fileRevisionOf returns the ETag baseline of one file.
 func (f *b1Fixture) fileRevisionOf(t *testing.T, path string) string {
 	t.Helper()
@@ -129,6 +143,16 @@ func TestC1PutFileCoversA04AndW01(t *testing.T) {
 		`{"rawContent":"# Alpha\n","extra":true}`, map[string]string{"If-Match": `"` + fixture.fileRevisionOf(t, "alpha.md") + `"`})
 	mustStatus(t, unknown.status, http.StatusBadRequest)
 	mustCode(t, errorCode(t, unknown), "INVALID_ARGUMENT")
+
+	// A second JSON value after the first is a parameter error too; a trailing
+	// body must not be ignored or bypass the request limit.
+	trailing := fixture.send(t, http.MethodPut, "/api/v1/files/alpha.md",
+		`{"rawContent":"# Alpha\n"}{"rawContent":"# Sneak\n"}`, map[string]string{"If-Match": `"` + fixture.fileRevisionOf(t, "alpha.md") + `"`})
+	mustStatus(t, trailing.status, http.StatusBadRequest)
+	mustCode(t, errorCode(t, trailing), "INVALID_ARGUMENT")
+	if got := mustReadFile(t, fixture.repo+"/alpha.md"); strings.Contains(got, "Sneak") {
+		t.Fatalf("trailing JSON value was applied: %q", got)
+	}
 }
 
 // TestC1MoveCoversLinkRewriteAndA04 covers the move route: a resolved link is
@@ -280,7 +304,8 @@ func TestC1DoctorFixAndSyncHTTP(t *testing.T) {
 	fixture := newB1Fixture(t, false)
 	fixture.write(t, "alpha.md", "# Alpha\n\n- fact\n")
 
-	clean := fixture.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":[]}`, nil)
+	cleanRevision := fixture.doctorRevisionOf(t)
+	clean := fixture.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":[],"baseRevision":"`+cleanRevision+`"}`, nil)
 	mustStatus(t, clean.status, http.StatusOK)
 	var cleanPayload struct {
 		Report struct {
@@ -298,7 +323,7 @@ func TestC1DoctorFixAndSyncHTTP(t *testing.T) {
 		t.Fatalf("a clean repository should not produce a fix transaction: %+v", cleanPayload.Result)
 	}
 
-	unsupported := fixture.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":["ORPHAN_FILE"]}`, nil)
+	unsupported := fixture.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":["ORPHAN_FILE"],"baseRevision":"`+cleanRevision+`"}`, nil)
 	mustStatus(t, unsupported.status, http.StatusUnprocessableEntity)
 	mustCode(t, errorCode(t, unsupported), "UNSUPPORTED")
 
@@ -323,7 +348,7 @@ func TestC1DoctorFixAndSyncHTTP(t *testing.T) {
 	}
 	gitInRepo(t, removeEntry.repo, "add", "--", "MEMORY.md")
 	gitInRepo(t, removeEntry.repo, "commit", "-q", "-m", "remove entry")
-	fixed := removeEntry.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":["ENTRY_MISSING"]}`, nil)
+	fixed := removeEntry.send(t, http.MethodPost, "/api/v1/doctor:fix", `{"issueCodes":["ENTRY_MISSING"],"baseRevision":"`+removeEntry.doctorRevisionOf(t)+`"}`, nil)
 	mustStatus(t, fixed.status, http.StatusOK)
 	var fixedPayload struct {
 		Result *struct {

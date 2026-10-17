@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -220,10 +221,6 @@ func (s *Server) handlePutFile(w http.ResponseWriter, r *http.Request) {
 		expected = match
 	case ifNoneMatchStar(r):
 		expected = vault.AbsentRevision
-	default:
-		s.writeAppError(w, memerr.New(memerr.PreconditionRequired,
-			"writing a file requires If-Match with a fileRevision, or If-None-Match: * to create it"))
-		return
 	}
 	result, err := s.app.PutFile(r.Context(), r.PathValue("path"), expected, body.RawContent, "", "", deviceLabel())
 	if err != nil {
@@ -284,12 +281,7 @@ func (s *Server) handlePatchEntry(w http.ResponseWriter, r *http.Request) {
 		s.writeAppError(w, err)
 		return
 	}
-	fileRevision, ok := ifMatch(r)
-	if !ok {
-		s.writeAppError(w, memerr.New(memerr.PreconditionRequired,
-			"patching an entry requires If-Match with the fileRevision it was read from"))
-		return
-	}
+	fileRevision, _ := ifMatch(r)
 	result, err := s.app.PatchEntry(r.Context(), app.PatchEntryRequest{
 		ID:             r.PathValue("id"),
 		FilePath:       body.FilePath,
@@ -308,12 +300,7 @@ func (s *Server) handlePatchEntry(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteEntry removes one entry's line from the named file.
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
-	fileRevision, ok := ifMatch(r)
-	if !ok {
-		s.writeAppError(w, memerr.New(memerr.PreconditionRequired,
-			"deleting an entry requires If-Match with the fileRevision it was read from"))
-		return
-	}
+	fileRevision, _ := ifMatch(r)
 	result, err := s.app.DeleteEntry(r.Context(), app.DeleteEntryRequest{
 		ID:           r.PathValue("id"),
 		FilePath:     r.URL.Query().Get("filePath"),
@@ -358,6 +345,11 @@ func (s *Server) handleDoctorFix(w http.ResponseWriter, r *http.Request) {
 // documented SyncSummary. The remote lock and baseline checks are the same as
 // the CLI path; the client polls GET /api/v1/snapshot for later state.
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	// The route takes no input, so any body must be an empty JSON object.
+	if err := decodeOptionalBody(r, &struct{}{}); err != nil {
+		s.writeAppError(w, err)
+		return
+	}
 	result, err := s.app.SyncWait(r.Context(), false)
 	if err != nil {
 		s.writeAppError(w, err)
@@ -381,7 +373,9 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// decodeBody reads one bounded JSON body and rejects undeclared fields.
+// decodeBody reads one bounded JSON body and rejects undeclared fields. The
+// body must contain exactly one JSON value: trailing bytes would bypass the
+// documented request limit because MaxBytesReader only fails on a read.
 func decodeBody(r *http.Request, target any) error {
 	if r.Body == nil {
 		return memerr.New(memerr.InvalidArgument, "a JSON request body is required")
@@ -389,13 +383,35 @@ func decodeBody(r *http.Request, target any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		return decodeBodyError(err)
+	}
+	return requireBodyEOF(decoder)
+}
+
+// requireBodyEOF rejects a second JSON value or trailing garbage after the
+// first. The second read is what makes an oversized tail hit MaxBytesReader.
+func requireBodyEOF(decoder *json.Decoder) error {
+	var trailing any
+	err := decoder.Decode(&trailing)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return memerr.New(memerr.LimitExceeded, "the request body exceeds the %d byte limit", tooLarge.Limit)
 		}
-		return memerr.Wrap(memerr.InvalidArgument, err, "the request body is not valid JSON for this route")
 	}
-	return nil
+	return memerr.New(memerr.InvalidArgument, "the request body must contain exactly one JSON value")
+}
+
+// decodeBodyError maps one decoding failure to the contract error.
+func decodeBodyError(err error) error {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return memerr.New(memerr.LimitExceeded, "the request body exceeds the %d byte limit", tooLarge.Limit)
+	}
+	return memerr.Wrap(memerr.InvalidArgument, err, "the request body is not valid JSON for this route")
 }
 
 // ifMatch returns the unquoted If-Match baseline.

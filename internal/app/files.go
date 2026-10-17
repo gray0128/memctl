@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
@@ -185,20 +184,10 @@ func planMove(session *writeSession, from, to string) ([]plannedChange, error) {
 }
 
 // requireAbsentDestination refuses to overwrite an existing target. A rename
-// that changes only letter case is the one allowed exception: on a
-// case-insensitive filesystem the source already answers to the destination
-// spelling, and Root.RenameFile performs it through an intermediate name.
+// that changes only letter case is the one allowed exception: the destination
+// must resolve to the source file, which a case-insensitive filesystem does and
+// a case-sensitive one with a distinct same-name file does not. Root.RenameFile
+// enforces the same rule as the authoritative check.
 func requireAbsentDestination(session *writeSession, from, to string) error {
-	if strings.EqualFold(from, to) {
-		return nil
-	}
-	meta, err := session.root.Stat(to)
-	if err != nil {
-		return err
-	}
-	if meta.Exists {
-		return memerr.New(memerr.InvalidArgument,
-			"destination %q already exists; moving never overwrites an existing file", to)
-	}
-	return nil
+	return session.root.RefuseMoveOverwrite(from, to)
 }

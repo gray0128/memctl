@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -28,11 +29,15 @@ type Options struct {
 
 // Error carries the raw Git stderr next to the contract error so the sync
 // workflow can classify a failure from evidence instead of a formatted string.
+// ExitCode is the child's exit status, or -1 when it never ran or was killed;
+// callers that branch on Git's documented exit codes (for example
+// `merge-base --is-ancestor`) read it instead of parsing stderr.
 type Error struct {
 	Code     memerr.Code
 	Args     string
 	Stderr   string
 	TimedOut bool
+	ExitCode int
 	contract *memerr.Error
 }
 
@@ -45,11 +50,17 @@ func newError(code memerr.Code, args, stderr string, cause error) *Error {
 	if detail == "" {
 		detail = redact(firstLine(cause.Error()))
 	}
+	exitCode := -1
+	var exitErr *exec.ExitError
+	if errors.As(cause, &exitErr) {
+		exitCode = exitErr.ExitCode()
+	}
 	return &Error{
 		Code:     code,
 		Args:     args,
 		Stderr:   stderr,
 		TimedOut: code == memerr.Timeout,
+		ExitCode: exitCode,
 		contract: memerr.Wrap(code, cause, "git %s failed: %s", redact(args), detail),
 	}
 }

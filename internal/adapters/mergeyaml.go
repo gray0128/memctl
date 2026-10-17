@@ -13,6 +13,13 @@ var (
 	yamlPlainIDPattern    = regexp.MustCompile(`^\s*id\s*:\s*(.+?)\s*$`)
 )
 
+// managedYAMLIDPrefix is the stable identity of this tool's YAML hook entries.
+// docs/03-workflows-and-dataflows.md section 7 fixes it as the `agent-memory-`
+// id prefix, so a stale or renamed managed entry is still recognized.
+const managedYAMLIDPrefix = "agent-memory-"
+
+func isManagedYAMLID(id string) bool { return strings.HasPrefix(id, managedYAMLIDPrefix) }
+
 type yamlItem struct {
 	id     string
 	indent string
@@ -26,10 +33,6 @@ func mergeYAMLContent(src, template []byte) ([]byte, bool, error) {
 	templateItems, err := yamlTemplateItems(string(template))
 	if err != nil || len(templateItems) == 0 {
 		return nil, false, errInvalidTemplate("yaml", err)
-	}
-	templateIDs := make(map[string]bool, len(templateItems))
-	for _, item := range templateItems {
-		templateIDs[item.id] = true
 	}
 	templateIndent := templateItems[0].indent
 
@@ -63,9 +66,12 @@ func mergeYAMLContent(src, template []byte) ([]byte, bool, error) {
 	var managedRaw [][]string
 	kept := append([]string{}, preamble...)
 	for _, item := range items {
-		if item.id != "" && templateIDs[item.id] {
+		if isManagedYAMLID(item.id) {
 			managedRaw = append(managedRaw, item.lines)
 			continue
+		}
+		if item.id == "" && itemMentionsManagedID(item) {
+			return nil, false, errManualMerge("a hooks item mentions an agent-memory id this editor cannot parse")
 		}
 		kept = append(kept, item.lines...)
 	}
@@ -182,13 +188,47 @@ func yamlItemID(body string) string {
 }
 
 func unquoteYAMLScalar(value string) string {
-	value = strings.TrimSpace(value)
+	value = strings.TrimSpace(stripYAMLScalarComment(value))
 	if len(value) >= 2 {
 		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
 			return value[1 : len(value)-1]
 		}
 	}
 	return value
+}
+
+// stripYAMLScalarComment removes a trailing YAML comment from a plain or quoted
+// scalar. A `#` starts a comment only at the start of a value or after
+// whitespace, and never inside a quoted string.
+func stripYAMLScalarComment(value string) string {
+	var quote byte
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch {
+		case char == '"' || char == '\'':
+			quote = char
+		case char == '#' && (index == 0 || value[index-1] == ' ' || value[index-1] == '\t'):
+			return strings.TrimRight(value[:index], " \t")
+		}
+	}
+	return strings.TrimRight(value, " \t")
+}
+
+// itemMentionsManagedID reports whether an item whose id could not be parsed
+// still names one of this tool's entries, which makes a safe merge impossible.
+func itemMentionsManagedID(item yamlItem) bool {
+	for _, line := range item.lines {
+		if strings.Contains(lineBody(line), managedYAMLIDPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func leadingWhitespace(body string) string {

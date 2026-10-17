@@ -108,9 +108,10 @@ func (r *Root) ListManaged() ([]string, error) {
 			if strings.EqualFold(name, ".git") {
 				continue
 			}
-			// A crash can leave a hidden atomic-write temporary file behind.
-			// It belongs to no transaction revision and is not managed memory.
-			if strings.HasSuffix(name, memctlTempSuffix) {
+			// A crash can leave a hidden atomic-write temporary file or a
+			// case-only rename intermediate behind. Neither belongs to a
+			// transaction revision and neither is managed memory.
+			if strings.HasSuffix(name, memctlTempSuffix) || strings.HasSuffix(name, memctlMoveSuffix) {
 				continue
 			}
 			rel := name
@@ -201,6 +202,55 @@ func (r *Root) WriteAtomic(rel string, content []byte, mode fs.FileMode) error {
 	return r.syncDir(parent)
 }
 
+// RefuseMoveOverwrite rejects a move whose destination already holds a different
+// file. A case-only rename is allowed when the destination spelling resolves to
+// the same file as the source, which is how a case-insensitive filesystem
+// presents it. The source must exist.
+func (r *Root) RefuseMoveOverwrite(from, to string) error {
+	cleanFrom, err := ValidateRelPath(from)
+	if err != nil {
+		return err
+	}
+	cleanTo, err := ValidateRelPath(to)
+	if err != nil {
+		return err
+	}
+	if cleanFrom == cleanTo {
+		return memerr.New(memerr.InvalidArgument, "source and destination path are identical: %q", cleanFrom)
+	}
+	fromInfo, err := r.lstatNoSymlinks(cleanFrom)
+	if err != nil {
+		return err
+	}
+	toInfo, err := r.lstatNoSymlinks(cleanTo)
+	if err != nil {
+		if contractErr, ok := memerr.As(err); ok && contractErr.Code == memerr.NotFound {
+			return nil
+		}
+		return err
+	}
+	if strings.EqualFold(cleanFrom, cleanTo) && os.SameFile(fromInfo, toInfo) {
+		return nil
+	}
+	return memerr.New(memerr.InvalidArgument,
+		"destination %q already exists; moving never overwrites an existing file", cleanTo)
+}
+
+// MoveIntermediatePath returns the intermediate name a case-only rename uses,
+// together with whether that rename is case-only. Recovery uses it to remove a
+// name left behind when a crash interrupts the two-step rename.
+func MoveIntermediatePath(from, to string) (string, bool) {
+	cleanFrom, errFrom := ValidateRelPath(from)
+	cleanTo, errTo := ValidateRelPath(to)
+	if errFrom != nil || errTo != nil {
+		return "", false
+	}
+	if cleanFrom == cleanTo || !strings.EqualFold(cleanFrom, cleanTo) {
+		return "", false
+	}
+	return path.Join(path.Dir(cleanTo), "."+path.Base(cleanTo)+memctlMoveSuffix), true
+}
+
 // RequireParentDir verifies that the parent directory of one root-relative path
 // already exists and is a directory. memctl does not create directory structure
 // while holding the repository lock, so a new file is refused before any
@@ -266,18 +316,14 @@ func (r *Root) RenameFile(from, to string) error {
 		}
 	}
 
-	// A case-only rename is allowed to find the source under the destination
-	// spelling on a case-insensitive filesystem; any other existing target is a
-	// refused overwrite.
-	caseOnly := strings.EqualFold(cleanFrom, cleanTo) && cleanFrom != cleanTo
-	if _, err := r.lstatNoSymlinks(cleanTo); err == nil {
-		if !caseOnly {
-			return memerr.New(memerr.InvalidArgument,
-				"destination %q already exists; moving never overwrites an existing file", cleanTo)
-		}
-	} else if contractErr, ok := memerr.As(err); !ok || contractErr.Code != memerr.NotFound {
+	// A case-only rename is allowed only when the destination spelling already
+	// resolves to the source file, which is how a case-insensitive filesystem
+	// presents it. A distinct file at the destination, even one whose name differs
+	// only by letter case on a case-sensitive filesystem, is a refused overwrite.
+	if err := r.RefuseMoveOverwrite(cleanFrom, cleanTo); err != nil {
 		return err
 	}
+	caseOnly := strings.EqualFold(cleanFrom, cleanTo) && cleanFrom != cleanTo
 
 	if caseOnly {
 		intermediate := path.Join(parent, "."+path.Base(cleanTo)+memctlMoveSuffix)

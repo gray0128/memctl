@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/gray0128/memctl/internal/memerr"
@@ -37,15 +38,19 @@ func CommitParents(ctx context.Context, dir, commit string) ([]string, error) {
 	return fields[1:], nil
 }
 
-// IsAncestor reports whether rev is an ancestor of ref. It compares the merge
-// base instead of an exit code so a Git failure stays distinguishable from a
-// negative answer.
+// IsAncestor reports whether rev is an ancestor of ref. It reads Git's
+// documented exit code instead of comparing merge-base output, so two histories
+// without a common ancestor answer "no" and a real Git failure stays an error.
 func IsAncestor(ctx context.Context, dir, rev, ref string) (bool, error) {
-	base, err := MergeBase(ctx, dir, rev, ref)
-	if err != nil {
-		return false, err
+	_, err := Run(ctx, dir, "merge-base", "--is-ancestor", rev, ref)
+	if err == nil {
+		return true, nil
 	}
-	return base == rev, nil
+	var execErr *Error
+	if errors.As(err, &execErr) && execErr.ExitCode == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 // Revert applies the inverse of one single-parent commit and creates the

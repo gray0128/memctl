@@ -3,6 +3,7 @@ import {
   diffLines,
   isRevisionConflict,
   lineAt,
+  matchCurrentEntry,
   replaceEntryFactLine,
 } from './edits.js'
 
@@ -88,5 +89,31 @@ describe('replaceEntryFactLine', () => {
     expect(replaceEntryFactLine('- see [[beta]] [source: x]', 'see [[gamma]]')).toBe(
       '- see [[gamma]] [source: x]',
     )
+  })
+})
+
+describe('matchCurrentEntry', () => {
+  const stale = { id: 'old-id', filePath: 'a.md', lineNumber: 3, factText: 'fact' }
+
+  it('prefers the same line and fact after an external write', () => {
+    const entries = [
+      { id: 'new-a', lineNumber: 3, factText: 'fact' },
+      { id: 'new-b', lineNumber: 9, factText: 'fact' },
+    ]
+    expect(matchCurrentEntry(entries, stale).id).toBe('new-a')
+  })
+
+  it('falls back to the unique fact when the line moved', () => {
+    const entries = [
+      { id: 'other', lineNumber: 1, factText: 'other' },
+      { id: 'moved', lineNumber: 8, factText: 'fact' },
+    ]
+    expect(matchCurrentEntry(entries, stale).id).toBe('moved')
+  })
+
+  it('returns null when the entry no longer exists', () => {
+    expect(matchCurrentEntry([{ id: 'other', lineNumber: 1, factText: 'other' }], stale)).toBe(null)
+    expect(matchCurrentEntry([], stale)).toBe(null)
+    expect(matchCurrentEntry(null, stale)).toBe(null)
   })
 })

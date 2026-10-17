@@ -59,7 +59,12 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 // runDoctorFix applies the deterministic repairs and reports the resulting
 // diagnosis. It still returns 1 when error-level issues remain after the fix.
 func runDoctorFix(ctx context.Context, service *app.App, asJSON bool, stdout, stderr io.Writer) int {
-	result, err := service.DoctorFix(ctx, app.DoctorFixRequest{})
+	// The repair binds the same repository revision the caller just diagnosed.
+	report, err := service.Doctor(ctx)
+	if err != nil {
+		return fail(stderr, "doctor", err)
+	}
+	result, err := service.DoctorFix(ctx, app.DoctorFixRequest{BaseRevision: report.Revision})
 	if asJSON {
 		payload := struct {
 			Report doctor.Report       `json:"report"`

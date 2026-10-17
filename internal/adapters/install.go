@@ -88,6 +88,10 @@ func (env Env) PlanAll() ([]InstallPlan, error) {
 }
 
 func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
+	if env.Home == "" {
+		return InstallPlan{}, memerr.New(memerr.InvalidArgument,
+			"HOME is not set; cannot resolve the agent configuration paths")
+	}
 	det := env.detect(spec)
 	plan := InstallPlan{
 		Agent:         spec.Agent,
@@ -240,6 +244,21 @@ type ApplyResult struct {
 	Applied []ArtifactResult
 	Manual  []ArtifactResult
 	Skipped []string
+}
+
+// AcquireInstallLock serializes a whole install — recovery, planning and every
+// file write — so a concurrent install cannot recover another one's journal in
+// the middle of its writes, and the single install.json journal is never shared.
+// It is independent of the per-path configuration locks.
+func (env Env) AcquireInstallLock(ctx context.Context) (*lock.Lock, error) {
+	if env.StateDir == "" {
+		return nil, memerr.New(memerr.IOFailed, "the adapter install lock needs a state directory")
+	}
+	dir := filepath.Join(env.StateDir, "adapters")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, memerr.Wrap(memerr.IOFailed, err, "cannot create %s", dir)
+	}
+	return lock.AcquirePath(ctx, filepath.Join(dir, "install.lock"))
 }
 
 // Apply writes the plan's create and update artifacts through a per-path lock

@@ -113,9 +113,24 @@ type RecoveryResult struct {
 	Skipped   []string
 }
 
+// allowedArtifactPaths returns the configuration targets registered for one
+// agent. Recovery uses it to refuse a journal record that points anywhere else.
+func (env Env) allowedArtifactPaths(agent string) map[string]bool {
+	allowed := map[string]bool{}
+	spec, ok := Lookup(agent)
+	if !ok {
+		return allowed
+	}
+	for _, artifact := range spec.Artifacts {
+		allowed[env.expand(artifact.PathTemplate)] = true
+	}
+	return allowed
+}
+
 // Recover restores the files an interrupted install changed. Only files whose
 // content still matches the recorded installed revision are touched; a file the
-// user edited afterwards is reported and left alone. See
+// user edited afterwards is reported and left alone. A record whose path is not
+// one of the agent's registered targets is skipped instead of written. See
 // docs/03-workflows-and-dataflows.md section 7.
 func (env Env) Recover() (RecoveryResult, error) {
 	data, err := os.ReadFile(env.journalPath())
@@ -131,8 +146,13 @@ func (env Env) Recover() (RecoveryResult, error) {
 	}
 
 	result := RecoveryResult{Recovered: true}
+	allowed := env.allowedArtifactPaths(journal.Agent)
 	for index := len(journal.Files) - 1; index >= 0; index-- {
 		record := journal.Files[index]
+		if !allowed[record.Path] {
+			result.Skipped = append(result.Skipped, record.Path)
+			continue
+		}
 		if err := env.recoverRecord(record, &result); err != nil {
 			return result, err
 		}

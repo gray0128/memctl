@@ -89,8 +89,11 @@ func (a *App) Revert(ctx context.Context, hash, baseRevision, agent, sessionID, 
 	}); err != nil {
 		return MutationResult{}, err
 	}
-	defer func() { _ = session.store.DeleteOperation() }()
 
+	// The ownership record is cleared only when the revert is proven finished:
+	// a verified commit, or a diagnosed conflict that was aborted and restored.
+	// A recovery that cannot be proven keeps the record so doctor can explain
+	// the leftover Git state. See docs/03-workflows-and-dataflows.md section 5.3.
 	if revertErr := git.Revert(ctx, session.repoPath, commit); revertErr != nil {
 		return a.recoverFailedRevert(ctx, session, operationID, originalHead, revertErr)
 	}
@@ -152,6 +155,10 @@ func (a *App) recoverFailedRevert(ctx context.Context, session *writeSession, op
 		return MutationResult{}, err
 	}
 	if repoState.Operation == "revert" {
+		if faultErr := a.fault("revert-abort"); faultErr != nil {
+			return MutationResult{}, memerr.Wrap(memerr.RecoveryRequired, faultErr,
+				"the revert failed (%v) and the abort could not be verified; inspect the repository manually", cause)
+		}
 		if abortErr := git.RevertAbort(ctx, session.repoPath); abortErr != nil {
 			return MutationResult{}, memerr.Wrap(memerr.RecoveryRequired, abortErr,
 				"the revert failed (%v) and could not be aborted; inspect the repository manually", cause)
@@ -173,8 +180,14 @@ func (a *App) recoverFailedRevert(ctx context.Context, session *writeSession, op
 			"the failed revert left worktree changes; inspect the repository manually")
 	}
 	if summary != "" {
+		if err := session.store.DeleteOperation(); err != nil {
+			return MutationResult{}, err
+		}
 		return MutationResult{}, memerr.New(memerr.ContentConflict,
 			"reverting the commit conflicts in %s; the revert was aborted and the original history restored", summary)
+	}
+	if err := session.store.DeleteOperation(); err != nil {
+		return MutationResult{}, err
 	}
 	return MutationResult{}, cause
 }

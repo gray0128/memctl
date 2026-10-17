@@ -56,7 +56,7 @@ func TestT027AuditBeforeIsValidated(t *testing.T) {
 	// A real commit id still works as a pagination cursor, and the last page
 	// does not advertise a cursor.
 	var page struct {
-		Commits    []struct {
+		Commits []struct {
 			Hash string `json:"hash"`
 		} `json:"commits"`
 		NextCursor string `json:"nextCursor"`
@@ -66,7 +66,7 @@ func TestT027AuditBeforeIsValidated(t *testing.T) {
 		t.Fatalf("expected one commit, got %+v", page)
 	}
 	var next struct {
-		Commits    []struct {
+		Commits []struct {
 			Hash string `json:"hash"`
 		} `json:"commits"`
 		NextCursor string `json:"nextCursor"`
@@ -79,7 +79,7 @@ func TestT027AuditBeforeIsValidated(t *testing.T) {
 	// A cursor at the oldest commit returns an empty page and, crucially, does
 	// not echo the cursor back, which would make the client loop forever.
 	var exhausted struct {
-		Commits    []struct {
+		Commits []struct {
 			Hash string `json:"hash"`
 		} `json:"commits"`
 		NextCursor string `json:"nextCursor"`

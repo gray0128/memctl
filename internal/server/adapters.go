@@ -142,6 +142,16 @@ func (s *Server) handleAdapterInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A real install serializes recovery, planning and every write with the
+	// install-level lock, so a concurrent install cannot recover this journal or
+	// share the same journal file mid-write.
+	held, err := s.adapters.AcquireInstallLock(r.Context())
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	defer held.Release()
+
 	recovery, err := s.adapters.Recover()
 	if err != nil {
 		s.writeAppError(w, err)
@@ -284,7 +294,8 @@ func stringsOrEmpty(values []string) []string {
 }
 
 // decodeOptionalBody reads a bounded JSON body for a route whose body is
-// optional. It still rejects undeclared fields and malformed JSON.
+// optional. It still rejects undeclared fields, malformed JSON and trailing
+// bytes after the single JSON value.
 func decodeOptionalBody(r *http.Request, target any) error {
 	if r.Body == nil {
 		return nil
@@ -301,5 +312,16 @@ func decodeOptionalBody(r *http.Request, target any) error {
 		}
 		return memerr.Wrap(memerr.InvalidArgument, err, "the request body is not valid JSON for this route")
 	}
-	return nil
+	var trailing any
+	err := decoder.Decode(&trailing)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return memerr.New(memerr.LimitExceeded, "the request body exceeds the %d byte limit", tooLarge.Limit)
+		}
+	}
+	return memerr.New(memerr.InvalidArgument, "the request body must contain exactly one JSON value")
 }

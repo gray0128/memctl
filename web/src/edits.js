@@ -126,3 +126,20 @@ export function replaceEntryFactLine(rawLine, factText) {
   }
   return text.slice(0, 2) + String(factText).trim() + entrySuffix(text.slice(2))
 }
+
+// matchCurrentEntry locates the entry a stale draft refers to. entryId binds the
+// file revision, so after an external write the editor must find the entry by
+// its fact text (preferring the same line) and retry with the new id. It returns
+// null when the entry no longer exists, so the caller can ask for a rebuild
+// instead of sending a request that can only fail. See
+// docs/02-domain-models-and-contracts.md section 1.1.
+export function matchCurrentEntry(entries, stale) {
+  if (!stale) return null
+  const list = entries || []
+  const exact = list.find(
+    (entry) => entry.lineNumber === stale.lineNumber && entry.factText === stale.factText,
+  )
+  if (exact) return exact
+  const sameFact = list.filter((entry) => entry.factText === stale.factText)
+  return sameFact.length > 0 ? sameFact[0] : null
+}
