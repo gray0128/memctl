@@ -469,7 +469,7 @@ pi 适配器当前把 `pi-yaml-hooks` 作为必需插件，并管理 `$HOME/.pi/
 pi install npm:memctl-pi@<version>
 ```
 
-- npm 包名 `memctl-pi` 已发布 `0.5.1`；`0.5.0` 首次 staged 发布未完成，版本号不可复用。
+- npm 包名 `memctl-pi` 已发布 `0.5.0` 与 `0.5.1`，`latest` 为 `0.5.1`；`0.0.0-stage` 占位版本已删除。
 - 使用精确版本；需要镜像时由用户在 pi 的安装源中选择。
 - 包不声明安装脚本和运行时依赖；安装时不需要编译或授权构建脚本。
 - 包版本与 memctl 主次版本保持一致；`peerDependencies` 只声明 pi 宿主包 `*`，不打包宿主包。
@@ -646,7 +646,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 - `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
 - 生命周期：`start` 后台执行并有 20 秒上限；首个 `before_agent_start` 最多等待 8 秒；正文写入 `sections["memctl"]`，`sections` 缺失或 `forceSystemPrompt` 时回退到替换 `systemPrompt`；`agent_settled` 与 `agent_end` 共用一个 pending 去重；`session_shutdown` 的 `reload` 只清理子进程，其余 reason 分离执行 `end` 并最多等待 1.5 秒。
 - 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.5.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
-- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.1` 已发布，`0.5.0` 因首次 staged 发布未完成而不可复用；`v0.5.1` Release 的插件 tarball 为 `0.5.1`。
+- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1` Release 的插件 tarball 为 `0.5.1`。
 
 已验证：
 

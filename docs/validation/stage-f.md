@@ -28,7 +28,17 @@
 - 目标与范围：把 `memctl-pi` 发布到 npm 官方仓库，采用 MIT 许可证；补齐 npm 元数据（`repository`、`homepage`、`bugs`、`publishConfig`），修正包内 README 的仓库内相对链接；不改变插件运行时行为。
 - 契约：[pi 专用插件](../08-pi-plugin.md#81-npm-主通道)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)。
 - 验证日期与环境：2026-10-18，macOS arm64，Node v26.10.0 / npm 11.19.1；npm 账号 `gray0128`，npmjs 官方 registry。
-- 命令与结果：`0.5.0` 首次发布未进入 registry，registry 返回 `Cannot stage previously published version "0.5.0"`，版本号不可复用；包版本提升到 `0.5.1`。`npm stage publish` 生成 stage id `5d2689f9-3c14-4e45-b402-24cffccc8267`，shasum `d83156061ca4de3f585e12954845d5379b84b22f`；维护者用 `npm stage approve` 完成 2FA 审批。`npm view memctl-pi@0.5.1 version` 输出 `0.5.1`，`dist-tags` 为 `{ latest: '0.5.1' }`；npm tarball 含 `LICENSE`、`index.js`、`package.json`、`README.md`。隔离 `HOME`/`PI_CODING_AGENT_DIR` 下 `pi install npm:memctl-pi@0.5.1` 成功，`pi list` 显示该 npm 包，`install --status` 返回 `configured plugin@0.5.1`。
+- 命令与结果：`0.5.0` 于 17:15:52 发布；首次 staged 发布创建的 `0.0.0-stage` 占位版本一度作为 latest 出现，后续由 `T065` 删除。包版本继续提升到 `0.5.1`，于 17:16:38 发布。`npm stage publish` 生成 stage id `5d2689f9-3c14-4e45-b402-24cffccc8267`，shasum `d83156061ca4de3f585e12954845d5379b84b22f`；维护者用 `npm stage approve` 完成 2FA 审批。`npm view memctl-pi@0.5.1 version` 输出 `0.5.1`，`dist-tags` 为 `{ latest: '0.5.1' }`；npm tarball 含 `LICENSE`、`index.js`、`package.json`、`README.md`。隔离 `HOME`/`PI_CODING_AGENT_DIR` 下 `pi install npm:memctl-pi@0.5.1` 成功，`pi list` 显示该 npm 包，`install --status` 返回 `configured plugin@0.5.1`。
 - 验收：npm 官方包可安装、适配器可识别、版本与发布说明正确；`I09` 的 npm 通道场景通过。
-- 未验证与遗留：`memctl-dsh` 仍未发布 npm 包；`0.5.0` 版本号不可复用，GitHub `v0.5.0` 附件中的 `memctl-pi-0.5.0.tgz` 与 npm `0.5.1` 内容不同；npm 发布不改变二进制 Release。
+- 未验证与遗留：`memctl-dsh` 当时仍未发布 npm 包；`0.5.0` 与 `0.5.1` 均已发布，npm `latest` 指向 `0.5.1`；npm 发布不改变二进制 Release。
 - 下一步：按需发布 `memctl-dsh` 或创建 `v0.5.1` 发布轮次；继续维护 npm 包与 GitHub Release 的版本对应关系。
+
+## T064：发布 memctl-dsh 到 npm 与 v0.5.1 Release
+
+- 目标与范围：把 `memctl-dsh` 发布到 npm 官方仓库，并把 `memctl-dsh`、`memctl-pi` 版本提升到 `0.5.1`，重新生成候选二进制、两个插件 tarball、校验和与 CI Release；补齐 dsh 包的 npm 元数据和 README。不改变插件运行时行为。
+- 契约：[dsh 专用插件](../07-dsh-plugin.md)、[pi 专用插件](../08-pi-plugin.md)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.5.1` 指向 `71ebf75`；npm 账号 `gray0128`。
+- 命令与结果：`VERSION=v0.5.1 make release` 通过（前端 16 文件 85 项；插件 Node 测试 dsh 14 项、pi 15 项；Go 测试全部通过）；生成四个平台二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件，`SHA256SUMS` 六个产物全部 `OK`，二进制输出 `memctl v0.5.1`。tag 推送后 [GitHub Actions 运行 39053620948](https://github.com/gray0128/memctl/actions/runs/39053620948) 成功并创建 [Release v0.5.1](https://github.com/gray0128/memctl/releases/tag/v0.5.1)；下载附件重新校验，六个产物全部 `OK`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.1`。维护者用 OTP 完成 `npm publish`；`npm view memctl-dsh@0.5.1` 输出 `0.5.1`，`dist-tags` 为 `{ latest: '0.5.1' }`，npm tarball 含 8 个运行时文件。隔离 `HOME` 下通过 npm 安装到 `~/.dsh/profiles/test/node_modules` 后，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
+- 验收：`v0.5.1` 二进制、两个插件 tarball、npm 包与适配器探测均通过；`T064` 完成。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；DSH 界面安装与 `desktop` profile 升级未复验。
+- 下一步：按需把本机 `desktop` profile 的 `memctl-dsh` 升级到 `0.5.1`，或在 DSH 界面验证 npm 包安装。
