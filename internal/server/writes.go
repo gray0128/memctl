@@ -49,7 +49,8 @@ type entryResultDTO struct {
 }
 
 // syncSummaryDTO is the SyncSummary of docs/02-domain-models-and-contracts.md
-// section 2.2 as returned by POST /api/v1/sync.
+// section 2.2 as returned by POST /api/v1/sync. Unknown ahead/behind counts
+// stay null instead of pretending to be zero, matching SyncStateDTO.
 type syncSummaryDTO struct {
 	RepoID        string `json:"repoId"`
 	Branch        string `json:"branch,omitempty"`
@@ -58,8 +59,8 @@ type syncSummaryDTO struct {
 	HasUpstream   bool   `json:"hasUpstream"`
 	RemoteState   string `json:"remoteState"`
 	LocalState    string `json:"localState"`
-	AheadCount    int    `json:"aheadCount"`
-	BehindCount   int    `json:"behindCount"`
+	AheadCount    *int   `json:"aheadCount"`
+	BehindCount   *int   `json:"behindCount"`
 	LastAttemptAt string `json:"lastAttemptAt,omitempty"`
 	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
 	ReasonCode    string `json:"reasonCode,omitempty"`
@@ -355,7 +356,7 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		s.writeAppError(w, err)
 		return
 	}
-	writeJSONStatus(w, http.StatusAccepted, syncSummaryDTO{
+	summary := syncSummaryDTO{
 		RepoID:        result.RepoID,
 		Branch:        result.Branch,
 		Head:          result.Head,
@@ -363,14 +364,20 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		HasUpstream:   result.HasUpstream,
 		RemoteState:   result.RemoteState,
 		LocalState:    result.LocalState,
-		AheadCount:    result.Ahead,
-		BehindCount:   result.Behind,
 		LastAttemptAt: result.LastAttemptAt,
 		LastSuccessAt: result.LastSuccessAt,
 		ReasonCode:    result.ReasonCode,
 		ConflictID:    result.ConflictID,
 		OperationID:   result.OperationID,
-	})
+	}
+	// A repository without an upstream has no meaningful ahead/behind counts;
+	// zero would read as "in sync" instead of "unknown".
+	if result.HasUpstream {
+		ahead, behind := result.Ahead, result.Behind
+		summary.AheadCount = &ahead
+		summary.BehindCount = &behind
+	}
+	writeJSONStatus(w, http.StatusAccepted, summary)
 }
 
 // decodeBody reads one bounded JSON body and rejects undeclared fields. The

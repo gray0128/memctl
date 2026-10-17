@@ -18,6 +18,9 @@ const STYLE = [
       color: '#334155',
       'text-valign': 'bottom',
       'text-margin-y': 4,
+      'text-wrap': 'ellipsis',
+      'text-max-width': 120,
+      'text-justification': 'center',
       width: 18,
       height: 18,
       'background-color': '#94a3b8',
@@ -82,11 +85,30 @@ export function KnowledgeGraph({ api, snapshot, refreshKey }) {
         elements: [...built.nodes, ...built.edges],
         style: STYLE,
         wheelSensitivity: 0.2,
-        layout: { name: 'cose', animate: false, fit: true, padding: 24 },
+        // The default cose spacing lets long path labels overlap on a small
+        // graph; a wider repulsion and wrapped labels keep every node name
+        // readable. See docs/04-ui-and-cli-specification.md section 4.
+        layout: {
+          name: 'cose',
+          animate: false,
+          fit: true,
+          padding: 30,
+          nodeRepulsion: 16000,
+          idealEdgeLength: 110,
+          nodeOverlap: 24,
+          componentSpacing: 80,
+          gravity: 0.3,
+        },
       })
       cy.on('tap', 'node', (event) => {
         const node = event.target.data()
-        setSelected({ id: node.id, label: node.label, kind: node.kind, entryCount: node.entryCount, orphan: node.orphan })
+        setSelected({
+          id: node.id,
+          label: node.fullPath || node.label,
+          kind: node.kind,
+          entryCount: node.entryCount,
+          orphan: node.orphan,
+        })
       })
       cy.on('tap', (event) => {
         if (event.target === cy) setSelected(null)
@@ -113,7 +135,7 @@ export function KnowledgeGraph({ api, snapshot, refreshKey }) {
       </div>
       <div
         ref={container}
-        className="relative h-96 w-full rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+        className="relative h-96 w-full rounded-lg border border-slate-200 bg-white md:h-[30rem] dark:border-slate-800 dark:bg-slate-900"
       />
       <div className="flex flex-wrap gap-4 text-xs text-slate-600 dark:text-slate-300">
         <LegendItem color="#4f46e5">入口</LegendItem>

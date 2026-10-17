@@ -56,7 +56,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `ConflictSide` | `exists`, `blobId?`, `mode?`, `content?` |
 | `MutationResult` | `transactionId`, `revision`, `commit?`, `changedFiles`, `syncState` |
 
-`localState` 为 `clean | external_changes | operation_active | recovery_required`。`remoteState` 为 `local_only | pending | running | synced | conflict | failed`。本地提交成功和远端推送成功是两件事；`synced` 只描述最后一次确认时刻，不表示远端从此不再变化。
+`localState` 为 `clean | external_changes | operation_active | recovery_required`。`remoteState` 为 `local_only | pending | running | synced | conflict | failed`。本地提交成功和远端推送成功是两件事；`synced` 只描述最后一次确认时刻，不表示远端从此不再变化。`aheadCount` 与 `behindCount` 在没有上游时为 `null`，不用 `0` 表示未知。
 
 `OperationState.kind` 为 `mutation | rebase | revert`。`owner` 区分本工具创建的操作与外部操作；单凭 PID 或文件存在不能授权自动 abort。状态恢复时核对 Git 实际状态、原始 HEAD 和目标 HEAD。
 

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"unicode/utf8"
 
+	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/state"
@@ -219,6 +220,7 @@ func (a *App) ResolveAbort(ctx context.Context, conflictID string) (ResolveResul
 	if err := session.store.DeleteOperation(); err != nil {
 		return ResolveResult{}, err
 	}
+	a.persistResolveSyncState(ctx, session, head, resolveRemotePending)
 	return ResolveResult{Head: head, RemoteState: resolveRemotePending}, nil
 }
 
@@ -459,6 +461,9 @@ func (a *App) finishResolve(ctx context.Context, session *writeSession, interact
 		return ResolveResult{}, err
 	}
 	result := ResolveResult{Head: head, RemoteState: resolveRemotePending}
+	// Persist the post-resolve state even on an early return: the cached
+	// conflict record must not outlive the conflict it describes.
+	defer func() { a.persistResolveSyncState(ctx, session, result.Head, result.RemoteState) }()
 
 	remote, hasRemote, err := git.DefaultRemote(ctx, session.repoPath)
 	if err != nil || !hasRemote {
@@ -476,6 +481,35 @@ func (a *App) finishResolve(ctx context.Context, session *writeSession, interact
 	}
 	result.RemoteState = resolveRemoteSynced
 	return result, nil
+}
+
+// persistResolveSyncState records the state that follows a resolve step so the
+// snapshot and the status bar stop reporting the conflict that was just
+// cleared. Counts are refreshed only when an upstream is already configured.
+func (a *App) persistResolveSyncState(ctx context.Context, session *writeSession, head, remoteState string) {
+	repoID := config.RepoID(session.repoPath)
+	summary := SyncResult{
+		RepoID:      repoID,
+		Head:        head,
+		RemoteState: remoteState,
+		LocalState:  "clean",
+	}
+	_, hasRemote, err := git.DefaultRemote(ctx, session.repoPath)
+	if err == nil && hasRemote {
+		summary.HasRemote = true
+	} else if remoteState == resolveRemotePending {
+		summary.RemoteState = syncer.StateLocalOnly
+	}
+	if branch, err := git.HeadBranch(ctx, session.repoPath); err == nil {
+		summary.Branch = branch
+	}
+	if upstream, ok, err := git.UpstreamRef(ctx, session.repoPath); err == nil && ok {
+		summary.HasUpstream = true
+		if ahead, behind, err := git.AheadBehind(ctx, session.repoPath, upstream); err == nil {
+			summary.Ahead, summary.Behind = ahead, behind
+		}
+	}
+	a.persistSyncSummary(session, summary, summary.RemoteState == resolveRemoteSynced)
 }
 
 func (a *App) requireConflict(session *writeSession, conflictID string) (state.Conflict, error) {
@@ -506,6 +540,7 @@ func (a *App) staleConflict(ctx context.Context, session *writeSession, conflict
 	_ = session.store.DeleteConflict()
 	_ = session.store.DeleteOperation()
 	head, _ := git.Head(ctx, session.repoPath)
+	a.persistResolveSyncState(ctx, session, head, resolveRemotePending)
 	return ResolveResult{Head: head, RemoteState: resolveRemotePending},
 		memerr.New(memerr.ConflictStale,
 			"conflict %s no longer matches the repository; run `memctl sync --wait` again", conflict.ConflictID)

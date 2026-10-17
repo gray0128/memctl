@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { createApi } from './api.js'
+import { loadFreshSnapshot } from './refresh.js'
 import { createEventStream } from './sse.js'
 import { TopBar } from './components/TopBar.jsx'
 import { Overview } from './components/Overview.jsx'
@@ -43,7 +44,7 @@ export function App() {
 
     async function refresh() {
       try {
-        const next = await api.snapshot()
+        const next = await loadFreshSnapshot(api)
         if (cancelled) return
         setSnapshot(next)
         setError(null)
@@ -73,7 +74,7 @@ export function App() {
   // vault.updated event.
   async function refreshSnapshot() {
     try {
-      const next = await api.snapshot()
+      const next = await loadFreshSnapshot(api)
       setSnapshot(next)
       setError(null)
     } catch (err) {

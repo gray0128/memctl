@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGraphElements, summarizeGraph } from './graph.js'
+import { buildGraphElements, graphLabel, summarizeGraph } from './graph.js'
 
 // This file verifies the pure data assembly of the read-only knowledge-graph
 // view: reachable relations, orphan files and dead links from the snapshot DTO.
@@ -33,6 +33,20 @@ describe('buildGraphElements', () => {
     expect(edges.map((edge) => edge.data.source)).toEqual(['MEMORY.md', 'alpha.md', 'alpha.md'])
     expect(edges[0].classes).toBe('resolved')
     expect(edges[1].classes).toBe('dead')
+  })
+
+  it('uses the file name as the node label and keeps the full path', () => {
+    const { nodes } = buildGraphElements(graph)
+
+    expect(nodes.find((node) => node.data.id === 'orphan.md').data.label).toBe('orphan.md')
+    const nested = buildGraphElements({
+      nodes: [{ path: 'notes/k8s-debugging.md', kind: 'markdown', entryCount: 1, orphan: false }],
+      edges: [],
+    })
+    expect(nested.nodes[0].data.label).toBe('k8s-debugging.md')
+    expect(nested.nodes[0].data.fullPath).toBe('notes/k8s-debugging.md')
+    expect(graphLabel('a/b/c.md')).toBe('c.md')
+    expect(graphLabel('')).toBe('')
   })
 
   it('summarizes reachable files, orphans, dead links and ambiguous targets', () => {

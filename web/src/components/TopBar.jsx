@@ -54,7 +54,7 @@ export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy
 
   return (
     <header className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-3">
+      <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6">
         <div className="flex items-center gap-2">
           <span className="text-lg font-semibold">memctl</span>
           {readOnly && <Badge className="bg-indigo-100 text-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-100">只读</Badge>}
@@ -62,7 +62,7 @@ export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy
             {CONNECTION_LABELS[connection] || connection}
           </Badge>
         </div>
-        <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-5">
+        <div className="grid w-full grid-cols-2 gap-x-4 gap-y-3 sm:w-auto sm:flex-1 sm:grid-cols-5 sm:gap-4">
           <Field label="仓库" value={snapshot ? snapshot.repoPath : '未知'} />
           <Field label="本地状态" value={localState} />
           <Field label="远端状态" value={remoteState} />
@@ -73,7 +73,7 @@ export function TopBar({ connection, snapshot, readOnly, error, onSync, syncBusy
           type="button"
           onClick={onSync}
           disabled={readOnly || syncBusy}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-slate-700"
+          className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40 sm:w-auto dark:border-slate-700"
         >
           {syncBusy ? '同步中…' : '立即同步'}
         </button>
