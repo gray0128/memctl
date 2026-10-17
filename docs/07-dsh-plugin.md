@@ -1,6 +1,6 @@
 # 07. dsh 专用插件：分发、安装与实现方案
 
-> 状态：设计提案。D1 已确认取 A（npm 主通道 + 内嵌 tarball 备用）；本轮只完善方案，不进入开发，不创建插件代码、不修改 DSH profile、不发布 npm 包。
+> 状态：已实现（`T048`，2026-10-17）。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；当前实际可用的安装通道是内嵌 tarball，npm 包、独立 GitHub 仓库与 Discover 索引尚未发布。实现与验证边界见 [§13](#13-实现状态)。
 
 ## 1. 结论
 
@@ -304,7 +304,7 @@ memctl sync --agent dsh --sid <agent.id>
 | 子代理 | 跳过注入和同步；不创建独立记忆上下文 |
 | 插件重复安装/旧 hooks 共存 | 记录警告；不自动删除用户配置 |
 | DSH 版本不匹配 | 由 DSH 的 `engines.dsh` 检查拒绝加载；Plugin Manager 显示不兼容原因 |
-| 插件卸载时有子进程 | 取消 start；sync/end 尽力完成并清理登记 |
+| 插件卸载时有子进程 | 取消 start 与未完成的 sync；不重复触发 end；清理状态与连接 |
 
 所有事件监听器必须内部捕获异常。`agent/created` 监听器抛错会让 agent 创建失败，这是最需要避免的宿主破坏。
 
@@ -344,10 +344,11 @@ dsh 适配器同时识别两种接入：
 
 ```text
 DSH 界面: 插件 → 添加插件 → memctl-dsh@<version>
-DSH 离线: 插件 → 添加插件 → <memctl 打印的绝对 tarball 路径>
+DSH 离线: 运行 memctl dsh plugin-path，把输出的绝对 tarball 路径粘贴到同一对话框
 CLI: dsh plugin --profile <profile> add memctl-dsh@<version>
-GitHub: 插件 → 添加插件 → https://github.com/<owner>/memctl-dsh
 ```
+
+独立 GitHub 仓库发布后，可在同一提示中增加仓库根地址；当前实现不打印未发布的入口。
 
 不猜测 profile 名称；让用户使用 Plugin Manager 或填入自己的 profile。若当前进程带有 `DSH_PROFILE` 环境变量，可以把它作为默认值显示，但不假定它一定存在。
 
@@ -493,7 +494,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 3. 更新 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的验收 ID 和阶段计划。
 4. `D1` 已确认取 A；`D2`、`D3` 可先按可选处理，后续再确认。
 
-本轮只完善方案，不执行以上步骤；进入开发需要用户明确指示。
+上述 `E-1` 至 `E-4` 已由 `T048` 实现；`E-5` 的真实 DSH 会话验证未执行，登记为 `T052`。实现状态见 [§13](#13-实现状态)。
 
 ## 11. 类似项目调研
 
@@ -527,3 +528,20 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - [DSH Plugin Manager](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/packages/boot/plugin-manager/README.zh.md)
 - [DSH 市场索引格式](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/.agents/notes/implemented/feature/2026-10-02-plugin-market-index-format.md)
 - [DSH 核心子系统 Cordis 接口](https://github.com/deepseek-ai/DeepSeek-Harness/blob/master/docs/subsystems/core.zh.md)
+
+## 13. 实现状态
+
+已落地：
+
+- `plugins/dsh/` 保存 `package.json`、`cordis.patch.yml`、`index.js`、`locale/en.json`、`locale/zh.json`、`icon.svg`、Node 单元测试与 `embed.go`。包无 `dependencies`、`install`、`postinstall` 或 `prepare`；`files` 只包含运行时文件。
+- `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
+- dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
+- `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
+- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。
+- 验证证据：插件 Node 单元测试 13 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。
+
+未验证：
+
+- 真实 DSH 会话中的 `systemPrompt.context` 快照、首轮前注入、`turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；当前只有假宿主单元测试，`T052` 跟踪。
+- DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
+- npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。

@@ -2,7 +2,7 @@ GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install clean release
+.PHONY: all ui build test install clean release dsh-plugin-test dsh-plugin-pack
 all: build
 
 # The frontend is embedded by web/embed.go, so it must be built before any Go
@@ -12,7 +12,15 @@ ui:
 
 test: ui
 	cd web && npm test
+	node --test plugins/dsh/test/*.test.js
 	$(GO) test ./...
+
+dsh-plugin-test:
+	node --test plugins/dsh/test/*.test.js
+
+dsh-plugin-pack: dsh-plugin-test
+	mkdir -p dist
+	cd plugins/dsh && npm pack --pack-destination ../../dist
 
 build: ui
 	mkdir -p bin

@@ -1,16 +1,16 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C 与阶段 D 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md) 与 [阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T047` 的发布后轮次记录），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C 与阶段 D 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md) 与 [阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录，`T048` 见本文件），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
 - 版本：`v0.1.2` 为当前发布版本（2026-10-17 发布）。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 能力：阶段 A–D 已全部交付并验收，包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dream`、`ui`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–04 为准。
-- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付，当前版本为 `v0.1.2`；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与 [发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t047)。
+- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话中的注入与每轮同步仍未验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`dream`、`ui`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–07 为准。
+- 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付，当前版本为 `v0.1.2`；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与 [发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
-- 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。
-- 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；`memctl-dsh` 的 `systemPrompt.context` 注入、`agent/created` 时序与 `turn/end` 触发次数。
-- 已知限制：阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示。
+- 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。DSH 0.2.1-rc.2 已通过隔离 profile 安装 `memctl-dsh` 并在组合配置中出现，尚未在真实会话中触发注入与同步。
+- 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `systemPrompt.context` 注入、`agent/created` 时序、`turn/end` 触发次数、`agent/disposed` 收尾与子代理跳过。
+- 已知限制：阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 未发布 npm 包、独立 GitHub 仓库或 Discover 索引，当前安装通道为内嵌 tarball。
 - 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
 
 ## 任务
@@ -64,26 +64,28 @@
 | T045 | 已完成 | 修复概览导航与正文未对齐、选中项左边框被裁切、指标卡不可跳转与来源 URI 截断无完整提示；[验证记录](./validation/ui-ux-verification.md#7-概览对齐指标卡跳转与来源提示t045) |
 | T046 | 已完成 | 发布 `v0.1.2`（含 `T044`/`T045` 的 UI 修复）：全量测试、四平台候选包、校验和与 CI Release；[归档记录](./validation/stage-d.md#t046发布-v012) |
 | T047 | 已完成 | dsh 专用插件设计：核对 DSH 事件与上下文接入点，按「添加插件」对话框的 spec（npm 名、GitHub 仓库、绝对目录、绝对 tarball）比较分发，给出插件、适配器、发布和验收方案；只写设计，不写插件代码；[设计提案](./07-dsh-plugin.md) |
-| T048 | 待开始 | 实现 `memctl-dsh` Host 插件、内嵌 tarball 路径命令、适配器探测与发布产物；`D1` 已确认 A；等待用户明确进入开发；[设计提案](./07-dsh-plugin.md) |
+| T048 | 已完成 | 实现 `memctl-dsh` Host 插件、内嵌 tarball 路径命令、适配器探测与发布产物；`D1` 取 A；[完成记录](#t048memctl-dsh-主机插件与发布产物) |
 | T049 | 已完成 | 台账收敛：把 `T040`–`T047` 完成记录移入阶段 D 归档、重写当前事实并把任务表锚点改指归档；不改产品行为；[归档记录](./validation/stage-d.md#t049台账收敛) |
 | T050 | 已完成 | 重构根 README：补充版本与平台状态、快速开始、能力表、平台与限制，精简目录与命令细节并改指契约；不改产品代码；[归档记录](./validation/stage-d.md#t050根-readme-重构) |
-| T051 | 已完成 | 收口 README 建议项：补齐 Web UI 视图表的概览与诊断、修复 4 处失效链接、对本机快速开始做 smoke 验证；不改产品代码；[完成记录](#t051readme-建议项收口) |
+| T051 | 已完成 | 收口 README 建议项：补齐 Web UI 视图表的概览与诊断、修复 4 处失效链接、对本机快速开始做 smoke 验证；不改产品代码；[归档记录](./validation/stage-d.md#t051readme-建议项收口) |
+| T052 | 待开始 | 对应阶段 E 的 `E-5`：在真实 DSH 会话验证 `memctl-dsh` 的 `systemPrompt.context` 注入、`turn/end` 同步、`agent/disposed` 收尾、恢复与子代理行为，并通过「插件 → 添加插件」界面完成一次安装；依赖可用的 DSH 会话、模型端点与隔离环境；[设计提案](./07-dsh-plugin.md) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051` 均已完成，`T048` 待开始；完成记录与验收证据按任务总表的链接指向 `docs/validation/`。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 登记为 `T052`，待真实 DSH 会话与界面安装条件。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T051：README 建议项收口
+## T048：memctl-dsh 主机插件与发布产物
 
-- 目标与范围：处理 `T050` 遗留的三项建议。补齐 [Web UI](./04-ui-and-cli-specification.md#4-web-ui) 的视图表：新增概览、诊断两行，开头由「五个视图」改为「七个视图」，并删除与表格重复的跳转说明。修复 4 处既有失效链接：阶段 A 审查的 `SyncEnv` 位置改为 `internal/git/env.go` 并注明迁移，阶段 C 审查的 `P1-4` 与阶段 D 审查的 `P2-11`、`P2-12` 标题锚点改为实际标题。按 [根 README](../README.md) 的「快速开始」在本机执行 smoke 验证。不改产品代码与 README 结构。
-- 契约：[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[最小记录结构](./06-development-loop.md#1-最小记录结构)、[完成条件](./06-development-loop.md#4-完成条件)。
-- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1；临时 HOME、临时记忆仓库与临时状态根，`AGENT_MEMORY_BACKGROUND=0`；执行者为主会话。
-- 命令与结果：全仓 20 份文档的本地链接与标题锚点校验全部通过，0 失效；`go build ./cmd/memctl` 通过；`init` 创建本地仓库，`read MEMORY.md --json` 返回 `fileRevision`，以该基线 `write --stdin` 提交成功并读回新内容，同一旧基线再次写入返回退出码 `1`，`doctor --json` 退出码 `0` 且计数全为 0，`ui --no-open --port 18499` 首页返回 HTTP 200 并注入 `memctl-token`、`memctl-readonly` 与 `memctl-dream-sandbox` meta，未知命令退出码 `2`；`git diff --check` 无输出，行尾空白与弯引号扫描无匹配。
-- 未验证与遗留：smoke 只覆盖 darwin/arm64 的无远端路径，未验证远端接入、Hook 宿主、Dreaming 与只读模式；`T048` 未开始。
-- 下一步：`T048` 待开始，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+- 目标与范围：实现阶段 E 的 `E-1`–`E-4`：`plugins/dsh/` 包骨架与 Host 生命周期、`memctl dsh plugin-path`/`plugin-dir` 的 `go:embed` 运行时产物、dsh 原生插件与 legacy `dsh-hooks-plugin` 探测、安装提示，以及 Release 插件 tarball 与校验和。`D1` 取 A；npm 包、独立 GitHub 仓库与 Discover 索引不在本轮范围。
+- 契约：[dsh 专用插件](./07-dsh-plugin.md)、[Agent 配置安装](./03-workflows-and-dataflows.md#7-agent-配置安装)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[验收与交付](./05-validation-and-delivery.md#阶段-e-的实施顺序)、[模型与契约](./02-domain-models-and-contracts.md#23-审计诊断整理与接入)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1，DSH 0.2.1-rc.2；隔离 `HOME`、`DSH_HOME`、状态根与 `test`/`rel` profile。
+- 命令与结果：`make test` 通过（前端 16 文件 85 项；插件 Node 13 项；Go 含 `tests/integration` 257.2 秒）。`TestT048DshPluginTarballInstall` 通过（5.94 秒）：`memctl dsh plugin-path` 输出存在的绝对 tarball，`dsh plugin --profile test add` 安装成功，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载，`install --status` 返回 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.1.2` 且未生成 `hooks.json`；同流程用 `dist/memctl-dsh-0.1.2.tgz` 在 `rel` profile 复验通过。`VERSION=v0.1.2 make release` 通过并生成四个候选二进制、`memctl-dsh-0.1.2.tgz` 与三个元数据文件；`shasum -a 256 -c SHA256SUMS` 五个文件全部 `OK`；发布二进制内嵌的 `dsh plugin-path` 可输出运行时 tarball。构造 `engines.dsh: ">=9.0.0 <10.0.0"` 的 tarball 后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`，组合配置中 `memctl-dsh` 计数为 0。
+- 验收：`I04` 通过，`I05` 通过，`I03`、`I06` 部分通过（隔离 profile 安装、插件状态、绝对 tarball 与目录路径；npm 包名、界面输入、升级与卸载未实测）。`H07`–`H10` 未在真实 DSH 会话执行；事件映射、单飞同步、子代理跳过与卸载清理由假宿主 Node 测试覆盖。
+- 未验证与遗留：真实 DSH 会话的 `systemPrompt.context` 注入、首轮前快照、`turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；DSH 0.2.1-rc.2 范围外版本的拒绝已在构造包上验证，未在每个 DSH 小版本复验；npm、独立 GitHub 仓库与 Discover 索引未发布；macOS amd64、Linux 与 Windows 未运行。
+- 下一步：`E-1`–`E-4` 已完成；`E-5`（真实 DSH 会话与界面安装）登记为 `T052`，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 ## 近期实施任务
 
-无进行中任务。`T048` 待开始：实现 `memctl-dsh` Host 插件、内嵌 tarball 路径命令、适配器探测与发布产物，`D1` 已确认取 A，[设计提案](./07-dsh-plugin.md) 已就绪；等待用户明确进入开发，按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续。
+无进行中任务。`T048` 已完成 `memctl-dsh` Host 插件、内嵌产物、适配器探测与发布产物；`T052` 待开始，负责真实 DSH 会话与界面安装验证，依赖可用的 DSH 会话、模型端点与隔离环境。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

@@ -10,6 +10,7 @@
 | B：本地 UI | 内嵌资源、只读图谱、条目检索、审计、SSE | API 鉴权、路径、路由及状态通知测试通过 |
 | C：受管管理 | UI 写入、移动改链、冲突解决、revert、配置安装 | 多文件中断恢复、冲突多阶段、配置基线与幂等测试通过 |
 | D：Dreaming | 隔离生成、持久化预览、显式应用 | 对应 runner/平台的隔离、过期提案和幂等应用测试通过 |
+| E：DSH 专用插件 | `memctl-dsh` Host 插件、内嵌 tarball/目录、原生与旧插件探测、发布产物 | 插件单元测试、包清单、隔离 profile 安装与适配状态测试通过；真实会话注入未验证时如实记录 |
 
 这些阶段是实现与开放顺序，不删除原定功能。每个平台、宿主及插件版本独立记录验证结果；某一组合失败不以关闭保护机制换取「支持」。以下小节定义全项目的完整实施顺序、前置依赖、交付边界与验收映射；实际执行进度、任务拆分与验证证据统一在 [STATUS.md](./STATUS.md) 维护。`A-1` 等是阶段步骤，`F01` 等是验收场景，两者不混用。
 
@@ -54,6 +55,18 @@
 | --- | --- | --- | --- |
 | D-1：Dreaming 隔离生成与持久化提案预览 | C-1 | `internal/dream` 锁内校验干净基线、无 `.git`/凭据/符号链接的独立临时目录导出、候选 runner（`claude`/`codex`，真实宿主未验证）与平台沙箱受限执行、固定基线 Diff 与范围校验、`$STATE/repos/<repoId>/proposals/` 持久化与 `dream.updated` 事件；实现 CLI `dream --runner`、`dream --show` 与 `POST /api/v1/dream:preview`、`GET /api/v1/dream/{proposalId}` | D01、D02（脏库拒绝生成部分）、D03，R02 的无 runner 与缺少沙箱降级场景 |
 | D-2：Dreaming 显式应用、UI 整理视图与全量发布交付 | D-1、C-2、C-3 | 实现 `app.ApplyDream`、CLI `dream --apply <ID> --patch-hash <HASH>` 与 `POST /api/v1/dream:apply`（校验原始基线、过期拒绝、受管事务提交、中断恢复与重复 apply 幂等返回），接入 UI「整理接入」提案预览与确认操作；按第 3、4 节完成跨平台发布候选包（`make release`）、校验和与许可证清单、降级与恢复演练及阶段 A–D 全量回归 | D02（旧基线提案拒绝应用部分）、D04，A03 的 Dreaming 接口只读拦截，R01–R04 全量回归及第 4 节发布前检查 |
+
+### 阶段 E 的实施顺序
+
+阶段 E 由 [dsh 专用插件设计](./07-dsh-plugin.md) 定义。`E-1` 至 `E-4` 由 `T048` 交付实现与可复核验收，`E-5` 由 `T052` 跟踪；真实 DSH 会话证据不可得时保留未验证状态，不用单元测试替代。
+
+| 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
+| --- | --- | --- | --- |
+| E-1：插件包骨架 | C-3、D-2 | `plugins/dsh/` 的 `package.json`、`cordis.patch.yml`、`index.js`、locale、icon 与 Node 单元测试；无依赖与安装脚本 | I03、I04 的包清单场景 |
+| E-2：生命周期与上下文 | E-1；DSH 事件契约明确 | `agent/created` 读取并注册 `systemPrompt.context`、`turn/end` 触发有界后台同步、`agent/disposed` 尽力收尾；子代理跳过；错误不阻塞会话 | H07–H10 |
+| E-3：适配器探测与安装提示 | E-1、C-3 | 原生 `memctl-dsh` 与旧 `dsh-hooks-plugin` 分别探测；原生存在时不写 `hooks.json`；两者共存、缺失与版本过低给出可诊断状态和界面安装提示 | I03、I05 的适配状态场景 |
+| E-4：发布产物与隔离安装 | E-1 至 E-3 | `memctl dsh plugin-path`/`plugin-dir` 从 `go:embed` 生成绝对路径；Release 附带 `memctl-dsh-<version>.tgz` 与校验和；隔离 profile 安装与 `--dump-config` 验证 | I04、I06 |
+| E-5：真实宿主验证 | E-4；可用的 DSH 会话与隔离环境 | 在真实 DSH 会话验证注入快照、每轮提交、收尾、恢复、子代理与失败降级；不可执行时记录未验证项；由 `T052` 跟踪 | H07–H10 的真实会话部分 |
 
 ### 阶段步骤的子任务切分
 
@@ -122,6 +135,10 @@
 | H04 | start/context JSON 与纯文本、pull/sync 空输出 | 字段、事件名和 stdout 符合契约，无 Git 输出混入 JSON |
 | H05 | wrap 子程序失败、被信号中断、同步也失败 | 透传子程序状态，同步结果不掩盖原结果 |
 | H06 | 无 remote、缺少稳定 SID、入口超长时执行 start/context | 本地上下文可用；无 SID 不跨会话去重或伪造来源；超长按宿主限额明确提示，不静默截断 |
+| H07 | 原生 dsh 插件事件映射 | `agent/created` 注入、`turn/end` 同步、`agent/disposed` 收尾各一次 |
+| H08 | 上下文注入 | 首个请求前存在 `[agent-memory]` 快照，不伪造 inbox 用户消息 |
+| H09 | 并发与失败 | 多轮快速结束只保留一个有界同步；断网/锁忙不阻塞会话 |
+| H10 | 子代理与生命周期 | 子代理不重复注入/同步；插件卸载清理子进程 |
 | A01 | 注册全部 REST 路由 | Go ServeMux 不 panic，参数可取出，方法匹配正确 |
 | A02 | 缺失 Token、跨源 Origin、伪造 Host、PATCH 绕过 | 所有 API 包括读取和 SSE 都按规则拒绝 |
 | A03 | 只读 UI 下直接构造 POST/PUT/PATCH/DELETE | 服务端拒绝，包括安装、同步和 Dreaming 启动 |
@@ -133,6 +150,10 @@
 | D04 | 同一提案连续 apply、应用中断后重试 | 返回同一提交或恢复状态，不重复提交 |
 | I01 | 支持版本安装两次、用户已有同类 Hook | 无重复项，不覆盖非本工具配置 |
 | I02 | 配置预览后用户修改、安装中断、格式不支持 | 基线冲突或保留可恢复现场；不全文件强制重序列化 |
+| I03 | dsh 插件安装/升级/卸载；原生与旧插件共存 | 原生存在时不写 `hooks.json`；共存时 `needs_attention`；隔离 profile 安装幂等；无安装脚本 |
+| I04 | 内嵌 tarball 离线安装 | `memctl dsh plugin-path` 输出存在的绝对 `.tgz`；无 npm 网络也能在隔离 profile 安装；文件清单和版本正确 |
+| I05 | DSH 兼容拒绝 | `engines.dsh` 范围外版本被拒绝，不出现半安装或静默失效 |
+| I06 | 添加插件界面输入 | npm 包名、绝对 tarball、绝对目录均可解析并安装；`~`、相对路径、带子目录的 GitHub URL 被拒绝 |
 | R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md |
 | R02 | 无 Git、无 runner、凭据环境缺失 | 分别给出针对性错误；不影响无关功能 |
 | R03 | 干净检出后使用已记录工具链构建，执行 `version/help` 与未知命令 | 实际构建与测试入口可用；version/help 不访问仓库、不要求 Git 或 Node.js；未知命令返回用法错误，无占位成功结果 |
@@ -168,11 +189,11 @@
 
 - 文档中的命令、参数、状态字段和 REST 路由与实现一致；契约测试覆盖全部路由和错误类别。
 - 同步与写入测试不接触真实用户配置或公网远端；真实宿主验证使用明确隔离的测试账户或目录。
-- 单文件包包含默认指引和模板，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和与第三方许可证。
+- 单文件包包含默认指引、模板和 `memctl-dsh` 源文件，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和、第三方许可证与 `memctl-dsh-<version>.tgz`。
 - `--readonly`、无 remote、无 runner、无 GUI 浏览器等降级路径都有明确结果。
 - 事务与配置安装恢复演练通过；不以手工删除锁或强制重置仓库作为测试通过条件。
 - 视觉 UI/UX 验证仅在明确安排时开展，不用本方案的静态检查代替浏览器实际效果验证。
-- GitHub 构建流水线（`.github/workflows/build.yml`）调用与本地一致的 `make release` 入口；`v*` 标签发布附带四个候选二进制与三个元数据文件。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
+- GitHub 构建流水线（`.github/workflows/build.yml`）调用与本地一致的 `make release` 入口；`v*` 标签发布附带四个候选二进制、`memctl-dsh-<version>.tgz` 与三个元数据文件。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
 
 ## 5. 上轮审查问题追踪
 

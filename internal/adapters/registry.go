@@ -36,20 +36,27 @@ type AdapterSpec struct {
 	// HostCommands are the executable names tried in order for version
 	// detection.
 	HostCommands []string
-	// Plugin is the optional third-party plugin the host needs for hook
-	// support. A host without its plugin is reported as needs_attention
-	// instead of configured.
+	// Plugin is the optional legacy plugin the host needs for hook support.
+	// A host without its plugin is reported as needs_attention instead of
+	// configured unless a NativePlugin is installed.
 	Plugin *PluginSpec
+	// NativePlugin is an optional first-party host plugin that replaces the
+	// legacy hook configuration. When it is installed memctl manages no
+	// configuration for the host and reports configured without artifacts.
+	NativePlugin *PluginSpec
 	// Artifacts are the configuration files memctl manages for this host.
 	Artifacts []ArtifactSpec
 }
 
-// PluginSpec locates the JSON manifest of a required host plugin.
+// PluginSpec locates the JSON manifest of a host plugin.
 type PluginSpec struct {
 	Name string
 	// Manifests are candidate paths; the first readable manifest with a
 	// "version" string wins.
 	Manifests []string
+	// MinVersion is the minimum supported version. An empty value accepts
+	// every parseable version.
+	MinVersion string
 }
 
 // ArtifactSpec describes one managed configuration file.
@@ -171,6 +178,15 @@ var registry = []AdapterSpec{
 				"$HOME/.dsh/profiles/*/node_modules/dsh-hooks-plugin/package.json",
 			},
 		},
+		NativePlugin: &PluginSpec{
+			Name:       "memctl-dsh",
+			MinVersion: "0.1.0",
+			Manifests: []string{
+				"$HOME/.dsh/node_modules/memctl-dsh/package.json",
+				"$HOME/.dsh/plugins/memctl-dsh/package.json",
+				"$HOME/.dsh/profiles/*/node_modules/memctl-dsh/package.json",
+			},
+		},
 		Artifacts: []ArtifactSpec{{
 			PathTemplate: "$HOME/.dsh/hooks.json",
 			Kind:         KindMerge,
@@ -205,21 +221,26 @@ func Capabilities(agent string) []string {
 	if !ok {
 		return []string{}
 	}
-	out := make([]string, 0, len(spec.Artifacts))
+	out := make([]string, 0, len(spec.Artifacts)+1)
 	for _, artifact := range spec.Artifacts {
 		if artifact.Capability == "" {
 			continue
 		}
-		found := false
-		for _, existing := range out {
-			if existing == artifact.Capability {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !containsCapability(out, artifact.Capability) {
 			out = append(out, artifact.Capability)
 		}
 	}
+	if spec.NativePlugin != nil && !containsCapability(out, CapabilityPlugin) {
+		out = append(out, CapabilityPlugin)
+	}
 	return out
+}
+
+func containsCapability(capabilities []string, capability string) bool {
+	for _, existing := range capabilities {
+		if existing == capability {
+			return true
+		}
+	}
+	return false
 }

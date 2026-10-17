@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gray0128/memctl/internal/adapters"
+	dshplugin "github.com/gray0128/memctl/plugins/dsh"
 )
 
 // runInstall implements `install [agent...] --all --dry-run --status`. It reads
@@ -146,6 +147,7 @@ func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 	if plan.Reason != "" {
 		fmt.Fprintf(stdout, "  note: %s\n", plan.Reason)
 	}
+	printDshHints(stdout, plan)
 	for _, artifact := range plan.Artifacts {
 		path := artifact.Path
 		fmt.Fprintf(stdout, "  %s (%s) %s\n", path, artifact.Format, artifact.Action)
@@ -201,4 +203,20 @@ func printRecovery(stdout io.Writer, result adapters.RecoveryResult) {
 	for _, path := range result.Skipped {
 		fmt.Fprintf(stdout, "recovery skipped %s: the file changed after the interrupted install\n", path)
 	}
+}
+
+// printDshHints mirrors docs/07-dsh-plugin.md section 6.4 when dsh has no
+// detected plugin. It never runs memctl dsh plugin-path itself because install
+// --status must stay read-only.
+func printDshHints(stdout io.Writer, plan adapters.InstallPlan) {
+	if plan.Agent != "dsh" || plan.PluginVersion != "" || plan.Status != adapters.StatusNeedsAttention {
+		return
+	}
+	version, err := dshplugin.Version()
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(stdout, "  DSH 界面: 插件 → 添加插件 → memctl-dsh@%s\n", version)
+	fmt.Fprintln(stdout, "  DSH 离线: 运行 memctl dsh plugin-path，把输出的绝对 tarball 路径粘贴到同一对话框")
+	fmt.Fprintf(stdout, "  CLI: dsh plugin --profile <profile> add memctl-dsh@%s\n", version)
 }

@@ -27,11 +27,14 @@ memctl <subcommand> [flags] [-- command...]
 | `dream` | `--runner claude` 或 `--runner codex` | 选择 runner 即确认将导出的受支持文本发送给该 runner 的模型端点；生成并保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
 | `dream` | `--show ID` 或 `--apply ID --patch-hash HASH` | 查看或确认已有提案；apply 不重新调用模型 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
+| `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `version` / `help` | 无 | 不访问记忆库、不初始化图谱 |
 
 同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成、查看、应用互斥；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
+
+dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只探测并报告，不写入 profile 或 `hooks.json`。只有旧插件 `dsh-hooks-plugin` 已存在时，`install dsh` 才沿用旧的 `hooks.json` 合并路径并将其标记为 deprecated；两者都不存在或同时存在时，`install --status` 返回 `needs_attention`/`not_installed` 和界面安装提示，不自动写旧配置。`memctl dsh plugin-path` 与 `memctl dsh plugin-dir` 只读内嵌源文件并写入 `$STATE/dsh/`，输出绝对路径，不执行 `pnpm`、不修改 DSH profile。
 
 `init` 重复执行不修改已有 remote。已有 remote 与 URL 不同时拒绝；需要在暂停自动操作后显式修改 Git remote，再使用 `init <url> --confirm-private` 确认新目标。确认记录绑定有效 fetch/push URL，URL 不同即失效。
 
@@ -149,7 +152,7 @@ UI 不自动生成健康分；按错误、警告、信息展示诊断数。只�
 
 ## 6. 单文件打包
 
-内嵌资产包括前端静态文件、默认指引和全部支持的 adapter 模板。默认指引随二进制发布，不依赖安装时额外复制文件。
+内嵌资产包括前端静态文件、默认指引、全部支持的 adapter 模板和 `memctl-dsh` 插件源文件。默认指引与插件随二进制发布，不依赖安装时额外复制文件；插件 tarball 和目录在运行时生成到状态目录。
 
 ```go
 // internal/assets/embed.go
@@ -181,16 +184,28 @@ func DistFS() (fs.FS, error) {
 }
 ```
 
+```go
+// plugins/dsh/embed.go
+package dshplugin
+
+import "embed"
+
+//go:embed package.json cordis.patch.yml index.js icon.svg locale/*.json
+var files embed.FS
+```
+
+`plugins/dsh/test/` 不匹配上述模式，因此不进入运行时 tarball；`npm pack` 的 `files` 字段独立限制发布文件清单。插件包不含 `dependencies`、`install`、`postinstall` 或 `prepare`。
+
 兼容读取 `$STATE/INSTRUCTIONS.md` 作为用户显式创建的附加指引，不覆盖内嵌安全规则、不自动执行其中命令，输出时标明来源。升级不改写该文件；不存在时全部功能仍可运行。
 
-以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试再由 `scripts/release.sh` 交叉编译四个候选二进制并生成发布元数据。Windows 运行支持仍需对应平台测试。
+以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试再由 `scripts/release.sh` 交叉编译四个候选二进制、打包插件 tarball 并生成发布元数据。Windows 运行支持仍需对应平台测试。
 
 ```makefile
 GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install clean release
+.PHONY: all ui build test install clean release dsh-plugin-test dsh-plugin-pack
 all: build
 
 ui:
@@ -198,7 +213,15 @@ ui:
 
 test: ui
 	cd web && npm test
+	node --test plugins/dsh/test/*.test.js
 	$(GO) test ./...
+
+dsh-plugin-test:
+	node --test plugins/dsh/test/*.test.js
+
+dsh-plugin-pack: dsh-plugin-test
+	mkdir -p dist
+	cd plugins/dsh && npm pack --pack-destination ../../dist
 
 build: ui
 	mkdir -p bin
@@ -215,8 +238,8 @@ clean:
 	rm -rf bin dist coverage web/dist
 ```
 
-`make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及三个元数据文件：`SHA256SUMS`（四个二进制的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
+`make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz` 插件包和三个元数据文件：`SHA256SUMS`（四个候选二进制与插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
-GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，在 `macos-latest` 上构建四个候选二进制并上传 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制与三个元数据文件。工作流不改变发布内容，`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
+GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，在 `macos-latest` 上构建四个候选二进制和插件包并上传 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制、插件包与三个元数据文件。工作流不改变发布内容，`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
 
 运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。

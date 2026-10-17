@@ -64,6 +64,8 @@ type detection struct {
 	pluginRequired bool
 	pluginFound    bool
 	pluginVersion  string
+	nativeFound    bool
+	nativeVersion  string
 }
 
 // expand resolves the $HOME prefix of a registered path template.
@@ -78,9 +80,9 @@ func (env Env) readFile(path string) ([]byte, error) {
 	return env.ReadFile(path)
 }
 
-// detect probes the host executable and any required plugin manifest.
+// detect probes the host executable and any registered plugin manifest.
 func (env Env) detect(spec AdapterSpec) detection {
-	result := detection{pluginRequired: spec.Plugin != nil}
+	result := detection{pluginRequired: spec.Plugin != nil && spec.NativePlugin == nil}
 	for _, command := range spec.HostCommands {
 		if env.LookPath == nil {
 			continue
@@ -99,10 +101,24 @@ func (env Env) detect(spec AdapterSpec) detection {
 		result.hostUnparsed = true
 		break
 	}
-	if spec.Plugin == nil {
-		return result
+	if spec.Plugin != nil {
+		if found, version := env.probePlugin(*spec.Plugin); found {
+			result.pluginFound = true
+			result.pluginVersion = version
+		}
 	}
-	for _, manifest := range env.expandManifests(spec.Plugin.Manifests) {
+	if spec.NativePlugin != nil {
+		if found, version := env.probePlugin(*spec.NativePlugin); found {
+			result.nativeFound = true
+			result.nativeVersion = version
+		}
+	}
+	return result
+}
+
+// probePlugin returns the first readable manifest that carries a version.
+func (env Env) probePlugin(spec PluginSpec) (bool, string) {
+	for _, manifest := range env.expandManifests(spec.Manifests) {
 		data, err := env.readFile(manifest)
 		if err != nil {
 			continue
@@ -113,11 +129,9 @@ func (env Env) detect(spec AdapterSpec) detection {
 		if err := json.Unmarshal(data, &parsed); err != nil || parsed.Version == "" {
 			continue
 		}
-		result.pluginFound = true
-		result.pluginVersion = parsed.Version
-		break
+		return true, parsed.Version
 	}
-	return result
+	return false, ""
 }
 
 // expandManifests resolves $HOME and expands glob candidates. Profile-based

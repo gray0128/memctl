@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gray0128/memctl/internal/assets"
@@ -100,6 +101,43 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		HostVersion:   det.hostVersion,
 		PluginVersion: det.pluginVersion,
 	}
+	if det.nativeFound {
+		plan.PluginVersion = det.nativeVersion
+	}
+
+	// A native plugin owns the host integration. memctl only detects it and
+	// never writes hooks.json while it is installed.
+	if spec.NativePlugin != nil {
+		switch {
+		case !det.hostFound:
+			plan.Status = StatusNotInstalled
+			plan.Reason = "host executable not found"
+			return plan, nil
+		case det.hostUnparsed:
+			plan.Status = StatusUnsupported
+			plan.Reason = fmt.Sprintf("cannot parse the version reported by %s", det.hostCommand)
+			return plan, nil
+		case det.nativeFound && det.pluginFound:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("%s and legacy %s are both installed; remove one to avoid duplicate triggers",
+				spec.NativePlugin.Name, spec.Plugin.Name)
+			return plan, nil
+		case det.nativeFound:
+			if minimum := spec.NativePlugin.MinVersion; minimum != "" && versionLessThan(det.nativeVersion, minimum) {
+				plan.Status = StatusNeedsAttention
+				plan.Reason = fmt.Sprintf("%s %s is older than the supported minimum %s",
+					spec.NativePlugin.Name, det.nativeVersion, minimum)
+				return plan, nil
+			}
+			plan.Status = StatusConfigured
+			plan.Reason = fmt.Sprintf("%s is installed; dsh hooks.json is not needed", spec.NativePlugin.Name)
+			return plan, nil
+		case !det.pluginFound:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("no dsh plugin detected; install %s in DSH instead of writing hooks.json", spec.NativePlugin.Name)
+			return plan, nil
+		}
+	}
 
 	anyExisting := false
 	allSkip := len(spec.Artifacts) > 0
@@ -152,6 +190,19 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 			plan.Reason = "host executable not found; installing anyway because the configuration exists"
 		}
 		plan.Applicable = applicable
+	}
+
+	// Reaching this branch with a native plugin registered means the legacy
+	// dsh-hooks-plugin is the only plugin present. Keep the old merge path but
+	// make the deprecation visible in the plan.
+	if spec.NativePlugin != nil {
+		if plan.Status == StatusConfigured {
+			plan.Reason = fmt.Sprintf("legacy %s is configured; migrate to %s", spec.Plugin.Name, spec.NativePlugin.Name)
+		} else if plan.Reason == "" {
+			plan.Reason = fmt.Sprintf("legacy %s is deprecated; migrate to %s", spec.Plugin.Name, spec.NativePlugin.Name)
+		} else {
+			plan.Reason += fmt.Sprintf("; legacy %s is deprecated", spec.Plugin.Name)
+		}
 	}
 	return plan, nil
 }
@@ -422,4 +473,40 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		_ = directory.Close()
 	}
 	return nil
+}
+
+// versionLessThan compares the numeric major.minor.patch prefix. Unparseable
+// versions are accepted rather than treated as too old.
+func versionLessThan(version, minimum string) bool {
+	current, okCurrent := parseVersion(version)
+	floor, okFloor := parseVersion(minimum)
+	if !okCurrent || !okFloor {
+		return false
+	}
+	for index := range current {
+		if current[index] != floor[index] {
+			return current[index] < floor[index]
+		}
+	}
+	return false
+}
+
+func parseVersion(version string) ([3]int, bool) {
+	value := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if index := strings.IndexAny(value, "-+"); index >= 0 {
+		value = value[:index]
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) == 0 || len(parts) > 3 {
+		return [3]int{}, false
+	}
+	var parsed [3]int
+	for index, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return [3]int{}, false
+		}
+		parsed[index] = number
+	}
+	return parsed, true
 }

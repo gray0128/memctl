@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gray0128/memctl/internal/memerr"
@@ -397,5 +398,172 @@ func TestDshPluginProfileDetection(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); err != nil {
 		t.Fatalf("dsh hooks config was not written: %v", err)
+	}
+}
+
+func writePluginManifest(t *testing.T, home, name, version string) {
+	t.Helper()
+	manifest := filepath.Join(home, ".dsh", "profiles", "desktop", "node_modules", name, "package.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte(`{"name":"`+name+`","version":"`+version+`"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDshNativePluginIsConfiguredWithoutHooks(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
+	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("native plugin plan = %+v, want configured with no artifacts", plan)
+	}
+	if plan.PluginVersion != "0.1.2" {
+		t.Fatalf("PluginVersion = %q, want 0.1.2", plan.PluginVersion)
+	}
+	if plan.Reason == "" {
+		t.Fatal("native plugin plan must explain why hooks.json is not needed")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); !os.IsNotExist(err) {
+		t.Fatalf("native plugin plan created hooks.json: %v", err)
+	}
+
+	result, err := env.Apply(plan)
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if len(result.Applied) != 0 || result.Status != StatusConfigured {
+		t.Fatalf("native plugin apply = %+v, want no writes", result)
+	}
+}
+
+func TestDshNativeAndLegacyPluginsNeedAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
+	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+	writePluginManifest(t, home, "dsh-hooks-plugin", "0.2.15")
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("coexisting plugin plan = %+v, want needs_attention without artifacts", plan)
+	}
+	if plan.PluginVersion != "0.1.2" {
+		t.Fatalf("PluginVersion = %q, want the native plugin version", plan.PluginVersion)
+	}
+	if !strings.Contains(plan.Reason, "memctl-dsh") || !strings.Contains(plan.Reason, "dsh-hooks-plugin") {
+		t.Fatalf("reason does not name both plugins: %q", plan.Reason)
+	}
+
+	result, err := env.Apply(plan)
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if len(result.Applied) != 0 {
+		t.Fatalf("coexisting plugins were written: %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); !os.IsNotExist(err) {
+		t.Fatalf("coexisting plugins created hooks.json: %v", err)
+	}
+}
+
+func TestDshWithoutAnyPluginNeedsAttention(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("missing plugin plan = %+v, want needs_attention without artifacts", plan)
+	}
+	if plan.PluginVersion != "" {
+		t.Fatalf("PluginVersion = %q, want empty", plan.PluginVersion)
+	}
+	if !strings.Contains(plan.Reason, "memctl-dsh") {
+		t.Fatalf("reason does not name the native plugin: %q", plan.Reason)
+	}
+}
+
+func TestDshOldNativePluginNeedsAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
+	writePluginManifest(t, home, "memctl-dsh", "0.0.9")
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable {
+		t.Fatalf("old native plugin plan = %+v, want needs_attention", plan)
+	}
+	if !strings.Contains(plan.Reason, "0.1.0") {
+		t.Fatalf("reason does not state the minimum version: %q", plan.Reason)
+	}
+}
+
+func TestDshHostMissingIsNotInstalled(t *testing.T) {
+	env, home := fakeEnv(t, nil, nil)
+	writePluginManifest(t, home, "memctl-dsh", "0.1.2")
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNotInstalled || plan.Applicable {
+		t.Fatalf("missing host plan = %+v, want not_installed", plan)
+	}
+}
+
+func TestDshLegacyPluginIsMarkedDeprecated(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"dsh": "/usr/bin/dsh"}, map[string]string{"/usr/bin/dsh": "0.2.1-rc.2\n"})
+	writePluginManifest(t, home, "dsh-hooks-plugin", "0.2.15")
+
+	plan, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNotInstalled || !plan.Applicable {
+		t.Fatalf("legacy plan = %+v, want an applicable not_installed plan", plan)
+	}
+	if !strings.Contains(plan.Reason, "deprecated") {
+		t.Fatalf("legacy plan is not marked deprecated: %q", plan.Reason)
+	}
+
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	configured, err := env.Plan("dsh")
+	if err != nil {
+		t.Fatalf("second Plan error: %v", err)
+	}
+	if configured.Status != StatusConfigured || !strings.Contains(configured.Reason, "migrate") {
+		t.Fatalf("configured legacy plan = %+v, want a migration reason", configured)
+	}
+}
+
+func TestVersionLessThan(t *testing.T) {
+	tests := []struct {
+		version string
+		minimum string
+		want    bool
+	}{
+		{"0.0.9", "0.1.0", true},
+		{"0.1.0", "0.1.0", false},
+		{"0.1.2", "0.1.0", false},
+		{"v0.1.2", "0.1.0", false},
+		{"1.0.0", "0.1.0", false},
+		{"0.1.0-rc.1", "0.1.0", false},
+		{"unparseable", "0.1.0", false},
+	}
+	for _, tc := range tests {
+		if got := versionLessThan(tc.version, tc.minimum); got != tc.want {
+			t.Fatalf("versionLessThan(%q, %q) = %v, want %v", tc.version, tc.minimum, got, tc.want)
+		}
 	}
 }

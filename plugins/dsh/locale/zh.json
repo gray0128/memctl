@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "memctl 记忆桥接",
+    "description": "在 DSH 会话开始时读取 memctl 记忆，并在每轮结束后同步。"
+  }
+}

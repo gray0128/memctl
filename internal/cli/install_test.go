@@ -31,3 +31,37 @@ func TestPrintPlanShowsManualPatch(t *testing.T) {
 		}
 	}
 }
+
+// TestPrintPlanShowsDshInstallHints covers docs/07-dsh-plugin.md section 6.4:
+// a dsh adapter without any detected plugin must print the UI, offline and CLI
+// entries for memctl-dsh.
+func TestPrintPlanShowsDshInstallHints(t *testing.T) {
+	var stdout bytes.Buffer
+	printPlan(&stdout, adapters.InstallPlan{
+		Agent:  "dsh",
+		Status: adapters.StatusNeedsAttention,
+		Reason: "no dsh plugin detected",
+	})
+	out := stdout.String()
+	for _, want := range []string{
+		"插件 → 添加插件 → memctl-dsh@0.1.2",
+		"memctl dsh plugin-path",
+		"dsh plugin --profile <profile> add memctl-dsh@0.1.2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dsh install hints missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintPlanSkipsDshHintsWhenPluginExists(t *testing.T) {
+	var stdout bytes.Buffer
+	printPlan(&stdout, adapters.InstallPlan{
+		Agent:         "dsh",
+		Status:        adapters.StatusConfigured,
+		PluginVersion: "0.1.2",
+	})
+	if strings.Contains(stdout.String(), "插件 → 添加插件") {
+		t.Fatalf("configured dsh plan printed install hints:\n%s", stdout.String())
+	}
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "memctl Memory Bridge",
+    "description": "Loads memctl memory at DSH session start and synchronizes it after each turn."
+  }
+}

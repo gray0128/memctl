@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Builds the cross-platform release candidates, their SHA-256 checksums, the
-# third-party license notices and the release info file. Run through `make
-# release`, which first executes the full test suite and the frontend build so
-# web/dist is populated. See docs/04-ui-and-cli-specification.md section 6 and
+# Builds the cross-platform release candidates, the memctl-dsh plugin tarball,
+# their SHA-256 checksums, the third-party license notices and the release info
+# file. Run through `make release`, which first executes the full test suite and
+# the frontend build so web/dist is populated. See docs/04-ui-and-cli-specification.md section 6 and
 # docs/05-validation-and-delivery.md sections 3 and 4.
 #
 # Cross-compiled targets are buildable, not runtime-verified. Only the platform
@@ -57,6 +57,12 @@ build darwin amd64 memctl-darwin-amd64
 build linux amd64 memctl-linux-amd64
 build windows amd64 memctl-windows-amd64.exe
 
+# The plugin tarball comes from the same embedded source files as
+# `memctl dsh plugin-path`; `make test` already ran the Node unit tests.
+PLUGIN_VERSION="$(node -p "require('./plugins/dsh/package.json').version")"
+( cd plugins/dsh && npm pack --pack-destination "$ROOT/$DIST" >/dev/null )
+printf 'wrote %s/memctl-dsh-%s.tgz\n' "$DIST" "$PLUGIN_VERSION"
+
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$@"
@@ -65,7 +71,8 @@ sha256() {
   fi
 }
 
-# Checksums cover the four candidate binaries, not the metadata files.
+# Checksums cover the four candidate binaries and the plugin tarball, not the
+# metadata files.
 ( cd "$DIST" && sha256 memctl-* > SHA256SUMS )
 printf 'wrote %s/SHA256SUMS\n' "$DIST"
 
@@ -131,7 +138,8 @@ fi
   printf '  build host:     %s\n' "$HOST_TARGET"
   printf '\n'
   printf 'notes:\n'
-  printf '  - embedded assets: default instructions, adapter templates and web/dist UI\n'
+  printf '  - embedded assets: default instructions, adapter templates, memctl-dsh sources and web/dist UI\n'
+  printf '  - plugin tarball:  memctl-dsh-%s.tgz (npm-compatible; no dependencies or install scripts)\n' "$PLUGIN_VERSION"
   printf '  - runtime dependency: system Git; Dreaming also needs a runner and a verified sandbox\n'
   printf '  - no external CDN: UI assets are served from the binary\n'
 } > "$DIST/RELEASE-INFO.txt"

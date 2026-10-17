@@ -57,8 +57,8 @@ func TestRegistryHostProtocols(t *testing.T) {
 	}
 
 	dsh, ok := Lookup("dsh")
-	if !ok || dsh.Plugin == nil {
-		t.Fatal("dsh plugin is missing")
+	if !ok || dsh.Plugin == nil || dsh.NativePlugin == nil {
+		t.Fatal("dsh legacy or native plugin is missing")
 	}
 	foundProfileGlob := false
 	for _, manifest := range dsh.Plugin.Manifests {
@@ -68,6 +68,15 @@ func TestRegistryHostProtocols(t *testing.T) {
 	}
 	if !foundProfileGlob {
 		t.Fatalf("dsh manifests do not cover the profile plugin directory: %v", dsh.Plugin.Manifests)
+	}
+	foundNativeProfileGlob := false
+	for _, manifest := range dsh.NativePlugin.Manifests {
+		if strings.Contains(manifest, "/profiles/*/node_modules/memctl-dsh/package.json") {
+			foundNativeProfileGlob = true
+		}
+	}
+	if !foundNativeProfileGlob {
+		t.Fatalf("dsh native manifests do not cover the profile plugin directory: %v", dsh.NativePlugin.Manifests)
 	}
 }
 
@@ -106,6 +115,10 @@ func TestRegistryCapabilities(t *testing.T) {
 	opencode := Capabilities("opencode")
 	if len(opencode) != 1 || opencode[0] != CapabilityPlugin {
 		t.Fatalf("opencode capabilities = %v, want [plugin]", opencode)
+	}
+	dsh := Capabilities("dsh")
+	if len(dsh) != 2 || dsh[0] != CapabilityHooks || dsh[1] != CapabilityPlugin {
+		t.Fatalf("dsh capabilities = %v, want [hooks plugin]", dsh)
 	}
 	if unknown := Capabilities("unknown"); len(unknown) != 0 {
 		t.Fatalf("unknown adapter capabilities = %v, want empty", unknown)
