@@ -9,7 +9,7 @@
 - 发布后改动：界面重设计（`T040`）与后续发布、UI 修复（`T041`–`T046`）已依次交付；`T042` 修正 Codex、Command Code、Antigravity、OpenCode 2 与 dsh 的真实宿主协议；`T048` 增加 `memctl-dsh` 插件、`memctl dsh plugin-path`/`plugin-dir`、原生插件探测与插件 tarball 发布产物；`T053` 发布 `v0.2.0`；`T054` 补齐 Codex、OpenCode 与 DSH 的会话结束映射；`T055` 发布 `v0.2.1`；`T056` 新增 `update`/`update --check` 自更新；`T057` 发布 `v0.3.0`。验证与修复记录见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051) 与 [阶段 E 归档](./validation/stage-e.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。DSH 0.2.1-rc.2 已通过隔离 profile 安装 `memctl-dsh`，并在本机 `desktop` 真实会话确认 `[agent-memory]` 注入、`turn/end` 后同步与子代理跳过；`T054` 已补插件卸载时对仍 live 会话的 `end` 兜底，真实退出复验、恢复与失败路径仍未验证。
-- 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `agent/disposed` 收尾、恢复与界面安装；Codex `SessionEnd`、OpenCode `session.deleted` 与 DSH 插件卸载兜底均未在真实会话结束路径复验；`systemPrompt.context` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步已在真实会话验证，失败降级仅覆盖模型凭据缺失；`update` 仅在 darwin/arm64 真实执行，其他平台为交叉编译与单元测试；本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.3.0`。
+- 未验证：真实 Dreaming runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；Codex 模型回复受账号额度限制；非 macOS 平台的运行与 runner 隔离；真实 DSH 会话中 `memctl-dsh` 的 `agent/disposed` 收尾、恢复与界面安装；Codex `SessionEnd`、OpenCode `session.deleted` 与 DSH 插件卸载兜底均未在真实会话结束路径复验；`systemPrompt.context` 注入、`turn/end` 后同步、子代理跳过与错误轮次同步已在真实会话验证，失败降级仅覆盖模型凭据缺失；`update` 仅在 darwin/arm64 真实执行，其他平台为交叉编译与单元测试；本机 `~/.agent-memory` 中的 memctl 已升级到 `v0.3.0`，`memctl-dsh` 仍为 `0.2.0`。
 - 已知限制：阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 未发布 npm 包、独立 GitHub 仓库或 Discover 索引，当前安装通道为内嵌 tarball；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义仍待真实宿主确认。
 - 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
 
@@ -86,7 +86,7 @@
 - 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.3.0` 指向 `6fc3f11`；全量测试在具备 macOS `sandbox-exec` 权限的受控环境运行。
 - 命令与结果：`VERSION=v0.3.0 make release` 全量测试通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 315.5 秒），生成四个平台候选二进制、`memctl-dsh-0.3.0.tgz` 与三个元数据文件；`dist/SHA256SUMS` 五个产物全部 `OK`，`dist/memctl-darwin-arm64` 与 `memctl-darwin-amd64 version` 均输出 `memctl v0.3.0`，插件 tarball 版本为 `0.3.0`。tag 推送后 [GitHub Actions 运行 39038459741](https://github.com/gray0128/memctl/actions/runs/39038459741) 在 4 分 20 秒内通过并创建 [Release v0.3.0](https://github.com/gray0128/memctl/releases/tag/v0.3.0)；附件含四个平台二进制、`memctl-dsh-0.3.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 Release 附件后按发布 `SHA256SUMS` 校验，五个产物全部 `OK`；下载的 `memctl-darwin-arm64` 输出 `memctl v0.3.0`，`update --check` 输出 `up to date`。以当前代码构建 `v0.2.1` 临时二进制后执行 `update`，从新 Release 下载并校验 `memctl-darwin-arm64`，替换后 `version` 输出 `memctl v0.3.0`，退出码 `0`，无临时文件残留。
 - 验收：`make test` 全量通过；本地与下载的 Release 附件校验全部 `OK`；tag `v0.3.0` 的 CI Release 成功；`R05` 的真实更新路径在发布后复验通过。
-- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.3.0`；真实 DSH 会话退出收尾等 `T052` 项仍未验证。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；发布时本机 `~/.agent-memory` 中的 memctl 与 `memctl-dsh` 尚未升级到 `v0.3.0`；真实 DSH 会话退出收尾等 `T052` 项仍未验证。
 - 下一步：`T052` 安装 `v0.3.0` 的 `memctl-dsh` 后正常退出 DSH，确认恰好一次 `end`；随后处理恢复、失败路径与界面安装。
 
 ## 近期实施任务
