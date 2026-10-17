@@ -274,7 +274,7 @@ func TestC3EmbeddedTemplatesCoverR01(t *testing.T) {
 	if err != nil {
 		t.Fatalf("embedded opencode template was not written: %v", err)
 	}
-	for _, want := range []string{"memctl", "export default", "session.execution.started"} {
+	for _, want := range []string{"memctl", "export default", "session.execution.started", "session.compacted", "session.deleted", `run("end"`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("opencode plugin missing %q:\n%s", want, data)
 		}
@@ -289,8 +289,16 @@ func TestC3EmbeddedTemplatesCoverR01(t *testing.T) {
 	if err != nil {
 		t.Fatalf("codex hooks were not written: %v", err)
 	}
-	if !strings.Contains(string(codexHooks), "start --agent codex --stdin --json") {
-		t.Fatalf("codex hooks do not request the JSON envelope:\n%s", codexHooks)
+	for _, want := range []string{
+		"start --agent codex --stdin --json",
+		`"PreCompact"`,
+		"sync --agent codex --stdin",
+		`"SessionEnd"`,
+		"end --agent codex --stdin",
+	} {
+		if !strings.Contains(string(codexHooks), want) {
+			t.Fatalf("codex hooks missing %q:\n%s", want, codexHooks)
+		}
 	}
 
 	harness.addHost("commandcode", "1.84.0")

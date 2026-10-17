@@ -139,6 +139,7 @@
 | H08 | 上下文注入 | 首个请求前存在 `[agent-memory]` 快照，不伪造 inbox 用户消息 |
 | H09 | 并发与失败 | 多轮快速结束只保留一个有界同步；断网/锁忙不阻塞会话 |
 | H10 | 子代理与生命周期 | 子代理不重复注入/同步；插件卸载清理子进程 |
+| H11 | 宿主会话结束映射 | `SessionEnd`、`session.deleted`、`agent/disposed` 与插件卸载兜底各触发一次 `end`；回合结束、空闲与压缩只触发 `sync`，不触发 `end` |
 | A01 | 注册全部 REST 路由 | Go ServeMux 不 panic，参数可取出，方法匹配正确 |
 | A02 | 缺失 Token、跨源 Origin、伪造 Host、PATCH 绕过 | 所有 API 包括读取和 SSE 都按规则拒绝 |
 | A03 | 只读 UI 下直接构造 POST/PUT/PATCH/DELETE | 服务端拒绝，包括安装、同步和 Dreaming 启动 |

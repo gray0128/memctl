@@ -5,6 +5,12 @@
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent codex --stdin" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" sync --agent codex --stdin", "timeout": 15 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "\"$HOME/.agent-memory/bin/memctl\" end --agent codex --stdin", "timeout": 3 }] }
     ]
   }
 }

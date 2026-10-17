@@ -253,8 +253,8 @@ test('disposed triggers one detached end and clears state', async () => {
   assert.equal(agent.disposedListeners, 1)
 })
 
-test('dispose kills pending children and unregisters scoped handlers', async () => {
-  const base = scriptedSpawn([{ stdout: startPayload('ctx') }, { hang: true }])
+test('dispose ends live sessions and kills pending children', async () => {
+  const base = scriptedSpawn([{ stdout: startPayload('ctx') }, { hang: true }, {}])
   const spawn = (bin, args, opts) => {
     const child = base.spawn(bin, args, opts)
     child.autoCloseOnKill = true
@@ -272,6 +272,23 @@ test('dispose kills pending children and unregisters scoped handlers', async () 
 
   assert.ok(syncChild.killed.includes('SIGTERM'))
   assert.equal(agent.disposedListeners, 1)
+  const endCalls = base.calls.filter((call) => call.args[0] === 'end')
+  assert.equal(endCalls.length, 1)
+  assert.deepEqual(endCalls[0].args, ['end', '--agent', 'dsh', '--sid', 'session-8'])
+  assert.equal(endCalls[0].opts.detached, true)
+  assert.equal(endCalls[0].child.unrefCalled, true)
+})
+
+test('dispose after agent disposal does not repeat end', async () => {
+  const { spawn, calls } = scriptedSpawn([{ stdout: startPayload('ctx') }, {}])
+  const bridge = bridgeWith(spawn)
+  const agent = fakeAgent('session-9')
+  await bridge.onCreated(agent, 'startup')
+
+  bridge.onDisposed(agent)
+  bridge.dispose()
+
+  assert.equal(calls.filter((call) => call.args[0] === 'end').length, 1)
 })
 
 test('binary resolution prefers MEMCTL_DSH_BIN, then the home install and PATH', () => {

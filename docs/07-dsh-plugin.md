@@ -260,9 +260,10 @@ memctl sync --agent dsh --sid <agent.id>
 - 同一会话同时只允许一个同步进程；如果有新的 `turn/end` 到来，只记录一个 pending 标记，当前同步结束后再补一次，避免队列无限增长。
 - 同步失败只写日志，不改变会话状态。memctl 的自动路径本身以退出 0 处理断网、锁忙等失败，插件不应额外制造宿主错误。
 
-会话销毁：
+会话销毁与插件卸载：
 
 - `agent/disposed` 上触发 `memctl end --agent dsh --sid <agent.id>`，使用 detached + unref，尽力在 DSH 退出前完成。
+- 插件卸载时，对仍处于 live 状态且尚未收尾的会话再触发一次 detached `end`；已由 `agent/disposed` 清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态，因此插件重载时多一次同步不会改变会话语义。
 - 子代理没有注册监听器，不会触发。
 - 插件卸载时清理所有子进程和定时器；不要等待 `agent.whenIdle()` 或自己的 disposal，避免创建/销毁死锁。
 
@@ -304,7 +305,7 @@ memctl sync --agent dsh --sid <agent.id>
 | 子代理 | 跳过注入和同步；不创建独立记忆上下文 |
 | 插件重复安装/旧 hooks 共存 | 记录警告；不自动删除用户配置 |
 | DSH 版本不匹配 | 由 DSH 的 `engines.dsh` 检查拒绝加载；Plugin Manager 显示不兼容原因 |
-| 插件卸载时有子进程 | 取消 start 与未完成的 sync；不重复触发 end；清理状态与连接 |
+| 插件卸载时有子进程 | 取消 start 与未完成的 sync；对仍 live 的会话触发一次 best-effort `end`，已 disposed 的不重复；清理状态与连接 |
 
 所有事件监听器必须内部捕获异常。`agent/created` 监听器抛错会让 agent 创建失败，这是最需要避免的宿主破坏。
 
@@ -538,10 +539,11 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
 - `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.2.0` Release 已附带 `memctl-dsh-0.2.0.tgz`，本机安装的 darwin/arm64 二进制与发布校验和一致。
-- 验证证据：插件 Node 单元测试 13 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.2.0`。
+- 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
+- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.2.0`。
 
 未验证：
 
-- 真实 DSH 会话中的 `agent/disposed` 收尾、恢复、失败路径与界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
+- 真实 DSH 会话中的 `agent/disposed` 收尾、恢复、失败路径与界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证。2026-10-17 20:05 的退出应用探针没有观察到 `end`；插件卸载兜底已由单元测试覆盖，但仍需真实退出复验，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
 - npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。

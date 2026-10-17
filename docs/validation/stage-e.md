@@ -11,3 +11,12 @@
 - 验收：`I04` 通过，`I05` 通过，`I03`、`I06` 部分通过（隔离 profile 安装、插件状态、绝对 tarball 与目录路径；npm 包名、界面输入、升级与卸载未实测）。`H07`–`H10` 未在真实 DSH 会话执行；事件映射、单飞同步、子代理跳过与卸载清理由假宿主 Node 测试覆盖。
 - 未验证与遗留：真实 DSH 会话的 `systemPrompt.context` 注入、首轮前快照、`turn/end` 提交、`agent/disposed` 收尾、恢复与子代理行为；DSH 0.2.1-rc.2 范围外版本的拒绝已在构造包上验证，未在每个 DSH 小版本复验；npm、独立 GitHub 仓库与 Discover 索引未发布；macOS amd64、Linux 与 Windows 未运行。
 - 下一步：`E-1`–`E-4` 已完成；`E-5`（真实 DSH 会话与界面安装）登记为 `T052`，按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
+## T053：发布 v0.2.0
+
+- 目标与范围：将 `T048` 的 `memctl-dsh` Host 插件、`memctl dsh` 子命令、dsh 原生插件探测与插件 tarball 发布为 `v0.2.0`；按设计约定把插件包版本从 `0.1.2` 同步到 `0.2.0`。不改变插件生命周期、CLI 参数或适配器状态语义。
+- 契约：[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](../07-dsh-plugin.md)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.2.0` 指向 `3e965d4`。
+- 命令与结果：`make test` 全量通过（前端 16 文件 85 项；插件 Node 13 项；Go 含 `tests/integration` 243.2 秒）。tag 推送后 [GitHub Actions 运行 39030270763](https://github.com/gray0128/memctl/actions/runs/39030270763) 在 2 分 56 秒内通过并创建 [Release v0.2.0](https://github.com/gray0128/memctl/releases/tag/v0.2.0)；附件含四个平台二进制、`memctl-dsh-0.2.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 `memctl-darwin-arm64` 与插件 tarball 后，按发布 `SHA256SUMS` 校验两者 `OK`；`memctl-darwin-arm64 version` 输出 `memctl v0.2.0`；安装到 `~/.agent-memory/bin/memctl` 后 SHA-256 为 `49c061c3…a012dac9`，与发布校验和一致；`memctl dsh plugin-path` 输出 `~/.agent-memory/dsh/memctl-dsh-0.2.0.tgz`，其常规文件清单与发布 tarball 一致，运行时打包的 SHA-256 为 `972a1f46…c1d06d2c`，与 npm pack 产物的 `8d71b7ab…afc9089d` 不同，符合设计不要求字节一致。旧二进制备份为 `~/.agent-memory/bin/memctl.v0.1.2`，不进入仓库。
+- 未验证与遗留：真实 DSH 会话中的注入已在本机 `desktop` 确认，每轮同步、收尾、恢复与子代理由 `T052` 跟踪；macOS amd64、Linux 与 Windows 仍只交叉编译；npm、独立 GitHub 仓库与 Discover 索引未发布。
+- 下一步：`T052` 进行中，注入、每轮同步与子代理跳过已确认，剩余 `agent/disposed`、恢复、失败路径与界面安装；按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。

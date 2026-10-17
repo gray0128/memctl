@@ -9,14 +9,28 @@ import (
 // the real hosts in v0.1.0: Codex and Command Code need the JSON envelope,
 // Antigravity reads a named hook from ~/.gemini/config/hooks.json and needs
 // its own SessionStart envelope, OpenCode 2 needs a default setup export, and
-// dsh installs plugins under a named profile directory.
+// dsh installs plugins under a named profile directory. It also pins the
+// session-end mappings: Codex SessionEnd/PreCompact and OpenCode
+// session.deleted/session.compacted.
 func TestRegistryHostProtocols(t *testing.T) {
 	codex, ok := Lookup("codex")
 	if !ok || len(codex.Artifacts) == 0 {
 		t.Fatal("codex adapter is missing")
 	}
-	if command := string(loadAsset(t, codex.Artifacts[0].Asset)); !strings.Contains(command, "start --agent codex --stdin --json") {
-		t.Fatalf("codex SessionStart must request the JSON envelope:\n%s", command)
+	codexHooks := string(loadAsset(t, codex.Artifacts[0].Asset))
+	for _, want := range []string{
+		"start --agent codex --stdin --json",
+		`"PreCompact"`,
+		"sync --agent codex --stdin",
+		`"SessionEnd"`,
+		"end --agent codex --stdin",
+	} {
+		if !strings.Contains(codexHooks, want) {
+			t.Fatalf("codex template missing %q:\n%s", want, codexHooks)
+		}
+	}
+	if !strings.Contains(codexHooks, `"timeout": 3`) {
+		t.Fatalf("codex SessionEnd must fit the host's 3-second cap:\n%s", codexHooks)
 	}
 
 	commandcode, ok := Lookup("commandcode")
@@ -50,7 +64,7 @@ func TestRegistryHostProtocols(t *testing.T) {
 		t.Fatal("opencode adapter is missing")
 	}
 	plugin := string(loadAsset(t, opencode.Artifacts[0].Asset))
-	for _, want := range []string{"export default", "id: \"agent-memory\"", "setup", "session.execution.started", "session.execution.succeeded"} {
+	for _, want := range []string{"export default", "id: \"agent-memory\"", "setup", "session.execution.started", "session.execution.succeeded", "session.compacted", "session.deleted", `run("end"`} {
 		if !strings.Contains(plugin, want) {
 			t.Fatalf("opencode template missing %q:\n%s", want, plugin)
 		}

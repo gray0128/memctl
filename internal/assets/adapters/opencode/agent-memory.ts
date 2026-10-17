@@ -29,13 +29,15 @@ export const AgentMemory: Plugin = async ({ $ }) => {
       const p = event?.properties ?? {}
       if (event?.type === "session.created") await runV1("pull", p.info?.id)
       if (event?.type === "session.idle") await runV1("sync", p.sessionID)
+      if (event?.type === "session.compacted") await runV1("sync", p.sessionID)
+      if (event?.type === "session.deleted") await runV1("end", p.info?.id)
     },
   }
 }
 
 // OpenCode 2 requires a default object with an id and setup function. Its
 // event stream uses session.execution.started/succeeded instead of the v1
-// session.created/session.idle pair.
+// session.created/session.idle pair, and session.deleted instead of a close hook.
 const setup = async (ctx: any) => {
   if (typeof ctx?.event?.subscribe !== "function") return async () => {}
 
@@ -45,14 +47,18 @@ const setup = async (ctx: any) => {
       if (controller.signal.aborted) break
       const type = input?.type ?? input?.event?.type
       const data = input?.data ?? input?.event?.properties ?? {}
+      const sid = data.sessionID ?? data.sessionId ?? data.info?.id ?? data.id
       if (type === "session.execution.started" || type === "session.created") {
-        await run("pull", data.sessionID ?? data.info?.id ?? data.id)
+        await run("pull", sid)
       } else if (
         type === "session.execution.succeeded" ||
         type === "session.execution.failed" ||
-        type === "session.idle"
+        type === "session.idle" ||
+        type === "session.compacted"
       ) {
-        await run("sync", data.sessionID ?? data.sessionId ?? data.info?.id)
+        await run("sync", sid)
+      } else if (type === "session.deleted") {
+        await run("end", sid)
       }
     }
   })().catch(() => {})

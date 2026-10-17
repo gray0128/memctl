@@ -264,7 +264,11 @@ export function createBridge(options = {}) {
   function dispose() {
     if (disposed) return
     disposed = true
-    for (const state of states.values()) cleanupState(state)
+    // Host teardown may unload the plugin before agent/disposed reaches this
+    // bridge. End the sessions that are still live so a normal app exit keeps
+    // the same final-sync guarantee as an explicit agent disposal. end is an
+    // idempotent background sync, so a plugin reload adds no session state.
+    for (const state of states.values()) cleanupState(state, { spawnEnd: true })
     states.clear()
   }
 

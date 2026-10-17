@@ -203,6 +203,8 @@ CLI 使用同一 `resolve` 接口，不由 Hook 指示 Agent 自行执行不受�
 
 支持的宿主为 Claude Code、Codex、Grok、Antigravity、Command Code、OpenCode、pi 与 dsh，各内嵌一份版本匹配的模板。Codex 与 Command Code 的 SessionStart 使用 `--json`，否则宿主会把 Hook 判为失败或忽略注入内容；Antigravity 读取 `$HOME/.gemini/config/hooks.json` 中以 `agent-memory` 为键的命名 Hook，使用 `--agy` 输出宿主所需的 `injectSteps`；OpenCode 2 要求插件默认导出 `{id, setup}` 并订阅 `session.execution.started/succeeded`。安装器按宿主可执行文件探测版本，按插件清单探测插件版本；两者均可在目标机器上缺失。dsh 的插件清单同时探测 `$HOME/.dsh/node_modules`、`$HOME/.dsh/plugins` 与 `$HOME/.dsh/profiles/*/node_modules`，以覆盖按 profile 安装的插件。dsh 优先识别原生插件 `memctl-dsh`：该插件存在时只报告 `plugin` 能力，不生成或写入 `hooks.json`；旧插件 `dsh-hooks-plugin` 作为兼容回退保留，只有旧插件存在时才生成 `hooks.json` 合并计划。原生与旧插件同时存在、两者都不存在，或旧插件存在但 `hooks.json` 尚无本工具条目时，状态为 `needs_attention` 或 `not_installed`，不把旧路径当作默认安装结果。宿主未探测到，或配置中尚无本工具条目时状态为 `not_installed`；宿主可用但缺少必需插件，或目标配置结构无法安全合并时状态为 `needs_attention`；检测到未内嵌模板的宿主、无法解析的版本或未支持的配置格式时状态为 `unsupported`。写入配置只得到 `configured`，只有宿主实测成功才是 `verified`；各宿主的实测结果记录在 [开发状态](./STATUS.md)，不从 `configured` 推导 `verified`。安装不要求已初始化记忆仓库，也不依赖 Node.js。
 
+会话生命周期事件与 `end` 的触发边界见 [Hook 生命周期事件映射](./04-ui-and-cli-specification.md#32-宿主生命周期事件映射)。Codex 使用 `SessionEnd` 收尾，OpenCode 使用 `session.deleted` 收尾；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义仍待真实宿主确认。
+
 每个规范化配置路径使用独立锁，不持仓库锁等待配置安装。安装计划记录每个目标文件的内容修订作为基线；实际写入前重读并比对基线。仅管理带稳定标识的条目：JSON 事件项以命令串包含 `memctl` 识别，YAML 条目以 `id` 前缀 `agent-memory-` 识别，TOML 以 `[features]` 表层下的固定键识别。重复安装不增加重复项，也不覆盖同事件下的用户自有条目、非本工具配置或原有权限。
 
 配置替换使用同目录临时文件并原子替换，写入前把原文件备份到状态根 `adapters/backups/<installId>/`。多文件安装把每个文件的计划修订、安装后修订和备份路径记入状态根 `adapters/install.json`，失败时显示已修改和未修改清单。安装中断后，下一次非干运行的 `install` 先恢复现场：只还原仍与本次安装后修订一致的文件（新建文件则删除），用户随后编辑过的文件保留并报告。`install --status` 和 `install --dry-run` 只报告待恢复现场，不执行恢复。

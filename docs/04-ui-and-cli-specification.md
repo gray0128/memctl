@@ -116,6 +116,29 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 
 已验证 adapter 的宿主 timeout 必须覆盖业务预算、输入输出和最坏清理时间；未测清理时间的组合不能标为 `verified`。宿主更短时降低本次业务预算或仅使用本地上下文，不依赖宿主强杀实现正常取消。
 
+### 3.2 宿主生命周期事件映射
+
+`sync` 与 `end` 使用同一后台同步实现，区别在触发边界：`sync` 对应回合结束后的提交或压缩前，`end` 对应会话运行时被宿主释放。`end` 不释放仓库锁、不写入「会话已关闭」状态，可以重复调用；自动 Hook 遇到断网、锁忙或保护态时仍按退出 0 处理，由下一次 `start` 或 `sync` 重试。
+
+| 宿主 | 回合同步 | 会话结束触发 `end` | 备注 |
+| --- | --- | --- | --- |
+| Claude Code | `Stop`；`StopFailure` 与 `PreCompact` 为待补事件 | `SessionEnd`：`clear`、`resume`、`logout`、`prompt_input_exit`、`other` | 默认 1.5 秒；宿主不等待输出；`Stop` 不覆盖用户中断 |
+| Codex | `Stop`；`PreCompact` | `SessionEnd`：归档或删除仍打开的会话、正常关闭、无客户端连接且空闲 30 分钟 | 默认 1 秒、上限 3 秒；`reason` 目前只有 `other`；切换走不结束 |
+| Grok | `Stop`/`StopFailure`；`PreCompact` 为待补事件 | `SessionEnd` | 默认超时 5 秒 |
+| Antigravity | `PostInvocation`；`Stop` | 待真实宿主确认 `Stop` 的语义；当前模板不写 `SessionEnd` | 未确认前不新增映射 |
+| Command Code | `Stop` | 无 `SessionEnd` | 只保证回合级同步，不宣称收尾已验证 |
+| OpenCode | `session.idle`（兼容）；`session.compacted` | `session.deleted` | `session.status` 迁移与 `session.idle` 弃用待后续处理；删除会话才结束 |
+| pi | `session.idle` | `session.deleted` | 现有模板已接 |
+| DSH | `turn/end` | `agent/disposed`；插件卸载时对仍 live 的会话再触发一次兜底 `end` | 没有单会话关闭入口；归档不销毁运行时；退出应用依赖宿主释放 agent |
+
+触发规则：
+
+- `start` 绑定会话开始、恢复、清理和压缩后的重新注入；`context` 用于需要每轮注入的宿主。
+- `sync` 绑定回合结束、错误或中断回合，以及压缩前；回合结束是耐久性主路径。
+- `end` 绑定会话运行时释放：宿主的 `SessionEnd`、`session.deleted` 或 `agent/disposed`，以及插件卸载时的兜底。回合结束、空闲、压缩、仍保留运行时的归档和子代理结束不触发 `end`。
+- 崩溃、SIGKILL 与宿主提前退出不保证 `end` 执行；本轮已提交内容由回合级 `sync` 保留，下一次 `start` 或 `sync` 继续重试。
+- `end` 必须在宿主预算内返回。`memctl` 只派生后台工作进程并以 0 退出，不等待网络或 Git 完成。
+
 ## 4. Web UI
 
 七个视图共享同一顶栏，统一显示仓库路径、本地状态、远端状态、最后同步时间和只读标识；最后同步时间按浏览器本地时区显示到分钟。ahead/behind 未知时显示「未知」，不显示零。外部写入的失效提示到达时写入方可能仍持有仓库锁，服务端会返回 `stale: true` 的缓存快照；客户端对此有界重试，取得新鲜快照后再渲染，重试仍失败才显示过期状态。读取接口返回 `BUSY` 时同样做有界重试，耗尽后显示仓库忙提示，不向界面暴露服务端诊断路径。

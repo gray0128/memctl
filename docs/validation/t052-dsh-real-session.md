@@ -64,13 +64,28 @@ dsh --profile t052 "只回复 OK，不要调用工具。"
 
 会话日志中该轮 `turn/end` 的 `reason.kind` 为 `error`，同步仍被触发，说明失败轮次不会跳过同步。该进程在错误后直接退出，未观察到 `agent/disposed` 或 `end` 调用；因此父会话正常关闭时的收尾仍未验证，不能把本次结果当作 `agent/disposed` 通过。隔离 profile 与包装脚本在测试后已删除，`memctl` 二进制已恢复。
 
+### 退出应用探针（2026-10-17 20:05）
+
+为观察 `agent/disposed`，在 `~/.agent-memory/bin/memctl` 前放置记录调用的包装脚本，正常退出 DSH 后重新打开。探针日志只有：
+
+```text
+20:04:49  version
+20:04:54  sync  --agent dsh --sid session-16337cf7-3d27-4493-8c79-09ecea6e5fb0
+20:05:38  start --agent dsh --sid session-16337cf7-3d27-4493-8c79-09ecea6e5fb0 --json
+20:05:53  start --agent dsh --sid session-cc826fba-a67d-49e1-9c4f-f9d9575f8b51 --json
+```
+
+`SingletonLock` 在 20:05:35 指向新 PID 4685，旧会话在 20:05:38 被 resume（`start` 与 `session/end-seed`），说明这次操作是退出并重启 DSH，不是关闭单个会话。旧 agent 随旧 host 退出，日志中没有 `end`。这只能说明当前插件在 host 退出路径上没有产生可观察的收尾调用，不能判定 `agent/disposed` 失败，也不能记为通过。
+
+`T054` 已把插件卸载路径改为对仍 live 的 state 触发一次 detached `end`，已 disposed 的不重复，见 [T054 记录](../STATUS.md#t054宿主会话结束映射与-dsh-收尾兜底)。该改动由插件单元测试覆盖；真实退出仍需重新安装插件后复验。
+
 ## 未验证
 
-- 父会话 `agent/disposed` 的 `end` 调用；隔离 headless 会话在模型错误后直接退出，未触发可观察的 `end`，需要正常完成或优雅关闭的会话复验。
+- 父会话 `agent/disposed` 的 `end` 调用；隔离 headless 会话在模型错误后直接退出，退出应用探针也没有观察到 `end`。`T054` 的卸载兜底尚未在真实退出中复验。
 - 恢复旧会话时重新注册上下文且不重复创建提交。
 - 断网、锁忙、`memctl` 缺失时的失败降级。
 - 通过「插件 → 添加插件」界面完成的安装；本次安装使用绝对 tarball 路径。
 
 ## 下一步
 
-继续在可关闭的隔离 DSH 会话中验证 `agent/disposed` 与恢复流程；失败路径使用隔离 `HOME`、`AGENT_MEMORY_STATE` 和可控远端构造。验证完成前 `T052` 保持「进行中」，不把部分证据计入 `H07`–`H10` 全部通过。
+继续在可关闭的隔离 DSH 会话中验证 `agent/disposed` 与恢复流程；`T054` 已完成，重新安装 `memctl-dsh`，正常退出 DSH，确认探针日志恰好出现一次 `end`。失败路径使用隔离 `HOME`、`AGENT_MEMORY_STATE` 和可控远端构造。验证完成前 `T052` 保持「进行中」，不把部分证据计入 `H07`–`H10` 全部通过。
