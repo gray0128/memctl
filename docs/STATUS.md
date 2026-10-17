@@ -5,7 +5,7 @@
 ## 当前事实
 
 - 版本：`v0.5.2` 为当前二进制发布版本（2026-10-18 发布，内容为中文 CLI 帮助优化）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`，插件版本不随本次二进制发布变化。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–08 为准。
+- 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–09 为准。
 - 发布后改动：`T040`–`T069` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布与版本发布均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end`、绝对 tarball 界面安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，bundle 与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md)、[T067 记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
@@ -16,7 +16,7 @@
   - pi：前台子代理记忆注入；`agent_settled` 在 `pi -p` 立即退出时由 `end` 兜底；`sections` 缺失的宿主级回退仅由单元测试覆盖。
   - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
   - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
-- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引。
+- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071` 实现）或放宽会话沙箱。
 - 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。
 
 ## 任务
@@ -92,8 +92,11 @@
 | T067 | 已完成 | 复验 DSH 界面 npm 包名安装：确认 `desktop` profile 已升级到 `memctl-dsh@0.5.1`、bundle 与依赖一致，`install --status` 为 `configured plugin@0.5.1`；更新界面安装与 desktop 版本的未验证记录；不改变产品行为；[归档记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) |
 | T068 | 已完成 | 按 `tech-doc-style-chinese` 检查并优化中文帮助：统一术语与引号、把命令选项与路径改为行内代码、修正与契约不符的环境变量默认值和示例描述；不改变命令行为；[归档记录](./validation/stage-f.md#t068中文帮助检查与优化) |
 | T069 | 已完成 | 发布 `v0.5.2`（含 `T068`）：全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；插件版本保持 `0.5.1`；[完成记录](#t069发布-v052) |
+| T070 | 已完成 | 调研受沙箱宿主的记忆写入通道并产出方案：确认插件在沙箱外、bash 在工作区内；实机验证 DSH 的 MCP stdio 子进程可写 `~/memory`；比较四条路线并选定 `memctl mcp`；[方案文档](./09-mcp-memory-tools.md)、[完成记录](#t070受沙箱宿主的记忆写入通道方案) |
+| T071 | 已完成 | 实现 `memctl mcp` 子命令与 `memory_read`/`memory_write` 工具、协议处理与错误映射、帮助条目与 `M01`–`M12` 测试；[方案文档](./09-mcp-memory-tools.md#6-验收)、[完成记录](#t071实现-memctl-mcp-子命令) |
+| T072 | 待开始 | 复核 `install --status` 的 MCP 探测输出与其余宿主的受限会话写入实测；依赖 `T071` |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 为待开始的宿主侧探测与实测任务。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
@@ -107,9 +110,30 @@
 - 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；插件版本未更新，npm 仍为 `0.5.1`；未发布 npm 包。
 - 下一步：如需让插件跟随二进制版本，单独走一次插件版本与 npm 发布轮次；其余未验证项见[当前事实](#当前事实)。
 
+## T070：受沙箱宿主的记忆写入通道方案
+
+- 目标与范围：定位「DSH 中多个新会话没有记忆更新」的原因，比较可行通道，产出权威方案文档并登记实现任务；不写产品代码。
+- 契约：[MCP 记忆工具](./09-mcp-memory-tools.md)。
+- 验证日期与环境：2026-10-18，macOS arm64，DSH 0.2.1-rc.2，Go 1.27.1，`memctl v0.5.2`。
+- 命令与结果：`memctl read MEMORY.md --json` 在 `workspace-write` 会话返回 `IO_FAILED: cannot open repository lock`；`touch ~/memory/x` 返回 `Operation not permitted`，同会话工作区内 `touch` 成功。检索 30 个历史 DSH 会话的 `tool/call`，无一次 `memctl write`。隔离 profile `probe` 插入 `@deepseek-ai/dsh-mcp-client` 的 stdio 条目后运行 `dsh --profile probe`，探针记录 `touch-memory=ok` 与 `memctl-read=ok`，证明 MCP 子进程不受 bash 沙箱限制。隔离 profile 内安装本地 bundle 后 `import('@deepseek-ai/dsh-tools')` 返回 `ERR_MODULE_NOT_FOUND`，排除「插件内注册工具」。核实 8 个宿主的 MCP 配置位置与 `mcp add` 参数。
+- 验收：`M08` 的沙箱子集通过（宿主派生的 MCP 子进程可写 `~/memory`）；方案比较与选型完成；`T070` 完成。
+- 未验证与遗留：除 DSH 外的宿主未做受限会话内的 MCP 写入实测；`memctl mcp` 尚未实现（`T071`）。
+- 下一步：按 [09](./09-mcp-memory-tools.md) 实现并验证 `M01`–`M12`。
+
+## T071：实现 memctl mcp 子命令
+
+- 目标与范围：按 [09](./09-mcp-memory-tools.md) 实现 `memctl mcp`、`memory_read` 与 `memory_write`、协议循环与错误映射、帮助条目；不修改宿主 MCP 配置。
+- 契约：[MCP 记忆工具](./09-mcp-memory-tools.md#4-系统如何工作)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，DSH 0.2.1-rc.2。
+- 命令与结果：`go test ./internal/mcp ./internal/cli -count=1` 与 `go test ./tests/integration -run 'TestM0|TestM1' -count=1` 通过，覆盖 `M01`–`M07`、`M10`–`M12`；`gofmt -l` 无输出，`go vet` 通过。真实 DSH 会话中，模型调用 `mcp__memctl__memory_read` 取得 `fileRevision`，`mcp__memctl__memory_write` 走受管事务；同会话 bash 的 `memctl read` 返回 `IO_FAILED`、`touch` 返回 `touch-denied`，证明两条通道的权限确实不同。
+- 验收：`M01`–`M08`、`M10`–`M12` 通过；`M09` 不在本轮范围，转入 `T072`。
+- 未验证与遗留：除 DSH 外的宿主未做受限会话写入实测；`install --status` 的 MCP 探测输出未实现；`memory_write` 不创建缺失的父目录（既有契约）。
+- 下一步：`T072` 补齐宿主侧探测与实测。
+
 ## 近期待办与下一步
 
-- 没有待实现的交付任务；阶段 A–F 的任务均已完成，最近一轮为 `T069`。
+- `T072` 待开始：`install --status` 的 MCP 探测输出、其余宿主的受限会话写入实测。
+- `memctl mcp` 已实现，DSH 侧需在 profile 中插入 `@deepseek-ai/dsh-mcp-client` 条目后生效。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

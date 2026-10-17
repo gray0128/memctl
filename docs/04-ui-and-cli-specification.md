@@ -29,6 +29,7 @@ memctl <subcommand> [flags] [-- command...]
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 安装；只写状态目录，不修改 pi settings；不提供 tarball 形式 |
+| `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read` 与 `memory_write`；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
 | `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
@@ -40,6 +41,8 @@ memctl <subcommand> [flags] [-- command...]
 dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只探测并报告，不写入 profile 或 `hooks.json`。只有旧插件 `dsh-hooks-plugin` 已存在时，`install dsh` 才沿用旧的 `hooks.json` 合并路径并将其标记为 deprecated；两者都不存在或同时存在时，`install --status` 返回 `needs_attention`/`not_installed` 和界面安装提示，不自动写旧配置。`memctl dsh plugin-path` 与 `memctl dsh plugin-dir` 只读内嵌源文件并写入 `$STATE/dsh/`，输出绝对路径，不执行 `pnpm`、不修改 DSH profile。
 
 pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `pi install <memctl pi plugin-dir 输出的目录>` 安装，`install` 只探测并报告，不写 `hooks.yaml`。旧 `pi-yaml-hooks` + `agent-memory-*` 条目只在条目实际存在且旧插件已安装时继续幂等更新并标记 deprecated；只有旧插件包、没有条目时不构成旧接入。两者同时存在、有旧条目但缺少旧插件、两者都不存在或版本低于下界时，`install --status` 返回 `needs_attention`，并输出 npm、本地目录和 `pi list` 校验提示。`memctl pi plugin-dir` 只读内嵌源文件并写入 `$STATE/pi/`，输出稳定绝对路径；它不运行 `pi install`、不访问网络、不写 `settings.json`。pi 不接受 tarball 作为安装输入，帮助和文档不得把 `.tgz` 写成可用安装源。
+
+`memctl mcp` 是宿主沙箱之外的记忆工具通道，供 Agent 主动读取基线与受管写入；工具契约、宿主注册命令与验收见 [MCP 记忆工具](./09-mcp-memory-tools.md)。它不读宿主的 MCP 配置文件，也不代替生命周期插件：注入与每轮同步仍由 `memctl-dsh` 与 `memctl-pi` 负责。
 
 `init` 重复执行不修改已有 remote。已有 remote 与 URL 不同时拒绝；需要在暂停自动操作后显式修改 Git remote，再使用 `init <url> --confirm-private` 确认新目标。确认记录绑定有效 fetch/push URL，URL 不同即失效。
 

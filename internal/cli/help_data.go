@@ -178,7 +178,7 @@ var helpRootData = helpRoot{
 		},
 		{
 			Title: loc("Setup and maintenance", "配置与维护"),
-			Names: []string{"ui", "install", "dsh", "pi", "dream", "update"},
+			Names: []string{"ui", "install", "dsh", "pi", "mcp", "dream", "update"},
 		},
 		{
 			Title: loc("Information", "信息"),
@@ -1046,6 +1046,36 @@ var helpCommandData = []helpCommand{
 			loc("The UI binds loopback only and does not load external CDN assets. It is not a multi-user authentication system.", "Web UI 只绑定回环地址，不加载外部 CDN 资源；它不是多用户认证系统。"),
 		},
 		Related: []string{"doctor", "write"},
+	},
+	{
+		Name:    "mcp",
+		Usage:   []string{"memctl mcp [--agent NAME] [--sid ID]"},
+		Summary: loc("Serve the memory tools over the Model Context Protocol.", "以 Model Context Protocol 提供记忆工具。"),
+		Description: loc(
+			"Serves two tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_read returns one file with its fileRevision baseline, and memory_write applies one managed write. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
+			"在标准输入输出上以单行 JSON-RPC 2.0 提供两个工具：memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
+		),
+		Flags: []helpItem{
+			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded on every write. Falls back to AGENT_MEMORY_AGENT, then unknown.", "每次写入记录的 Agent 名称。依次回退到 AGENT_MEMORY_AGENT 和 unknown。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id recorded on every write. Falls back to AGENT_MEMORY_SID; a missing value is not invented.", "每次写入记录的会话 id。回退到 AGENT_MEMORY_SID；缺失时不伪造。")},
+		},
+		Output: []localizedText{
+			loc("stdout carries only JSON-RPC responses, one per line. Diagnostics go to stderr and never include memory text or tool arguments.", "stdout 只输出 JSON-RPC 响应，每行一条。诊断信息写入 stderr，不包含记忆正文或工具参数。"),
+		},
+		ExitCodes: []helpExit{
+			{Code: 0, Meaning: loc("stdin closed or the process was interrupted.", "stdin 结束或进程被中断。")},
+			{Code: 1, Meaning: loc("The configuration could not be loaded.", "无法加载配置。")},
+			{Code: 2, Meaning: loc("Unknown argument or a flag without a value.", "存在未知参数或选项缺少取值。")},
+		},
+		Examples: []helpExample{
+			{Command: "memctl mcp --agent dsh", Note: loc("Start the MCP server; the host speaks the protocol on stdin and stdout.", "启动 MCP server，由宿主在标准输入输出上使用协议。")},
+			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_read and memory_write.", "一行请求；工具为 memory_read 与 memory_write。")},
+		},
+		Notes: []localizedText{
+			loc("Tool failures return isError with the same `CODE: message` text as the CLI, so a model can act on REVISION_MISMATCH or BUSY.", "工具失败返回 isError，文本与 CLI 的 `CODE: message` 一致，使模型可以处理 REVISION_MISMATCH 或 BUSY。"),
+			loc("Register this command in the host's MCP configuration. `install` only probes and plans; it does not run a host's own mcp add command.", "在宿主的 MCP 配置中注册该命令。`install` 只探测并生成计划，不运行宿主自己的 mcp add 命令。"),
+		},
+		Related: []string{"read", "write", "install"},
 	},
 }
 

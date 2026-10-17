@@ -120,6 +120,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 
 	case "ui":
 		return runUI(rest, stdout, stderr)
+
+	case "mcp":
+		return runMCP(rest, stdin, stdout, stderr, version)
 	}
 
 	if strings.HasPrefix(sub, "-") {
