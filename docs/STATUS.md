@@ -38,6 +38,7 @@
 - 已完成 `T040`：将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 的应用外壳、导航、顶栏、概览、条目浏览、知识图谱、冲突解决、审计、诊断与整理接入视图的布局、图标、配色与排版，不改变 REST 契约、状态字段与交互流程；前端 14 文件 79 项测试与 `go test ./... -count=1` 全量通过，详见 [T040 完成记录](#t040前端界面重设计)。
 - 已完成 `T041`：新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release` 构建四平台候选包并上传 `dist/` 产物，推送 `v*` 标签时创建 GitHub Release；`v0.1.0` 标签已推送并在 `macos-latest` 上 4 分 34 秒通过，[Release v0.1.0](https://github.com/gray0128/memctl/releases/tag/v0.1.0) 附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`，校验和全部通过，详见 [T041 完成记录](#t041github-构建流水线与-v010-发布)。
 - 已完成 `T042`：修复 v0.1.0 在真实宿主验证中暴露的 adapter 协议偏差（Codex/Command Code 的 `--json`、Antigravity 的 `~/.gemini/config/hooks.json` 命名 Hook 与 `--agy` envelope、OpenCode 2 的 default `setup` 导出与 `session.execution.*` 事件、dsh 的 profile 插件探测），补齐回归并发布 [v0.1.1](https://github.com/gray0128/memctl/releases/tag/v0.1.1)；依赖用户「修复并发布新版 release」指令。
+- 已完成第二轮 ego-browser 端到端 UI/UX 验证（`T043`，2026-10-17，v0.1.1 发布候选）：七个视图与条目编辑、412 草稿差异、文件编辑、审计回滚、冲突解决、只读、深色与 390 px 窄屏路径通过；发现 2 项 P2（审计 Diff 行首裁切、同步横幅遮挡导航）与 4 项 P3，登记 `T044` 收口，证据见 [第二轮验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验)。
 - 阶段 A、B、C、D 的交付与实现审查收口（`T022`、`T027`、`T034`、`T038`）均已完成；跨平台发布候选包、校验和与许可证清单已产出并接入 GitHub 构建流水线，`v0.1.0` 与 `v0.1.1` 已发布；第 4 节发布前检查逐项有结论；macOS amd64、Linux amd64、Windows amd64 的运行时支持、真实 Dreaming runner 与 Codex 模型额度受限后的完整回复未验证；真实宿主 Hook 已在 macOS arm64 的 7 个宿主完成配置，其中 5 个完成会话级验证；阶段 D 审查发现的 `P3-11`–`P3-16`、`P3-1`/`P3-18` 剩余部分、`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试为已知限制；`G05`/`G07` 沿用 A-3/A-4 场景。
 
 ## 任务
@@ -86,8 +87,10 @@
 | T040 | 已完成 | 将工作区既有、尚未提交的前端界面重设计纳入 v0.1.0 发布，统一 `web/src` 各视图的布局、图标、配色与排版；不改变 REST 契约、状态字段与交互流程；依赖用户「纳入发布」指令；[完成记录](#t040前端界面重设计) |
 | T042 | 已完成 | 修复 v0.1.0 的 Codex/Command Code `--json`、Antigravity 命名 Hook 与 `--agy` envelope、OpenCode 2 插件协议、dsh profile 插件探测；补回归并发布 `v0.1.1`；依赖用户「修复并发布新版 release」指令；[完成记录](#t042修复真实宿主-adapter-协议并发布-v011) |
 | T041 | 已完成 | 新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签与手动触发时调用 `make release` 构建四平台候选包并上传产物，`v*` 标签发布 GitHub Release；依赖 `T040` 与用户「版本号 0.1.0」指令；[完成记录](#t041github-构建流水线与-v010-发布) |
+| T043 | 已完成 | 第二轮 ego-browser 端到端 UI/UX 验证（v0.1.1）：七视图、写路径、只读、深色与窄屏；只记录问题，不改变产品代码；[验证报告](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) |
+| T044 | 待开始 | 收口第二轮验证的 `R2-P2-1`、`R2-P2-2` 与 `R2-P3-1`–`R2-P3-4`，只修复既有契约违背；依赖用户确认收口指令；[问题清单](./validation/ui-ux-verification.md#53-发现的问题) |
 
-任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040`、`T041` 已完成并发布 `v0.1.0`，`T042` 已完成并交付 `v0.1.1`；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040`、`T041` 已完成并发布 `v0.1.0`，`T042` 已完成并交付 `v0.1.1`，`T043` 已完成第二轮 UI/UX 验证并登记 `T044` 收口；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
@@ -121,8 +124,17 @@
 - 未验证与遗留：Codex 模型回复受账号额度限制（提示 2026-10-22 恢复）；dsh 当前会话启动早于全局 `hooks.json` 写入，SessionStart 需重启或新会话触发；macOS amd64、Linux amd64、Windows amd64 仍只有交叉编译；`dsh-hooks-plugin@0.2.15` 与 DSH 0.2.1-rc.1 的 peer 版本不匹配，已按用户授权使用精确版本豁免安装。
 - 下一步：`v0.1.1` 发布完成后按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
+## T043：第二轮 ego-browser 端到端 UI/UX 验证
+
+- 目标与范围：对 `v0.1.1` 发布候选二进制复验七个视图与主要写路径，确认 `T040` 界面重设计与 `T042` 适配器修复后的视觉与交互状态；只记录问题，不改变产品代码。
+- 契约：[Web UI](./04-ui-and-cli-specification.md#4-web-ui)、[HTTP 安全](./04-ui-and-cli-specification.md#5-http-安全)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，`dist/memctl-darwin-arm64`（v0.1.1），ego-browser v2.1.0；临时 HOME 与临时记忆仓库，读写 `127.0.0.1:18420`、只读 `127.0.0.1:18421`；本地裸远端加 peer 克隆制造冲突。
+- 命令与结果：浏览器会话遍历七个视图，执行条目编辑与 412 草稿差异、文件原文编辑、审计 Diff 与回滚、冲突解决、adapter 预览、只读、深色与 390 px；通过项见 [第二轮验证](./validation/ui-ux-verification.md#52-通过项)。发现 2 项 P2 与 4 项 P3，登记 `T044`。
+- 未验证与遗留：图谱节点拆分、Dreaming 真实 runner、多阶段冲突递进、adapter 安装应用、非 macOS arm64 平台；截图保存在临时目录，未提交。
+- 下一步：等待用户确认是否按 `T044` 收口；确认前不修改产品代码。
+
 ## 近期实施任务
 
-阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)；`T042` 见 [修复真实宿主 adapter 协议](#t042修复真实宿主-adapter-协议并发布-v011)。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，`T042` 已完成并发布 `v0.1.1`；按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
+阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)；`T042` 见 [修复真实宿主 adapter 协议](#t042修复真实宿主-adapter-协议并发布-v011)。`T043` 第二轮 UI/UX 验证见 [验证报告](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验)，`T044` 待用户确认后收口。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，`T042` 已完成并发布 `v0.1.1`，`T043` 已完成验证；按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
 
-剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；Codex 模型额度限制下的完整回复、dsh 重启后的 SessionStart 事件与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计未做浏览器端 UI/UX 复验，浏览器视觉交互结论仍以 [UI/UX 验证报告](./validation/ui-ux-verification.md) 与单元测试为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
+剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；Codex 模型额度限制下的完整回复、dsh 重启后的 SessionStart 事件与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计已由 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 覆盖，发现的问题登记为 `T044`，修复前浏览器视觉交互结论以该报告为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。
