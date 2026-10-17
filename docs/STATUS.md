@@ -75,6 +75,7 @@
 | T056 | 已完成 | 新增 CLI `update` 命令：查询 GitHub Releases 最新版本，按平台下载并校验 SHA-256 后原子替换当前二进制，`--check` 只报告；[归档记录](./validation/stage-e.md#t056新增-update-命令) |
 | T057 | 已完成 | 发布 `v0.3.0`（含 `T056`）：插件版本同步到 `0.3.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[归档记录](./validation/stage-e.md#t057发布-v030) |
 | T058 | 已完成 | 面向 Agent 的 CLI 帮助与中英 i18n：`help <command>`、`<command> --help`、`help --json`、`--lang`/`MEMCTL_LANG`/locale 选择；补 `R06`；[完成记录](#t058面向-agent-的-cli-帮助与中英-i18n) |
+| T059 | 进行中 | 发布 `v0.4.0`（含 `T058`）：插件版本同步到 `0.4.0`，全量测试、四平台候选包、插件 tarball、校验和与 CI Release；[发布记录待回写](#近期实施任务) |
 
 任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 为进行中的 `T052`；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
@@ -88,10 +89,10 @@
 - 命令与结果：`go test ./internal/cli -count=1` 通过（帮助目录完整性、语言优先级、单命令页、JSON、错误边界与无仓库访问）；`go test ./tests/integration -run 'TestR03BuildAndCLIEntry|TestR06AgentHelpI18n' -count=1` 通过；`go vet ./internal/cli ./tests/integration` 通过。`TestR06AgentHelpI18n` 用真实二进制覆盖 20 个命令的 `help <command>` 与 `<command> --help`、`help --json`、`MEMCTL_LANG=zh` 与 `--lang zh`、未知主题和非法语言，并确认未创建仓库或状态目录。全量 `go test ./... -count=1` 中 `internal/...` 与 `plugins/dsh` 全部通过；`tests/integration` 除既有 D1/D2 Dreaming 用例外通过，Dreaming 用例因当前宿主 sandbox 不可用使 runner 以 `71` 退出，与帮助路径无关。`GOOS=linux GOARCH=amd64`、`GOOS=windows GOARCH=amd64` 与 `GOOS=darwin GOARCH=amd64` 交叉编译通过。
 - 验收：`R03` 回归通过；`R06` 通过。帮助路径不访问仓库、Git、Node.js 或网络；只本地化帮助文本，JSON 字段、输出键和错误码保持英文；未知主题或非法 `--lang` 返回 `2`，已知命令页返回 `0`。
 - 未验证与遗留：Linux 与 Windows 的 locale 探测和中文终端显示未在实机验证；全量集成测试中的 Dreaming sandbox 用例未通过，原因是当前宿主缺少 macOS sandbox 执行权限（runner 退出 `71`），需在具备该权限的受控环境复跑；帮助内容只覆盖当前 20 个命令，后续新增命令时必须同步帮助目录、分组和回归测试；`help --json` 的 `schemaVersion` 目前为 1，字段语义变化时需要递增。
-- 下一步：`T052` 仍进行中；下一轮验证轮次内受管写入提交与去重，确认 DSH 是否提供可触发 `agent/disposed` 的入口，并隔离复现锁忙延迟；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+- 下一步：`T052` 仍进行中；下一轮验证轮次内受管写入提交与去重，确认 DSH 是否提供可触发 `agent/disposed` 的入口，并隔离复现锁忙延迟；`T059` 进行中：准备发布 `v0.4.0`（含 `T058` 的 Agent 帮助与 i18n）；完成插件版本提升、全量测试、候选包与 CI Release 后回写记录。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 ## 近期实施任务
 
-`T058` 已完成：面向 Agent 的 CLI 帮助、中英 i18n 与 `help --json` 目录已交付，`R06` 在无仓库、空 `PATH` 的隔离环境通过。`T052` 进行中：已确认注入、成功轮次 `turn/end` 后同步、恢复注入、子代理跳过，以及 `0.3.0` 在 headless/web host 正常退出时通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话两次成功轮次的 `runtime-context` 快照都包含 `memctl:memory`，重启后恢复同一会话仍注入并同步且不重复提交，绝对 tarball 已通过界面安装。剩余 `agent/disposed` 事件、轮次内受管写入提交、锁忙/断网与 npm/目录界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+`T058` 已完成：面向 Agent 的 CLI 帮助、中英 i18n 与 `help --json` 目录已交付，`R06` 在无仓库、空 `PATH` 的隔离环境通过。`T052` 进行中：已确认注入、成功轮次 `turn/end` 后同步、恢复注入、子代理跳过，以及 `0.3.0` 在 headless/web host 正常退出时通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话两次成功轮次的 `runtime-context` 快照都包含 `memctl:memory`，重启后恢复同一会话仍注入并同步且不重复提交，绝对 tarball 已通过界面安装。剩余 `agent/disposed` 事件、轮次内受管写入提交、锁忙/断网与 npm/目录界面安装，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。`T059` 进行中：准备发布 `v0.4.0`（含 `T058` 的 Agent 帮助与 i18n）；完成插件版本提升、全量测试、候选包与 CI Release 后回写记录。按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
 未验证项与已知限制见 [当前事实](#当前事实)。界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
