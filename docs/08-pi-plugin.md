@@ -1,6 +1,6 @@
 # 08. pi 专用插件：调研、分发与实现方案
 
-> 状态：`F-1` 至 `F-4` 已实现（2026-10-18），隔离宿主验证通过，真实 pi 会话与真实模型、npm 发布、非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
+> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），隔离宿主验证通过，真实 pi 会话与真实模型、npm 发布、非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
 
 ## 1. 结论
 
@@ -640,7 +640,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 
 - `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
 - 生命周期：`start` 后台执行并有 20 秒上限；首个 `before_agent_start` 最多等待 8 秒；正文写入 `sections["memctl"]`，`sections` 缺失或 `forceSystemPrompt` 时回退到替换 `systemPrompt`；`agent_settled` 与 `agent_end` 共用一个 pending 去重；`session_shutdown` 的 `reload` 只清理子进程，其余 reason 分离执行 `end` 并最多等待 1.5 秒。
-- 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.4.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
+- 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.5.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
 - 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。
 
 已验证：

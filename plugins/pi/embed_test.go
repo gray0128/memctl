@@ -13,8 +13,8 @@ func TestVersionMatchesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if version != "0.4.0" {
-		t.Fatalf("Version = %q, want 0.4.0", version)
+	if version != "0.5.0" {
+		t.Fatalf("Version = %q, want 0.5.0", version)
 	}
 }
 

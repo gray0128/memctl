@@ -223,7 +223,7 @@ func TestPiLegacyEntriesWithoutPluginNeedAttention(t *testing.T) {
 
 func TestPiNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
-	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.4.0")
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.5.0")
 
 	plan, err := env.Plan("pi")
 	if err != nil {
@@ -232,7 +232,7 @@ func TestPiNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
 		t.Fatalf("native pi plan = %+v, want configured with no artifacts", plan)
 	}
-	if !plan.NativePluginDetected || plan.PluginVersion != "0.4.0" {
+	if !plan.NativePluginDetected || plan.PluginVersion != "0.5.0" {
 		t.Fatalf("native detection = %+v", plan)
 	}
 	if _, err := env.Apply(plan); err != nil {
@@ -245,13 +245,13 @@ func TestPiNativePluginIsConfiguredWithoutHooks(t *testing.T) {
 
 func TestPiNativePluginIsDetectedFromTheStateDirectory(t *testing.T) {
 	env, _ := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
-	writeFile(t, filepath.Join(env.StateDir, "pi", "package.json"), `{"name":"memctl-pi","version":"0.4.1"}`)
+	writeFile(t, filepath.Join(env.StateDir, "pi", "package.json"), `{"name":"memctl-pi","version":"0.5.1"}`)
 
 	plan, err := env.Plan("pi")
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
-	if plan.Status != StatusConfigured || plan.PluginVersion != "0.4.1" {
+	if plan.Status != StatusConfigured || plan.PluginVersion != "0.5.1" {
 		t.Fatalf("state directory plan = %+v, want configured at 0.4.1", plan)
 	}
 }
@@ -259,7 +259,7 @@ func TestPiNativePluginIsDetectedFromTheStateDirectory(t *testing.T) {
 func TestPiNativePluginIsDetectedFromSettingsLocalPackage(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
 	localDir := filepath.Join(home, "plugins", "memctl-pi")
-	writeFile(t, filepath.Join(localDir, "package.json"), `{"name":"memctl-pi","version":"0.4.2"}`)
+	writeFile(t, filepath.Join(localDir, "package.json"), `{"name":"memctl-pi","version":"0.5.2"}`)
 	writeFile(t, filepath.Join(home, ".pi", "agent", "settings.json"),
 		`{"packages":[{"source":"../../plugins/memctl-pi","extensions":["./index.js"]}]}`)
 
@@ -267,14 +267,14 @@ func TestPiNativePluginIsDetectedFromSettingsLocalPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
-	if plan.Status != StatusConfigured || plan.PluginVersion != "0.4.2" {
+	if plan.Status != StatusConfigured || plan.PluginVersion != "0.5.2" {
 		t.Fatalf("settings plan = %+v, want configured at 0.4.2", plan)
 	}
 }
 
 func TestPiNativeAndLegacyEntriesNeedAttention(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
-	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.4.0")
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.5.0")
 	writePiLegacyEntries(t, home)
 
 	plan, err := env.Plan("pi")
@@ -291,7 +291,7 @@ func TestPiNativeAndLegacyEntriesNeedAttention(t *testing.T) {
 
 func TestPiOldNativePluginNeedsAttention(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
-	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.3.0")
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.4.0")
 
 	plan, err := env.Plan("pi")
 	if err != nil {
@@ -300,7 +300,7 @@ func TestPiOldNativePluginNeedsAttention(t *testing.T) {
 	if plan.Status != StatusNeedsAttention || plan.Applicable {
 		t.Fatalf("old native pi plan = %+v, want needs_attention", plan)
 	}
-	if !strings.Contains(plan.Reason, "0.4.0") {
+	if !strings.Contains(plan.Reason, "0.5.0") {
 		t.Fatalf("reason does not state the minimum version: %q", plan.Reason)
 	}
 }

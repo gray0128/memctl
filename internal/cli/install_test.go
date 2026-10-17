@@ -108,7 +108,7 @@ func TestPrintPlanSkipsPiHintsWhenNativePluginExists(t *testing.T) {
 		Agent:                "pi",
 		Status:               adapters.StatusConfigured,
 		NativePluginDetected: true,
-		PluginVersion:        "0.4.0",
+		PluginVersion:        "0.5.0",
 	})
 	if strings.Contains(stdout.String(), "pi install npm:") {
 		t.Fatalf("configured pi plan printed install hints:\n%s", stdout.String())

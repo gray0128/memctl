@@ -187,7 +187,7 @@ var registry = []AdapterSpec{
 		},
 		NativePlugin: &PluginSpec{
 			Name:       "memctl-pi",
-			MinVersion: "0.4.0",
+			MinVersion: "0.5.0",
 			Manifests: []string{
 				"$HOME/.pi/agent/npm/node_modules/memctl-pi/package.json",
 			},
