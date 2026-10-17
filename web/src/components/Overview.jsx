@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 
-function StatCard({ label, value, tone = 'default', icon = null, hint = null }) {
+function StatCard({ label, value, tone = 'default', icon = null, hint = null, onClick = null }) {
   const tones = {
     default: {
       num: 'text-slate-900 dark:text-slate-100',
@@ -25,9 +25,29 @@ function StatCard({ label, value, tone = 'default', icon = null, hint = null }) 
   }
 
   const current = tones[tone] || tones.default
+  const interactive = typeof onClick === 'function'
+  const handleKeyDown = interactive
+    ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault()
+          onClick()
+        }
+      }
+    : undefined
 
   return (
-    <div className={`group relative overflow-hidden rounded-xl border bg-white p-5 shadow-2xs transition-all duration-200 hover:shadow-xs dark:bg-slate-900/80 ${current.border}`}>
+    <div
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? `${label} ${value}，${hint || ''}；点击查看` : undefined}
+      onClick={interactive ? onClick : undefined}
+      onKeyDown={handleKeyDown}
+      className={`group relative overflow-hidden rounded-xl border bg-white p-5 shadow-2xs transition-all duration-200 hover:shadow-xs dark:bg-slate-900/80 ${current.border} ${
+        interactive
+          ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 active:scale-[0.99]'
+          : ''
+      }`}
+    >
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
           {label}
@@ -52,7 +72,7 @@ function StatCard({ label, value, tone = 'default', icon = null, hint = null }) 
 // diagnostic counts. It reads the same GET /api/v1/doctor counts the
 // diagnostics view shows, so the two views never report different
 // error/warning/info numbers for one repository.
-export function Overview({ api, refreshKey, snapshot, error }) {
+export function Overview({ api, refreshKey, snapshot, error, onNavigate }) {
   const [counts, setCounts] = useState(null)
 
   useEffect(() => {
@@ -134,6 +154,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             label="管理文件"
             value={snapshot.files.length}
             hint="文档总数"
+            onClick={onNavigate ? () => onNavigate('entries') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -144,6 +165,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             label="原子条目"
             value={entryCount}
             hint="事实要点"
+            onClick={onNavigate ? () => onNavigate('entries') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -154,6 +176,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             label="图谱节点"
             value={snapshot.graph.nodes.length}
             hint="实体概念"
+            onClick={onNavigate ? () => onNavigate('graph') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3" />
@@ -165,6 +188,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             label="图谱关系"
             value={snapshot.graph.edges.length}
             hint="引用连线"
+            onClick={onNavigate ? () => onNavigate('graph') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -185,6 +209,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             value={counts ? counts.error : '—'}
             tone="error"
             hint="阻断性问题"
+            onClick={onNavigate ? () => onNavigate('diagnostics') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
@@ -197,6 +222,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             value={counts ? counts.warning : '—'}
             tone="warning"
             hint="建议优化"
+            onClick={onNavigate ? () => onNavigate('diagnostics') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -208,6 +234,7 @@ export function Overview({ api, refreshKey, snapshot, error }) {
             value={counts ? counts.info : '—'}
             tone="info"
             hint="结构线索"
+            onClick={onNavigate ? () => onNavigate('diagnostics') : null}
             icon={
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />

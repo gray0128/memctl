@@ -39,6 +39,7 @@
 - 已完成 `T041`：新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用 `make release` 构建四平台候选包并上传 `dist/` 产物，推送 `v*` 标签时创建 GitHub Release；`v0.1.0` 标签已推送并在 `macos-latest` 上 4 分 34 秒通过，[Release v0.1.0](https://github.com/gray0128/memctl/releases/tag/v0.1.0) 附带四个候选二进制与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`，校验和全部通过，详见 [T041 完成记录](#t041github-构建流水线与-v010-发布)。
 - 已完成 `T042`：修复 v0.1.0 在真实宿主验证中暴露的 adapter 协议偏差（Codex/Command Code 的 `--json`、Antigravity 的 `~/.gemini/config/hooks.json` 命名 Hook 与 `--agy` envelope、OpenCode 2 的 default `setup` 导出与 `session.execution.*` 事件、dsh 的 profile 插件探测），补齐回归并发布 [v0.1.1](https://github.com/gray0128/memctl/releases/tag/v0.1.1)；依赖用户「修复并发布新版 release」指令。
 - 已完成第二轮 ego-browser 端到端 UI/UX 验证（`T043`，2026-10-17，v0.1.1 发布候选）：七个视图与条目编辑、412 草稿差异、文件编辑、审计回滚、冲突解决、只读、深色与 390 px 窄屏路径通过；发现 2 项 P2（审计 Diff 行首裁切、同步横幅遮挡导航）与 4 项 P3，已由 `T044` 收口，复验见 [收口与复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044)。
+- 已完成 `T045`：修复概览与正文左侧未对齐、选中导航项左边框被滚动容器裁切、指标卡不可跳转与来源 URI 截断后无法查看完整值；概览卡片可点击或键盘跳转到条目、知识图谱与诊断，来源 URI 悬停显示完整值，详见 [验证记录](./validation/ui-ux-verification.md#7-概览对齐指标卡跳转与来源提示t045)。
 - 阶段 A、B、C、D 的交付与实现审查收口（`T022`、`T027`、`T034`、`T038`）均已完成；跨平台发布候选包、校验和与许可证清单已产出并接入 GitHub 构建流水线，`v0.1.0` 与 `v0.1.1` 已发布；第 4 节发布前检查逐项有结论；macOS amd64、Linux amd64、Windows amd64 的运行时支持、真实 Dreaming runner 与 Codex 模型额度受限后的完整回复未验证；真实宿主 Hook 已在 macOS arm64 的 7 个宿主完成配置，其中 5 个完成会话级验证；阶段 D 审查发现的 `P3-11`–`P3-16`、`P3-1`/`P3-18` 剩余部分、`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试为已知限制；`G05`/`G07` 沿用 A-3/A-4 场景。
 
 ## 任务
@@ -89,6 +90,7 @@
 | T041 | 已完成 | 新增 GitHub 构建流水线 `.github/workflows/build.yml`，在 `main` 推送、拉取请求、`v*` 标签与手动触发时调用 `make release` 构建四平台候选包并上传产物，`v*` 标签发布 GitHub Release；依赖 `T040` 与用户「版本号 0.1.0」指令；[完成记录](#t041github-构建流水线与-v010-发布) |
 | T043 | 已完成 | 第二轮 ego-browser 端到端 UI/UX 验证（v0.1.1）：七视图、写路径、只读、深色与窄屏；只记录问题，不改变产品代码；[验证报告](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) |
 | T044 | 已完成 | 收口第二轮验证的 `R2-P2-1`、`R2-P2-2` 与 `R2-P3-1`–`R2-P3-4`：Diff 内边距、粘性导航偏移、冲突横幅清理、BUSY 读取重试、本地时间格式与图谱间距；[复验记录](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) |
+| T045 | 已完成 | 修复概览导航与正文未对齐、选中项左边框被裁切、指标卡不可跳转与来源 URI 截断无完整提示；[验证记录](./validation/ui-ux-verification.md#7-概览对齐指标卡跳转与来源提示t045) |
 
 任务 ID 不代表执行顺序。阶段 A、B、C、D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）已完成并验收，阶段 A、B、C、D 的实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；用户确认的 `T040`、`T041` 已完成并发布 `v0.1.0`，`T042` 已完成并交付 `v0.1.1`，`T043` 已完成第二轮 UI/UX 验证，`T044` 已收口该轮发现的问题；按 [停止条件](./06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
 
@@ -142,8 +144,17 @@
 - 未验证与遗留：更密集知识图谱的标签拥挤仍为已知限制；未重跑 `go test ./...`（无 Go 变更）。
 - 下一步：提交推送本轮修复后按停止条件暂停并等待用户确认。
 
+## T045：概览对齐、指标卡跳转与来源提示
+
+- 目标与范围：修复用户报告的 4 项界面问题：概览导航与正文左侧未对齐、选中导航项左边框被滚动容器裁切、概览指标卡不可跳转、来源 URI 截断后无法查看完整值。代码只改 `web/src` 的布局与交互，并在 [Web UI](./04-ui-and-cli-specification.md#4-web-ui) 补充卡片跳转与来源悬停说明；不改 REST 契约。
+- 契约：[Web UI](./04-ui-and-cli-specification.md#4-web-ui)。
+- 验证日期与环境：2026-10-17，macOS 26.6.2 arm64，ego-browser v2.1.0；`bin/memctl ui` 指向真实 `~/memory` 仓库。
+- 命令与结果：`npx vitest run` 16 文件 85 项通过；`npm run build` 与 `go build` 通过；ego-browser 在 1100/1315/1440/1784 px 下导航首项与 `h1` 左边界一致（24/41.5/104/276），390 px 下均为 16，选中项圆角边框完整；点击「原子条目」「图谱节点」「错误诊断」分别进入条目、知识图谱、诊断视图；条目来源 chip 的 `title` 为完整 `agent://` URI；详见 [验证记录](./validation/ui-ux-verification.md#7-概览对齐指标卡跳转与来源提示t045)。
+- 未验证与遗留：悬停提示使用浏览器原生标题，样式由浏览器决定，未做自定义浮层；组件级 DOM 测试仍缺失。
+- 下一步：提交推送本轮修复后按停止条件暂停并等待用户确认。
+
 ## 近期实施任务
 
-阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)；`T042` 见 [修复真实宿主 adapter 协议](#t042修复真实宿主-adapter-协议并发布-v011)。`T043` 第二轮 UI/UX 验证见 [验证报告](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验)，`T044` 已收口。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，`T042` 已完成并发布 `v0.1.1`，`T043` 已完成验证，`T044` 已完成收口；按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
+阶段 A、B、C、D 已全部完成并通过验收，各阶段实现审查与收口（`T022`、`T027`、`T034`、`T038`）均已完成；`T039` 记录已归档于 [阶段 D 归档](./validation/stage-d.md)，`T040`、`T041` 记录见本文件的 [T040 完成记录](#t040前端界面重设计) 与 [T041 完成记录](#t041github-构建流水线与-v010-发布)；`T042` 见 [修复真实宿主 adapter 协议](#t042修复真实宿主-adapter-协议并发布-v011)。`T043` 第二轮 UI/UX 验证见 [验证报告](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验)，`T044` 已收口。审查报告见 [阶段 D 实现审查报告](./validation/stage-d-review.md)，性能与适配记录见 [阶段 D 性能与适配记录](./validation/stage-d.md#阶段-d-性能与适配记录)。总计划已无待办，`T042` 已完成并发布 `v0.1.1`，`T043` 已完成验证，`T044` 已完成收口，`T045` 已完成概览对齐与来源提示修复；按 [开发循环规范](./06-development-loop.md#3-状态与推进) 的停止条件暂停自动接续并通知用户确认，不自行发起下一轮。
 
 剩余未验证与已知限制：macOS amd64、Linux amd64、Windows amd64 的运行时、生命周期与隔离（GitHub 构建流水线只在 `macos-latest` 上运行，其余平台仍为交叉编译）；Codex 模型额度限制下的完整回复、dsh 重启后的 SessionStart 事件与 Dreaming 真实 runner；图谱密集同名孤立节点簇的标签拥挤；`P3-6`、`P3-7`、`P3-13` 与组件级 DOM 测试。`T040` 的前端界面重设计已由 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 覆盖，发现的问题已由 [收口与复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 处理，修复后浏览器视觉交互结论以该报告为准。前端构建基线为 Node v26.10.0 / npm 11.19.1，`web/dist` 与 `bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。

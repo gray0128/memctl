@@ -189,7 +189,15 @@ export function App() {
       content = <AdapterView api={api} refreshKey={refreshKey} />
       break
     default:
-      content = <Overview api={api} refreshKey={refreshKey} snapshot={snapshot} error={error} />
+      content = (
+        <Overview
+          api={api}
+          refreshKey={refreshKey}
+          snapshot={snapshot}
+          error={error}
+          onNavigate={setView}
+        />
+      )
   }
 
   return (
@@ -205,8 +213,8 @@ export function App() {
       />
 
       {/* Floating Segmented Navigation Bar */}
-      <nav className="border-b border-slate-200/70 bg-white/70 backdrop-blur-sm px-4 sm:px-6 dark:border-slate-800/70 dark:bg-slate-900/60 sticky top-[var(--memctl-header-height,57px)] z-20">
-        <div className="mx-auto flex max-w-7xl items-center gap-1.5 overflow-x-auto py-2 scrollbar-none">
+      <nav className="border-b border-slate-200/70 bg-white/70 backdrop-blur-sm dark:border-slate-800/70 dark:bg-slate-900/60 sticky top-[var(--memctl-header-height,57px)] z-20">
+        <div className="mx-auto flex max-w-7xl items-center gap-1.5 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
           {VIEWS.map((item) => {
             const active = view === item.id
             return (

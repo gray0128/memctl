@@ -101,3 +101,14 @@
 - `cd web && npx vitest run`：16 个文件 85 项通过（新增 `retry.test.js` 3 项、`time.test.js` 3 项）。
 - `npm run build` 成功；`go build -o bin/memctl ./cmd/memctl` 成功；`gofmt -l cmd internal tests web/embed.go` 无输出；`go vet ./internal/... ./cmd/...` 通过。
 - ego-browser 回归覆盖审计 Diff、同步横幅下的粘性导航、冲突解决横幅、BUSY 重试、时间格式、图谱布局、只读模式、深色模式与 390 px 窄屏。未重跑 `go test ./...`（本轮无 Go 代码变更）。
+
+## 7. 概览对齐、指标卡跳转与来源提示（T045）
+
+用户报告的 4 项界面问题在本节收口，变更只涉及 `web/src` 与 [Web UI](../04-ui-and-cli-specification.md#4-web-ui) 的说明。
+
+- 概览导航与正文未对齐：导航内容容器在 `max-w-7xl` 外先加内边距，主区在 `max-w-7xl` 内加内边距，1315 px 视口下导航首项比 `h1` 左移 17.5 px。把内边距移入导航的滚动容器后，1100/1315/1440/1784 px 下两者左边界分别为 24/41.5/104/276，390 px 下均为 16。
+- 选中项左边框被裁切：导航滚动容器原先没有内边距，选中项的 1 px ring 落在内容盒外，被 `overflow-x-auto` 裁掉。容器增加与主区一致的内边距后 ring 完整显示。
+- 指标卡跳转：概览四张资产卡与三张诊断卡改为按钮语义（`role="button"`、`tabIndex=0`、回车或空格触发）。管理文件与原子条目跳转条目视图，图谱节点与图谱关系跳转知识图谱，诊断三项跳转诊断视图。复验：点击「原子条目」「图谱节点」「错误诊断」后分别渲染「记忆条目检索」「知识拓扑图谱」「健康诊断与自愈」。
+- 来源 URI 完整提示：条目视图的来源 chip 增加 `title`，悬停显示完整 URI（如 `agent://MacBookPro.lan/claude/e2e-s1`），列表仍保持截断显示。
+
+回归：`npx vitest run` 16 文件 85 项通过；`npm run build` 与 `go build` 通过；ego-browser 在 1100/1315/1440/1784 与 390 px 下检查对齐、无横向溢出与选中项边框。截图保存在会话临时目录，未提交。

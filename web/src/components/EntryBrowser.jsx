@@ -60,6 +60,7 @@ function SourceList({ sources }) {
               href={source.raw}
               target="_blank"
               rel="noreferrer noopener"
+              title={source.raw}
               className="inline-flex items-center gap-1 rounded-md border border-indigo-200/60 bg-indigo-50/70 px-2 py-0.5 font-mono text-[11px] text-indigo-700 transition-colors hover:bg-indigo-100 hover:text-indigo-900 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
             >
               <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -72,6 +73,7 @@ function SourceList({ sources }) {
         return (
           <span
             key={source.raw}
+            title={source.raw}
             className="inline-flex items-center gap-1 rounded-md border border-slate-200/60 bg-slate-100/70 px-2 py-0.5 font-mono text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300"
           >
             <span className="truncate max-w-[14rem]">{source.raw}</span>
