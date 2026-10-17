@@ -42,7 +42,7 @@ Available Commands:
   resolve              Inspect, apply, or abort rebase conflicts (--json | --apply | --abort)
   recover              Inspect or rollback incomplete transactions (--status | --rollback)
   doctor               Run read-only repository diagnostics (--json)
-  dream                Generate or inspect Dreaming proposals (--runner NAME | --show ID)
+  dream                Generate, inspect or apply Dreaming proposals (--runner NAME | --show ID | --apply ID --patch-hash HASH)
   install [agent...]   Inspect or install agent adapter configurations (--all --dry-run --status)
   ui                   Serve the embedded local Web UI (--port 18420 --no-open --readonly)
 

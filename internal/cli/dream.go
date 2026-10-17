@@ -6,14 +6,13 @@ import (
 	"io"
 
 	"github.com/gray0128/memctl/internal/app"
-	"github.com/gray0128/memctl/internal/memerr"
 )
 
-// runDream implements `dream --runner claude|codex`, `dream --show ID` and the
-// stage D-2 `dream --apply ID --patch-hash HASH`. Generation and viewing are
-// mutually exclusive with applying. Applying is explicitly refused until the
-// explicit-application workflow of D-2 exists, so the command never returns a
-// placeholder success.
+// runDream implements `dream --runner claude|codex`, `dream --show ID` and
+// `dream --apply ID --patch-hash HASH`. Generation and viewing are mutually
+// exclusive with applying. Generating never writes the main repository;
+// applying commits one already-reviewed proposal through the managed
+// transaction. See docs/03-workflows-and-dataflows.md section 6.
 func runDream(args []string, stdout, stderr io.Writer) int {
 	runner := ""
 	show := ""
@@ -76,8 +75,14 @@ func runDream(args []string, stdout, stderr io.Writer) int {
 		if patchHash == "" {
 			return usageError(stderr, "dream", "--apply requires --patch-hash HASH")
 		}
-		return fail(stderr, "dream", memerr.New(memerr.Unsupported,
-			"applying a proposal is planned for stage D-2 and is not implemented yet"))
+		result, err := service.ApplyDream(ctx, apply, patchHash)
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if err := encodeJSON(stdout, result); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
 	case show != "":
 		proposal, err := service.DreamProposal(ctx, show)
 		if err != nil {

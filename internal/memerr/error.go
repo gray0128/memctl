@@ -25,6 +25,7 @@ const (
 	ExternalChanges      Code = "EXTERNAL_CHANGES"
 	OperationActive      Code = "OPERATION_ACTIVE"
 	RecoveryRequired     Code = "RECOVERY_REQUIRED"
+	ProposalStale        Code = "PROPOSAL_STALE"
 	Busy                 Code = "BUSY"
 	PreconditionRequired Code = "PRECONDITION_REQUIRED"
 

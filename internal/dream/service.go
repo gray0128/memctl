@@ -152,6 +152,7 @@ func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) 
 	value.Changes = changes
 	value.Diff = diff
 	value.PatchHash = patchHash(changes)
+	value.Planned = plannedFiles(pending.baseline, work, changes)
 	value.Warnings = append(value.Warnings, warnings...)
 	if out.truncated {
 		value.Warnings = append(value.Warnings, "the runner output was truncated at the configured byte limit")
@@ -165,25 +166,41 @@ func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) 
 // Load returns one stored proposal. A generating record that no longer has an
 // in-process run is reconciled to failed, so an interrupted generation is never
 // presented as one that can continue.
-func (s *Service) Load(_ context.Context, proposalID string) (Proposal, error) {
+func (s *Service) Load(ctx context.Context, proposalID string) (Proposal, error) {
+	value, err := s.loadRecord(ctx, proposalID)
+	return value.Proposal, err
+}
+
+// loadRecord is the record-level read behind Load. It reconciles a generating
+// record that no longer has an in-process run to failed, so an interrupted
+// generation is never presented as one that can continue.
+func (s *Service) loadRecord(_ context.Context, proposalID string) (record, error) {
 	value, err := s.store.Load(proposalID)
 	if err != nil {
-		return Proposal{}, err
+		return record{}, err
 	}
-	if value.Status == StatusGenerating {
-		s.mu.Lock()
-		_, active := s.pending[proposalID]
-		s.mu.Unlock()
-		if !active || value.InstanceID != s.instanceID {
-			value.Status = StatusFailed
-			value.Error = "generation was interrupted before it completed"
-			if err := s.store.Save(value); err != nil {
-				return value.Proposal, err
-			}
-			s.removeWorkDir(value.WorkDir)
-		}
+	if value.Status != StatusGenerating {
+		return value, nil
 	}
-	return value.Proposal, nil
+	// The pending map and the terminal write are serialized by s.mu, so a
+	// generation that completes between the read above and the check below is
+	// observed as its terminal record instead of being clobbered with failed.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, active := s.pending[proposalID]
+	if active && value.InstanceID == s.instanceID {
+		return value, nil
+	}
+	if fresh, err := s.store.Load(proposalID); err == nil && fresh.Status != StatusGenerating {
+		return fresh, nil
+	}
+	value.Status = StatusFailed
+	value.Error = "generation was interrupted before it completed"
+	if err := s.store.Save(value); err != nil {
+		return value, err
+	}
+	s.removeWorkDir(value.WorkDir)
+	return value, nil
 }
 
 // fail persists a failed proposal and removes its temporary execution
@@ -199,12 +216,15 @@ func (s *Service) fail(pending *pendingRun, cause error) (Proposal, error) {
 }
 
 // complete persists a terminal record, drops the in-memory run and removes the
-// temporary execution environment.
+// temporary execution environment. The pending removal and the terminal write
+// are serialized with loadRecord's reconciliation so a concurrent query never
+// clobbers a finished generation with failed.
 func (s *Service) complete(value record) error {
 	s.mu.Lock()
 	delete(s.pending, value.ProposalID)
+	err := s.store.Save(value)
 	s.mu.Unlock()
-	if err := s.store.Save(value); err != nil {
+	if err != nil {
 		return err
 	}
 	s.removeWorkDir(value.WorkDir)
@@ -324,6 +344,32 @@ func errorMessage(err error) string {
 		message = message[:max] + "..."
 	}
 	return message
+}
+
+// plannedFiles captures the exact apply input of every create or update change:
+// the runner's bytes, the planned Git mode and the fixed baseline mode. Delete
+// changes need no content. See docs/03-workflows-and-dataflows.md section 6
+// step 5.
+func plannedFiles(base *baseline, work map[string]workFile, changes []Change) map[string]plannedFile {
+	planned := make(map[string]plannedFile, len(changes))
+	for _, change := range changes {
+		if change.Action == ChangeDelete {
+			continue
+		}
+		file, ok := work[change.Path]
+		if !ok {
+			continue
+		}
+		entry := plannedFile{
+			Content: string(file.content),
+			GitMode: vault.GitMode(file.fsMode),
+		}
+		if old, ok := base.files[change.Path]; ok {
+			entry.BaseGitMode = old.gitMode
+		}
+		planned[change.Path] = entry
+	}
+	return planned
 }
 
 // newID returns a random identifier with the given prefix. A proposal id

@@ -38,14 +38,19 @@ type PathRecord struct {
 
 // Transaction is one unfinished-or-finished local repository transaction.
 type Transaction struct {
-	ID           string       `json:"id"`
-	Kind         string       `json:"kind"`
-	OriginalHead string       `json:"originalHead"`
-	StartedAt    string       `json:"startedAt"`
-	Message      string       `json:"message,omitempty"`
-	Paths        []PathRecord `json:"paths"`
-	Completed    bool         `json:"completed"`
-	Commit       string       `json:"commit,omitempty"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	OriginalHead string `json:"originalHead"`
+	StartedAt    string `json:"startedAt"`
+	Message      string `json:"message,omitempty"`
+	// ProposalID records the Dreaming proposal an explicit apply commits. It
+	// lets a retry reconcile an interrupted apply from the transaction record
+	// instead of committing twice. See
+	// docs/03-workflows-and-dataflows.md section 6 steps 6-7.
+	ProposalID string       `json:"proposalId,omitempty"`
+	Paths      []PathRecord `json:"paths"`
+	Completed  bool         `json:"completed"`
+	Commit     string       `json:"commit,omitempty"`
 }
 
 // Paths_ returns the transaction's affected paths in order.

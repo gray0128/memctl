@@ -159,6 +159,9 @@ func TestServiceRefusesStaleBaseRevision(t *testing.T) {
 func TestServiceGenerationPipeline(t *testing.T) {
 	repo := initRepo(t)
 	stateDir := t.TempDir()
+	// Isolate the temporary work directory so a concurrently running test
+	// binary cannot leave a matching directory in the shared system temp root.
+	t.Setenv("TMPDIR", t.TempDir())
 	before, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
 	if err != nil {
 		t.Fatalf("read MEMORY.md: %v", err)

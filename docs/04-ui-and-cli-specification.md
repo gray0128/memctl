@@ -126,7 +126,7 @@ UI 不自动生成健康分；按错误、警告、信息展示诊断数。只�
 1. 服务仅绑定 `127.0.0.1`，默认端口 18420；占用时明确报错，不复用未知服务或切换公网地址。Host 精确匹配实际监听端口的 `127.0.0.1` 或 `localhost`，不信任代理头。
 2. 每次启动生成 32 字节随机 Session Token，嵌入当前首页 meta。所有 API 方法，包括 GET、PATCH 和 SSE，校验 `X-Memctl-Token`；Token 不放 URL、日志或 localStorage。
 3. 浏览器 API 请求存在 Origin 时要求与当前页面允许源精确一致；拒绝 `null` 或其他来源，不开放跨域 CORS。没有 Origin 的本地 CLI 请求仍需 Token。
-4. 首页和 API 返回 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`，首页设置 `Referrer-Policy: no-referrer` 和禁止被嵌入的 CSP `frame-ancestors 'none'`。脚本、样式与连接限制为所需本地资源，不加载外部 CDN。根路径 `GET /` 返回内嵌首页并在 meta 中注入 Session Token 与只读标识，`GET /assets/` 返回内嵌脚本与样式且仅服务普通文件、不列出目录；两者属于静态资源，携带与首页一致的只允许本地 `self` 的 CSP，不要求 Token。
+4. 首页和 API 返回 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`，首页设置 `Referrer-Policy: no-referrer` 和禁止被嵌入的 CSP `frame-ancestors 'none'`。脚本、样式与连接限制为所需本地资源，不加载外部 CDN。根路径 `GET /` 返回内嵌首页并在 meta 中注入 Session Token、只读标识与 Dreaming 隔离能力（`memctl-dream-sandbox` 取 `available`/`unavailable`）；UI 据此在没有已验证沙箱时禁用提案生成，服务端仍会独立重复校验。`GET /assets/` 返回内嵌脚本与样式且仅服务普通文件、不列出目录；两者属于静态资源，携带与首页一致的只允许本地 `self` 的 CSP，不要求 Token。
 5. 只读模式由路由中间件执行，不仅隐藏按钮。文件路径校验仍使用架构定义的统一访问器，鉴权成功不能绕过路径边界。
 6. API 限制请求体、并发生成任务、头部读取时间和空闲连接；SSE 采用适合长连接的单独写入策略、有限队列和心跳。不能用普通响应总写超时误杀所有 SSE。
 7. Token 防御网页跨站请求，不隔离同一 OS 用户下有权读取首页的本机程序；不把本地 Web 控制台当成多用户认证系统。

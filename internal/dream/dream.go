@@ -93,3 +93,34 @@ type PreviewRequest struct {
 	Runner       string
 	BaseRevision string
 }
+
+// plannedFile is the internal apply input of one create or update change: the
+// exact bytes the runner produced and the Git mode they were read with. It is
+// persisted with the proposal record but deliberately not part of the
+// DreamProposal API shape. See
+// docs/03-workflows-and-dataflows.md section 6 steps 5-6.
+type plannedFile struct {
+	Content string `json:"content"`
+	GitMode string `json:"gitMode"`
+	// BaseGitMode is the fixed baseline mode. An apply rejects a proposal that
+	// changes the mode because the managed write preserves it.
+	BaseGitMode string `json:"baseGitMode,omitempty"`
+}
+
+// ApplyChange is one validated change of an applyable proposal.
+type ApplyChange struct {
+	Path             string
+	Action           string
+	ExpectedRevision string
+	Content          string
+}
+
+// ApplyPlan is the validated, ordered change set of one proposal that
+// app.ApplyDream hands to the managed transaction. It carries no repository
+// state: the caller revalidates the baseline under the repository lock.
+type ApplyPlan struct {
+	ProposalID   string
+	BaseRevision string
+	BaseHead     string
+	Changes      []ApplyChange
+}

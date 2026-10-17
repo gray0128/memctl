@@ -195,26 +195,26 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 }
 
-// TestUnimplementedApplyRejectsPlaceholderSuccess verifies that the stage D-2
-// apply path returns UNSUPPORTED instead of a placeholder success, and that
+// TestDreamApplyRejectsUnknownProposal verifies that `dream --apply` never
+// returns a placeholder success: an unknown proposal is a targeted error, and
 // `dream` without a mode is a usage error.
-func TestUnimplementedApplyRejectsPlaceholderSuccess(t *testing.T) {
+func TestDreamApplyRejectsUnknownProposal(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := cli.Run([]string{"dream", "--apply", "dp-00000000000000000000000000000000", "--patch-hash", "sha256:deadbeef"},
 		strings.NewReader(""), &stdout, &stderr, "v2.0.0-dev")
 	if code == cli.ExitOK {
-		t.Fatalf("unimplemented apply must not return placeholder success (0)")
+		t.Fatalf("applying an unknown proposal must not return success (0)")
 	}
 	if code != cli.ExitError {
 		t.Fatalf("apply returned %d, want %d", code, cli.ExitError)
 	}
 	if stdout.Len() != 0 {
-		t.Fatalf("expected empty stdout for unimplemented apply, got %q", stdout.String())
+		t.Fatalf("expected empty stdout for a rejected apply, got %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "UNSUPPORTED") {
-		t.Fatalf("expected UNSUPPORTED reason in stderr, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "NOT_FOUND") {
+		t.Fatalf("expected NOT_FOUND reason in stderr, got %q", stderr.String())
 	}
 
 	var usageOut, usageErr bytes.Buffer

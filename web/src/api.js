@@ -38,6 +38,12 @@ export function createApi(options = {}) {
   const token = options.token !== undefined ? options.token : metaContent('memctl-token')
   const readOnly =
     options.readOnly !== undefined ? options.readOnly : metaContent('memctl-readonly') === 'true'
+  // The Dreaming isolation capability is server-injected like the read-only
+  // flag. Generation stays disabled until a verified sandbox is available.
+  const dreamSandbox =
+    options.dreamSandbox !== undefined
+      ? options.dreamSandbox
+      : metaContent('memctl-dream-sandbox') === 'available'
 
   async function request(path, init = {}) {
     const headers = { Accept: 'application/json', ...(init.headers || {}), 'X-Memctl-Token': token }
@@ -55,6 +61,7 @@ export function createApi(options = {}) {
   return {
     token,
     readOnly,
+    dreamSandbox,
     snapshot: (signal) => request('/api/v1/snapshot', { signal }),
     file: (path, signal) => request(`/api/v1/files/${encodeFilePath(path)}`, { signal }),
     entries: (params, signal) => request(`/api/v1/entries${buildQuery(params)}`, { signal }),
@@ -106,5 +113,15 @@ export function createApi(options = {}) {
     abortConflict: (payload) => writeJSON('/api/v1/conflict:abort', 'POST', payload),
     revertCommit: (hash, baseRevision) =>
       writeJSON(`/api/v1/audit/${encodeURIComponent(hash)}/revert`, 'POST', { baseRevision }),
+
+    // Dreaming. Generation returns 202 with a proposal id; the view polls the
+    // proposal until it is ready. Applying quotes the patchHash of the
+    // reviewed proposal so a changed proposal can never be applied under a
+    // stale hash. See docs/03-workflows-and-dataflows.md section 6.
+    dreamPreview: (runner, baseRevision) =>
+      writeJSON('/api/v1/dream:preview', 'POST', { runner, baseRevision: baseRevision || '' }),
+    dreamProposal: (proposalId, signal) =>
+      request(`/api/v1/dream/${encodeURIComponent(proposalId)}`, { signal }),
+    dreamApply: (payload) => writeJSON('/api/v1/dream:apply', 'POST', payload),
   }
 }

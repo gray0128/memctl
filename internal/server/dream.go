@@ -8,10 +8,11 @@ import (
 	"github.com/gray0128/memctl/internal/watcher"
 )
 
-// This file implements the Dreaming preview routes of stage D-1. Generation is
-// asynchronous: the request fixes the baseline and returns the proposal id, and
-// the UI follows the status through dream.updated and GET
-// /api/v1/dream/{proposalId}. Applying a proposal belongs to stage D-2.
+// This file implements the Dreaming routes. Stage D-1 added the asynchronous
+// preview: the request fixes the baseline and returns the proposal id, and the
+// UI follows the status through dream.updated and GET
+// /api/v1/dream/{proposalId}. Stage D-2 adds the explicit apply of an
+// already-reviewed proposal.
 
 // dreamPreviewBody is the POST /api/v1/dream:preview request.
 type dreamPreviewBody struct {
@@ -22,6 +23,13 @@ type dreamPreviewBody struct {
 // dreamPreviewResponse is the 202 response carrying the new proposal id.
 type dreamPreviewResponse struct {
 	ProposalID string `json:"proposalId"`
+}
+
+// dreamApplyBody is the POST /api/v1/dream:apply request. Both fields are
+// required so an apply can never reinterpret a changed proposal.
+type dreamApplyBody struct {
+	ProposalID string `json:"proposalId"`
+	PatchHash  string `json:"patchHash"`
 }
 
 // handleDreamPreview fixes the baseline under the repository lock, persists a
@@ -69,10 +77,29 @@ func (s *Server) handleDreamProposal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, proposal)
 }
 
-// handleDreamApply is registered so an apply request gets an explicit
-// UNSUPPORTED instead of a bare 404. The explicit-application workflow belongs
-// to stage D-2.
-func (s *Server) handleDreamApply(w http.ResponseWriter, _ *http.Request) {
-	s.writeAppError(w, memerr.New(memerr.Unsupported,
-		"applying a proposal is planned for stage D-2 and is not implemented yet"))
+// handleDreamApply commits one already-reviewed proposal through the managed
+// transaction and publishes the resulting status. The read-only middleware
+// rejects the request before it reaches this handler when --readonly is set.
+func (s *Server) handleDreamApply(w http.ResponseWriter, r *http.Request) {
+	var body dreamApplyBody
+	if err := decodeBody(r, &body); err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	if body.ProposalID == "" || body.PatchHash == "" {
+		s.writeAppError(w, memerr.New(memerr.InvalidArgument,
+			"proposalId and patchHash are required to apply a proposal"))
+		return
+	}
+	result, err := s.app.ApplyDream(r.Context(), body.ProposalID, body.PatchHash)
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
+	s.events.Publish(watcher.Invalidation{
+		Reason:     watcher.ReasonDreamUpdated,
+		ProposalID: body.ProposalID,
+		Status:     "applied",
+	})
+	writeJSON(w, result)
 }

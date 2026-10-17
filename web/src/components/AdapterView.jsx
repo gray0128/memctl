@@ -9,6 +9,7 @@ import {
   statusLabel,
   summarizeInstall,
 } from '../adapters.js'
+import { DreamPanel } from './DreamPanel.jsx'
 
 const STATUS_STYLES = {
   configured: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100',
@@ -147,6 +148,8 @@ export function AdapterView({ api, refreshKey }) {
           {api.readOnly ? '只读模式：安装入口已禁用' : '安装只写入接入配置，不修改记忆仓库'}
         </span>
       </div>
+
+      <DreamPanel api={api} refreshKey={refreshKey} />
 
       <ul className="space-y-2">
         {adapters.map((adapter) => (

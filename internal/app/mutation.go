@@ -57,6 +57,14 @@ type MutationRequest struct {
 	// Device is the normalized device label recorded in the commit source
 	// trailer so the read-only audit view can resolve it.
 	Device string
+	// DreamProposalID marks a transaction that commits one Dreaming proposal.
+	// commit() keeps the completed transaction record when it is set, so an
+	// interrupted apply can be reconciled from the record on retry. See
+	// docs/03-workflows-and-dataflows.md section 6 steps 6-7.
+	DreamProposalID string
+	// Operation overrides the short operation label in the local commit
+	// message. An empty value means "write".
+	Operation string
 }
 
 // MutationResult is the outcome of one local transaction.
@@ -121,7 +129,11 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	if err != nil {
 		return MutationResult{}, err
 	}
-	result, err := a.commit(ctx, session, "write", req, plans)
+	operation := req.Operation
+	if operation == "" {
+		operation = "write"
+	}
+	result, err := a.commit(ctx, session, operation, req, plans)
 	if err != nil {
 		return result, err
 	}
@@ -175,6 +187,7 @@ func (a *App) commit(ctx context.Context, session *writeSession, operation strin
 		OriginalHead: head,
 		StartedAt:    state.StartedAt(),
 		Message:      commitMessage(operation, req.Agent, req.SessionID, req.Device, txID),
+		ProposalID:   req.DreamProposalID,
 	}
 	for _, plan := range plans {
 		record.Paths = append(record.Paths, plan.records()...)
@@ -233,7 +246,16 @@ func (a *App) commit(ctx context.Context, session *writeSession, operation strin
 			"commit %s changed %v instead of the planned paths %v; inspect `memctl recover --status`", commit, committed, paths)
 	}
 
-	if err := session.store.Delete(txID); err != nil {
+	if req.DreamProposalID != "" {
+		// A Dreaming apply keeps its completed record until the proposal status
+		// is written, so a retry can prove the commit happened instead of
+		// committing the same proposal twice. The apply workflow deletes it.
+		record.Completed = true
+		record.Commit = commit
+		if err := session.store.Save(record); err != nil {
+			return MutationResult{TransactionID: txID, Commit: commit}, err
+		}
+	} else if err := session.store.Delete(txID); err != nil {
 		return MutationResult{TransactionID: txID, Commit: commit}, err
 	}
 	revision, err := a.repoRevision(ctx, session)

@@ -57,3 +57,14 @@ func (a *App) DreamRun(ctx context.Context, proposalID string) (dream.Proposal, 
 func (a *App) DreamProposal(ctx context.Context, proposalID string) (dream.Proposal, error) {
 	return a.dreamService().Load(ctx, proposalID)
 }
+
+// ApplyDream applies one reviewed proposal through the managed write
+// transaction. See app.ApplyDream in dreamapply.go.
+
+// DreamSandboxAvailable reports whether a verified runner isolation backend is
+// available on this host. The local UI uses it to disable generation before a
+// request is attempted; generation itself still re-checks it.
+func (a *App) DreamSandboxAvailable() bool {
+	service := a.dreamService()
+	return service.Sandbox != nil && service.Sandbox.Available()
+}

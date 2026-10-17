@@ -25,13 +25,14 @@ import (
 
 // dreamProposalJSON is the CLI/HTTP proposal shape this file inspects.
 type dreamProposalJSON struct {
-	ProposalID string   `json:"proposalId"`
-	Status     string   `json:"status"`
-	PatchHash  string   `json:"patchHash"`
-	Diff       string   `json:"diff"`
-	Warnings   []string `json:"warnings"`
-	Error      string   `json:"error"`
-	Changes    []struct {
+	ProposalID    string   `json:"proposalId"`
+	Status        string   `json:"status"`
+	PatchHash     string   `json:"patchHash"`
+	Diff          string   `json:"diff"`
+	Warnings      []string `json:"warnings"`
+	Error         string   `json:"error"`
+	AppliedCommit string   `json:"appliedCommit"`
+	Changes       []struct {
 		Path   string `json:"path"`
 		Action string `json:"action"`
 	} `json:"changes"`

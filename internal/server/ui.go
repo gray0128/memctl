@@ -17,6 +17,10 @@ const (
 	indexFileName       = "index.html"
 	tokenPlaceholder    = "__MEMCTL_TOKEN__"
 	readOnlyPlaceholder = "__MEMCTL_READONLY__"
+	// dreamSandboxPlaceholder carries the Dreaming generation capability. It is
+	// resolved per request because tests inject a synthetic sandbox after the
+	// server is built.
+	dreamSandboxPlaceholder = "__MEMCTL_DREAM_SANDBOX__"
 
 	// codeUIAssetsMissing is reported when the binary was built without the
 	// compiled frontend. It is an operational build error, not an API contract
@@ -64,7 +68,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	setUICSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(s.indexHTML)
+	// The Dreaming capability is resolved per request, so a test or a long-lived
+	// server always reflects the current sandbox detection.
+	dreamValue := []byte("unavailable")
+	if s.app.DreamSandboxAvailable() {
+		dreamValue = []byte("available")
+	}
+	page := bytes.ReplaceAll(s.indexHTML, []byte(dreamSandboxPlaceholder), dreamValue)
+	_, _ = w.Write(page)
 }
 
 // handleUIAsset serves the compiled script and style files from the embedded

@@ -22,6 +22,9 @@ type record struct {
 	Proposal
 	WorkDir    string `json:"workDir,omitempty"`
 	InstanceID string `json:"instanceId,omitempty"`
+	// Planned holds the exact apply input of every create or update change. It
+	// is internal to the apply workflow and never returned to a client.
+	Planned map[string]plannedFile `json:"planned,omitempty"`
 }
 
 // Store persists proposals under $STATE/repos/<repoId>/proposals. Proposals are

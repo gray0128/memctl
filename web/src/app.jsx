@@ -11,8 +11,7 @@ import { DiagnosticsView } from './components/DiagnosticsView.jsx'
 import { AdapterView } from './components/AdapterView.jsx'
 
 // The views of docs/04-ui-and-cli-specification.md section 4. The 整理接入 view
-// currently carries the adapter panel; the Dreaming proposal panel arrives
-// with stage D-2.
+// carries the Dreaming proposal panel and the adapter install panel.
 const VIEWS = [
   { id: 'overview', label: '概览' },
   { id: 'graph', label: '知识图谱' },

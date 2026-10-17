@@ -157,4 +157,31 @@ describe('createApi', () => {
       '/home/u/.pi/agent/hook/hooks.yaml': 'sha256:old',
     })
   })
+
+  it('sends the Dreaming preview, status and apply requests', async () => {
+    const calls = []
+    const fetchImpl = async (path, init) => {
+      calls.push({ path, init })
+      if (path === '/api/v1/dream:preview') {
+        return { ok: true, status: 202, json: async () => ({ proposalId: 'dp-1' }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ proposalId: 'dp-1' }) }
+    }
+    const api = createApi({ token: 'secret', dreamSandbox: true, fetchImpl })
+    expect(api.dreamSandbox).toBe(true)
+
+    await api.dreamPreview('claude', '')
+    expect(calls[0].path).toBe('/api/v1/dream:preview')
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(calls[0].init.body)).toEqual({ runner: 'claude', baseRevision: '' })
+
+    await api.dreamProposal('dp-1')
+    expect(calls[1].path).toBe('/api/v1/dream/dp-1')
+    expect(calls[1].init.method).toBeUndefined()
+
+    await api.dreamApply({ proposalId: 'dp-1', patchHash: 'sha256:patch' })
+    expect(calls[2].path).toBe('/api/v1/dream:apply')
+    expect(calls[2].init.method).toBe('POST')
+    expect(JSON.parse(calls[2].init.body)).toEqual({ proposalId: 'dp-1', patchHash: 'sha256:patch' })
+  })
 })
