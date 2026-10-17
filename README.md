@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理。
 
-当前版本 `v0.5.0`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。阶段 F 的 `memctl-pi` 随 `v0.5.0` 发布，完成隔离 pi 会话验证；npm 包尚未发布，真实 pi 会话仍待验证。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.5.0`（2026-10-18 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。阶段 F 的 `memctl-pi` 随 `v0.5.0` 发布，完成隔离与一次真实 pi 会话注入/收尾验证；npm 包尚未发布，交互式同步、恢复与分叉仍待验证。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -96,7 +96,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 - macOS amd64、Linux amd64、Windows amd64：仅交叉编译通过，文件锁、路径语义、进程生命周期与 runner 隔离未验证。
 - Dreaming：仅 macOS Seatbelt 为已验证隔离后端，Linux 与 Windows 返回 `UNSUPPORTED`；真实 runner 与模型端点未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
-- pi 专用插件：`memctl-pi`、`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布，隔离 pi `1.3.0` 会话完成注入与收尾验证；npm 包未发布，真实 pi 会话、真实模型与非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
+- pi 专用插件：`memctl-pi`、`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布，隔离与一次真实 pi `1.3.0` 会话完成注入与收尾验证；npm 包未发布，交互式同步、恢复/分叉、子代理与非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；`agent/disposed` 事件受宿主限制，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。
