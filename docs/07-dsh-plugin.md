@@ -540,10 +540,10 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
 - `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.3.0` Release 已附带 `memctl-dsh-0.3.0.tgz`。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
-- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.3.0` 已发布，`desktop` profile 的 `memctl-dsh` 已升级到 `0.3.0`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；`--session-id` 恢复会重新执行 `start` 且不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`agent/disposed` 事件本身仍未在真实宿主观察到。
+- 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.3.0` 已发布，`desktop` profile 的 `memctl-dsh` 已升级到 `0.3.0`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`agent/disposed` 事件本身仍未在真实宿主观察到。
 
 未验证：
 
-- 真实 DSH 会话中的 `agent/disposed` 事件路径、恢复后的实际上下文注入、锁忙/断网降级，以及 npm 包名与绝对目录的界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证。`0.3.0` 的正常退出已确认由插件卸载兜底触发一次 `end`，绝对 tarball 已通过界面安装；`agent/disposed` 仍只有单元测试覆盖，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
+- 真实 DSH 会话中的 `agent/disposed` 事件路径、轮次内受管写入提交、锁忙/断网降级，以及 npm 包名与绝对目录的界面安装；`systemPrompt.context` 快照、`turn/end` 后同步与子代理跳过已在 `desktop` 会话验证。`0.3.0` 的正常退出已确认由插件卸载兜底触发一次 `end`，绝对 tarball 已通过界面安装；`agent/disposed` 仍只有单元测试覆盖，详见 [T052 验证记录](./validation/t052-dsh-real-session.md)。
 - DSH 0.2.1-rc.2 的 `engines.dsh` 安装已通过；构造 `>=9.0.0 <10.0.0` 的包后，DSH 以退出码 `1` 拒绝安装并恢复 `package.json`；未在每个 DSH 小版本复验。
 - npm 发布、独立 GitHub 仓库、Discover 市场索引未发布；`D2`、`D3` 仍为可选。

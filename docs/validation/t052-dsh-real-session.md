@@ -95,28 +95,33 @@ dsh --profile t052 "只回复 OK，不要调用工具。"
 
 2. **Web 正常退出**：`dsh --profile t052web --port 0 --no-open` 启动后新建会话，调用日志只有 `start`；向 web host 发送 `SIGTERM` 后 trace 为 `dispose live=...` → `end`，调用日志再出现一次 `end`。没有 `disposed`，`end` 恰好一次。这验证了真实 web host 正常退出时的兜底收尾。
 
-3. **恢复旧会话**：执行 `dsh --profile t052 --session-id session-30e7695e-... "继续"`。trace 为 `created source=resume`；调用日志为 `start`、`sync`、`end` 各一次；恢复前后记忆仓库 HEAD 均为 `9d03d0d`，没有重复提交。由于 headless 缺凭据，模型请求未发生，因此本项只能确认恢复会重新执行 `start` 和注册流程；`H08` 的实际上下文注入仍以此前 `desktop` 会话证据为准。
+3. **Headless 恢复**：执行 `dsh --profile t052 --session-id session-30e7695e-... "继续"`。trace 为 `created source=resume`；调用日志为 `start`、`sync`、`end` 各一次；恢复前后记忆仓库 HEAD 均为 `9d03d0d`，没有重复提交。由于 headless 缺凭据，模型请求未发生，本项只确认恢复会重新执行 `start`；带凭据的恢复注入见第 4 项。
 
-4. **memctl 缺失**：`MEMCTL_DSH_BIN` 指向不存在的路径。trace 为 `created` → `dispose live=...` → `end`，没有 `start`；DSH 仍以 `MISSING_CREDENTIAL` 结束，没有因插件错误崩溃。因为二进制不存在，`end` 只是一次失败的触发，不构成收尾同步。
+4. **Web 成功轮次与恢复**：在隔离 `t052web` profile 中新建会话，选择 `DeepSeek-V4.1-Flash`，发送「只回复 OK，不要调用工具。」。模型返回 `OK`，会话日志出现 `turn/end`（turn 1，`completed`）和随后的 `sync`。停止 web host 后重启同一 profile，打开已保存会话并再次发送同一提示，模型再次返回 `OK`，日志出现第二个 `turn/end` 和 `sync`。
 
-5. **仓库未初始化**：`AGENT_MEMORY_DIR=/tmp/t052-no-repo`。调用日志为 `start`、`sync`、`end` 各一次；DSH 只报告 `MISSING_CREDENTIAL`，没有因 `NO_REPO` 中断会话。插件按设计把 `start` 失败写入自己的日志而不写宿主 stderr，因此本项确认的是「失败不阻断会话」，没有确认注入内容。
+   - 两次请求的会话日志都包含 `runtime-context` 的 `snapshot`，其中 `memctl:memory` section 的文本以 `[agent-memory] repo=/private/tmp/t052-memory sync=local ...` 开头；它是动态上下文快照，不是伪造的 inbox 用户消息。
+   - 调用日志：首次 `start` 22:52:13、`sync` 22:52:28、`end` 22:52:53；重启后 `start` 22:53:29、`sync` 22:53:37、`end` 22:53:48。
+   - 临时仓库 HEAD 保持 `d0dcf3b`；两轮都没有记忆写入，`sync` 未产生额外提交，恢复后也没有重复提交。
 
-6. **UI 安装绝对 tarball**：在隔离 `t052ui` web profile 中打开「插件 → 添加插件」，输入 `/Users/libo/.agent-memory/dsh/memctl-dsh-0.3.0.tgz`。界面显示「已安装」、`版本 0.3.0`；点击「立即启用」后，`package.json` 记录该 tarball，`dsh --profile t052ui --dump-config` 出现 `memctl-dsh`。这补齐了 `I06` 的绝对 tarball 界面路径；npm 包名与绝对目录未在界面复验。
+5. **memctl 缺失**：`MEMCTL_DSH_BIN` 指向不存在的路径。trace 为 `created` → `dispose live=...` → `end`，没有 `start`；DSH 仍以 `MISSING_CREDENTIAL` 结束，没有因插件错误崩溃。因为二进制不存在，`end` 只是一次失败的触发，不构成收尾同步。
 
-7. **锁忙**：人工持有 `/tmp/t052-memory/.git/memctl.lock` 时，headless 从 `start` 到退出约 245 秒，未在插件声明的 20 秒 `start` 超时内结束；测试被中止。该结果与「Hook 不阻塞会话」的目标不一致，但测试持锁脚本和插件超时的交互尚未隔离，不能判定为产品缺陷，也不计入通过。后续用可控短时持锁和单独日志复现。
+6. **仓库未初始化**：`AGENT_MEMORY_DIR=/tmp/t052-no-repo`。调用日志为 `start`、`sync`、`end` 各一次；DSH 只报告 `MISSING_CREDENTIAL`，没有因 `NO_REPO` 中断会话。插件按设计把 `start` 失败写入自己的日志而不写宿主 stderr，因此本项确认的是「失败不阻断会话」，没有确认注入内容。
+
+7. **UI 安装绝对 tarball**：在隔离 `t052ui` web profile 中打开「插件 → 添加插件」，输入 `/Users/libo/.agent-memory/dsh/memctl-dsh-0.3.0.tgz`。界面显示「已安装」、`版本 0.3.0`；点击「立即启用」后，`package.json` 记录该 tarball，`dsh --profile t052ui --dump-config` 出现 `memctl-dsh`。这补齐了 `I06` 的绝对 tarball 界面路径；npm 包名与绝对目录未在界面复验。
+
+8. **锁忙**：人工持有 `/tmp/t052-memory/.git/memctl.lock` 时，headless 从 `start` 到退出约 245 秒，未在插件声明的 20 秒 `start` 超时内结束；测试被中止。该结果与「Hook 不阻塞会话」的目标不一致，但测试持锁脚本和插件超时的交互尚未隔离，不能判定为产品缺陷，也不计入通过。后续用可控短时持锁和单独日志复现。
 
 ## 未验证
 
 - 父会话 `agent/disposed` 事件本身。两轮真实退出都只观察到插件 `dispose` 兜底，没有 `disposed` trace；DSH 当前没有单会话关闭入口，退出应用走插件卸载路径。`agent/disposed` 仍只有插件单元测试覆盖，不能记为真实宿主通过。
-- 恢复后的实际上下文注入。恢复会重新执行 `start` 且不重复提交，但 headless 缺凭据，模型没有消费上下文；`H08` 仍以此前 `desktop` 会话证据为准。
-- 成功轮次的 `turn/end` 提交。本轮 headless 会话均在模型请求前以 `MISSING_CREDENTIAL` 结束，未产生新提交；每轮同步仍以 `T052` 之前的 desktop 证据为准。
+- 成功轮次中的记忆写入提交。两轮模型都只回复 `OK`，没有写记忆；`turn/end` 后的 `sync` 已确认被调用，但没有新增 `memctl` 提交。需要让模型或调用方在轮次内完成一次受管写入，再确认提交与去重。
 - 断网与锁忙降级。锁忙在人工持锁测试中表现为约 245 秒延迟，测试被中止，未取得可用结论；断网未单独构造。
 - 通过「插件 → 添加插件」安装 npm 包名与绝对目录路径。绝对 tarball 路径已通过界面完成。
 - 插件卸载清理子进程、旧 hooks 共存与 DSH 范围外版本的界面拒绝。`T054`/`T048` 的假宿主测试覆盖部分行为，真实宿主未复验。
 
 ## 下一步
 
-1. 用具备模型凭据的隔离 DSH 会话完成一次成功轮次，确认 `turn/end` 产生预期提交，并在 `--session-id` 恢复后确认上下文重新注册且不重复提交。
+1. 在成功轮次内完成一次受管记忆写入，确认 `turn/end` 后出现预期提交，并在恢复后确认不重复提交。
 2. 确认 DSH 是否存在可触发 `agent/disposed` 的宿主入口；若没有，把 `agent/disposed` 明确记录为仅单元测试覆盖，真实退出以插件卸载兜底为准。
 3. 用可控短时持锁和插件自有日志复现锁忙延迟，区分 memctl 锁等待、插件 20 秒超时与测试脚本问题；再单独构造断网。
 4. 通过同一界面对 npm 包名和绝对目录路径各安装一次；保持 `desktop` 与真实记忆仓库不变。
