@@ -1,0 +1,31 @@
+{
+  "name": "memctl-pi",
+  "version": "0.4.0",
+  "description": "Loads memctl memory at pi session start and synchronizes it after each agent run.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "pi": {
+    "extensions": ["./index.js"]
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "memctl",
+    "memory",
+    "agent-memory"
+  ],
+  "scripts": {}
+}

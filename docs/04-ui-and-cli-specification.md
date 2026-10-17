@@ -28,6 +28,7 @@ memctl <subcommand> [flags] [-- command...]
 | `dream` | `--show ID` 或 `--apply ID --patch-hash HASH` | 查看或确认已有提案；apply 不重新调用模型 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
+| `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 安装；只写状态目录，不修改 pi settings；不提供 tarball 形式 |
 | `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
@@ -37,6 +38,8 @@ memctl <subcommand> [flags] [-- command...]
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 
 dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只探测并报告，不写入 profile 或 `hooks.json`。只有旧插件 `dsh-hooks-plugin` 已存在时，`install dsh` 才沿用旧的 `hooks.json` 合并路径并将其标记为 deprecated；两者都不存在或同时存在时，`install --status` 返回 `needs_attention`/`not_installed` 和界面安装提示，不自动写旧配置。`memctl dsh plugin-path` 与 `memctl dsh plugin-dir` 只读内嵌源文件并写入 `$STATE/dsh/`，输出绝对路径，不执行 `pnpm`、不修改 DSH profile。
+
+pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `pi install <memctl pi plugin-dir 输出的目录>` 安装，`install` 只探测并报告，不写 `hooks.yaml`。旧 `pi-yaml-hooks` + `agent-memory-*` 条目只在条目实际存在且旧插件已安装时继续幂等更新并标记 deprecated；只有旧插件包、没有条目时不构成旧接入。两者同时存在、有旧条目但缺少旧插件、两者都不存在或版本低于下界时，`install --status` 返回 `needs_attention`，并输出 npm、本地目录和 `pi list` 校验提示。`memctl pi plugin-dir` 只读内嵌源文件并写入 `$STATE/pi/`，输出稳定绝对路径；它不运行 `pi install`、不访问网络、不写 `settings.json`。pi 不接受 tarball 作为安装输入，帮助和文档不得把 `.tgz` 写成可用安装源。
 
 `init` 重复执行不修改已有 remote。已有 remote 与 URL 不同时拒绝；需要在暂停自动操作后显式修改 Git remote，再使用 `init <url> --confirm-private` 确认新目标。确认记录绑定有效 fetch/push URL，URL 不同即失效。
 
@@ -122,7 +125,7 @@ dsh 的原生插件 `memctl-dsh` 由 DSH Plugin Manager 安装，`install` 只�
 | `DSH_HOOK_SESSION_ID` | dsh 的兼容身份来源 |
 | `MEMCTL_LANG` | 无默认值；帮助语言 `en` 或 `zh`，接受带地区或编码的写法；优先于 `LC_ALL`/`LC_MESSAGES`/`LANG`，仅影响帮助文本 |
 
-SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如 pi 的 `PI_SESSION_ID`。
+SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如旧 `pi-yaml-hooks` 接入的 `PI_SESSION_ID`；原生 `memctl-pi` 直接传 `ctx.sessionManager.getSessionId()`，不读取该环境变量。
 
 缺少 SID 时，start/context 仍可只读注入，但来源标签标为不可用，不做跨进程去重；`tag` 返回错误。受管写入允许人工或未知来源，不伪造 source。`wrap` 可以生成随机会话 ID，并向其子进程导出 `AGENT_MEMORY_SID`、`AGENT_MEMORY_AGENT` 和规范化仓库路径。
 
@@ -191,7 +194,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | Antigravity | `PostInvocation`；`Stop` | 待真实宿主确认 `Stop` 的语义；当前模板不写 `SessionEnd` | 未确认前不新增映射 |
 | Command Code | `Stop` | 无 `SessionEnd` | 只保证回合级同步，不宣称收尾已验证 |
 | OpenCode | `session.idle`（兼容）；`session.compacted` | `session.deleted` | `session.status` 迁移与 `session.idle` 弃用待后续处理；删除会话才结束 |
-| pi | `session.idle` | `session.deleted` | 现有模板已接 |
+| pi | `session.idle`（旧 `pi-yaml-hooks`）；原生插件用 `agent_settled`，旧版回退 `agent_end` | `session.deleted`（旧）；原生插件用 `session_shutdown`，`reload` 不收尾 | 原生插件见 [pi 专用插件](./08-pi-plugin.md#63-生命周期映射) |
 | DSH | `turn/end` | `agent/disposed`；插件卸载时对仍 live 的会话再触发一次兜底 `end` | 没有单会话关闭入口；归档不销毁运行时；退出应用依赖宿主释放 agent |
 
 触发规则：
@@ -238,7 +241,7 @@ UI 不自动生成健康分；按错误、警告、信息展示诊断数。只�
 
 ## 6. 单文件打包
 
-内嵌资产包括前端静态文件、默认指引、全部支持的 adapter 模板和 `memctl-dsh` 插件源文件。默认指引与插件随二进制发布，不依赖安装时额外复制文件；插件 tarball 和目录在运行时生成到状态目录。
+内嵌资产包括前端静态文件、默认指引、全部支持的 adapter 模板、`memctl-dsh` 与 `memctl-pi` 插件源文件。默认指引与插件随二进制发布，不依赖安装时额外复制文件；dsh 插件 tarball 和目录、pi 插件本地目录在运行时生成到状态目录。`make release` 附带 `memctl-pi-<version>.tgz` 仅用于 npm 发布和审计，不作为 pi 的安装输入。
 
 ```go
 // internal/assets/embed.go

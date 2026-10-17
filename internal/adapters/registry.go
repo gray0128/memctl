@@ -44,6 +44,10 @@ type AdapterSpec struct {
 	// legacy hook configuration. When it is installed memctl manages no
 	// configuration for the host and reports configured without artifacts.
 	NativePlugin *PluginSpec
+	// HostMinVersion is the lowest host version this integration was verified
+	// against. It is used for hosts such as pi that have no host-side engine
+	// check. An empty value accepts every parseable version.
+	HostMinVersion string
 	// Artifacts are the configuration files memctl manages for this host.
 	Artifacts []ArtifactSpec
 }
@@ -57,6 +61,23 @@ type PluginSpec struct {
 	// MinVersion is the minimum supported version. An empty value accepts
 	// every parseable version.
 	MinVersion string
+	// DirTemplate is the manifest of the stable local package directory memctl
+	// writes under $STATE. It covers offline installs that never enter a
+	// package manager directory.
+	DirTemplate string
+	// SettingsFile is the host's global settings file. Its `packages` array
+	// may declare a local package directory as a string or a {source} object;
+	// relative paths resolve from the settings file directory.
+	SettingsFile string
+	// LegacyConfig detects whether the legacy hook configuration still holds
+	// this tool's entries. Package presence alone does not prove legacy use.
+	LegacyConfig *LegacyConfigSpec
+}
+
+// LegacyConfigSpec locates the legacy hook file and its managed entry prefix.
+type LegacyConfigSpec struct {
+	PathTemplate string
+	EntryPrefix  string
 }
 
 // ArtifactSpec describes one managed configuration file.
@@ -156,9 +177,26 @@ var registry = []AdapterSpec{
 	{
 		Agent:        "pi",
 		HostCommands: []string{"pi"},
+		// pi 0.86.1 is the lowest version with both systemPromptOptions.sections
+		// and agent_settled. pi has no host-side engine check, so the adapter
+		// reports the gap instead of letting the plugin fail silently.
+		HostMinVersion: "0.86.1",
 		Plugin: &PluginSpec{
 			Name:      "pi-yaml-hooks",
 			Manifests: []string{"$HOME/.pi/agent/npm/node_modules/pi-yaml-hooks/package.json"},
+		},
+		NativePlugin: &PluginSpec{
+			Name:       "memctl-pi",
+			MinVersion: "0.4.0",
+			Manifests: []string{
+				"$HOME/.pi/agent/npm/node_modules/memctl-pi/package.json",
+			},
+			DirTemplate:  "$STATE/pi/package.json",
+			SettingsFile: "$HOME/.pi/agent/settings.json",
+			LegacyConfig: &LegacyConfigSpec{
+				PathTemplate: "$HOME/.pi/agent/hook/hooks.yaml",
+				EntryPrefix:  "agent-memory-",
+			},
 		},
 		Artifacts: []ArtifactSpec{{
 			PathTemplate: "$HOME/.pi/agent/hook/hooks.yaml",
@@ -232,6 +270,31 @@ func Capabilities(agent string) []string {
 	}
 	if spec.NativePlugin != nil && !containsCapability(out, CapabilityPlugin) {
 		out = append(out, CapabilityPlugin)
+	}
+	return out
+}
+
+// CapabilitiesFor returns the capabilities that describe the integration path
+// actually in use. A detected native plugin reports only `plugin`; a host with a
+// native plugin but no detected native install reports the legacy path and does
+// not advertise `plugin`.
+func CapabilitiesFor(agent string, nativeInstalled bool) []string {
+	spec, ok := Lookup(agent)
+	if !ok {
+		return []string{}
+	}
+	capabilities := Capabilities(agent)
+	if spec.NativePlugin == nil {
+		return capabilities
+	}
+	if nativeInstalled {
+		return []string{CapabilityPlugin}
+	}
+	out := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if capability != CapabilityPlugin {
+			out = append(out, capability)
+		}
 	}
 	return out
 }

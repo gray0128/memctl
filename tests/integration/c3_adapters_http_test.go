@@ -211,8 +211,11 @@ func TestC3AdaptersHTTPInstallCoversI01I02(t *testing.T) {
 	if len(claude.Capabilities) != 1 || claude.Capabilities[0] != "hooks" {
 		t.Fatalf("claude-code capabilities should be [hooks], got %v", claude.Capabilities)
 	}
-	if pi := findAdapter(t, list.Adapters, "pi"); pi.Status != "needs_attention" {
-		t.Fatalf("pi should need its plugin, got %q", pi.Status)
+	// docs/08-pi-plugin.md section 7.2: a missing pi executable is
+	// not_installed; the install hint is only for a detected host without the
+	// native plugin.
+	if pi := findAdapter(t, list.Adapters, "pi"); pi.Status != "not_installed" {
+		t.Fatalf("pi should be not_installed without the host, got %q", pi.Status)
 	}
 
 	// A dry run returns the plan and writes nothing.

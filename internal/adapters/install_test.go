@@ -134,32 +134,201 @@ func TestMissingPluginNeedsAttentionWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestPluginPresentAllowsPiInstall(t *testing.T) {
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writePiLegacyEntries(t *testing.T, home string) {
+	t.Helper()
+	writeFile(t, filepath.Join(home, ".pi", "agent", "hook", "hooks.yaml"),
+		"hooks:\n  - id: agent-memory-context\n    event: user.prompt.submit\n")
+}
+
+// A pi-yaml-hooks install alone does not prove the legacy integration is in
+// use: the user may configure other hooks with it. install must not create
+// hooks.yaml by default.
+func TestLegacyPluginWithoutEntriesDoesNotCreatePiConfig(t *testing.T) {
 	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
-	manifest := filepath.Join(home, ".pi", "agent", "npm", "node_modules", "pi-yaml-hooks", "package.json")
-	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(manifest, []byte(`{"name":"pi-yaml-hooks","version":"2026.9.0"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "pi-yaml-hooks", "package.json"), "pi-yaml-hooks", "2026.9.0")
 
 	plan, err := env.Plan("pi")
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
-	if !plan.Applicable || plan.PluginVersion != "2026.9.0" {
-		t.Fatalf("pi plan must be applicable with the plugin: %+v", plan)
+	if plan.Status != StatusNeedsAttention || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("plugin-only pi plan = %+v, want needs_attention without a hooks plan", plan)
+	}
+	if !strings.Contains(plan.Reason, "memctl-pi") {
+		t.Fatalf("reason does not name the native plugin: %q", plan.Reason)
 	}
 	if _, err := env.Apply(plan); err != nil {
 		t.Fatalf("Apply error: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".pi", "agent", "hook", "hooks.yaml"))
-	if err != nil {
-		t.Fatalf("pi config not written: %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".pi", "agent", "hook", "hooks.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("pi hooks.yaml was created: %v", err)
 	}
-	if string(data) == "" {
-		t.Fatal("pi config is empty")
+}
+
+func TestPiLegacyEntriesKeepTheMergePath(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "pi-yaml-hooks", "package.json"), "pi-yaml-hooks", "2026.9.0")
+	writePiLegacyEntries(t, home)
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNotInstalled || !plan.Applicable || len(plan.Artifacts) != 1 {
+		t.Fatalf("legacy pi plan = %+v, want an applicable update of the hooks artifact", plan)
+	}
+	if plan.PluginVersion != "2026.9.0" {
+		t.Fatalf("PluginVersion = %q, want the legacy plugin version", plan.PluginVersion)
+	}
+	if !strings.Contains(plan.Reason, "deprecated") {
+		t.Fatalf("legacy pi plan is not marked deprecated: %q", plan.Reason)
+	}
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	configured, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("second Plan error: %v", err)
+	}
+	if configured.Status != StatusConfigured || configured.Applicable {
+		t.Fatalf("second legacy pi plan = %+v, want configured", configured)
+	}
+}
+
+func TestPiLegacyEntriesWithoutPluginNeedAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writePiLegacyEntries(t, home)
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable {
+		t.Fatalf("legacy entries without plugin = %+v, want needs_attention", plan)
+	}
+	if !strings.Contains(plan.Reason, "pi-yaml-hooks") {
+		t.Fatalf("reason does not name the legacy plugin: %q", plan.Reason)
+	}
+}
+
+func TestPiNativePluginIsConfiguredWithoutHooks(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.4.0")
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("native pi plan = %+v, want configured with no artifacts", plan)
+	}
+	if !plan.NativePluginDetected || plan.PluginVersion != "0.4.0" {
+		t.Fatalf("native detection = %+v", plan)
+	}
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".pi", "agent", "hook", "hooks.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("native pi plan created hooks.yaml: %v", err)
+	}
+}
+
+func TestPiNativePluginIsDetectedFromTheStateDirectory(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writeFile(t, filepath.Join(env.StateDir, "pi", "package.json"), `{"name":"memctl-pi","version":"0.4.1"}`)
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusConfigured || plan.PluginVersion != "0.4.1" {
+		t.Fatalf("state directory plan = %+v, want configured at 0.4.1", plan)
+	}
+}
+
+func TestPiNativePluginIsDetectedFromSettingsLocalPackage(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	localDir := filepath.Join(home, "plugins", "memctl-pi")
+	writeFile(t, filepath.Join(localDir, "package.json"), `{"name":"memctl-pi","version":"0.4.2"}`)
+	writeFile(t, filepath.Join(home, ".pi", "agent", "settings.json"),
+		`{"packages":[{"source":"../../plugins/memctl-pi","extensions":["./index.js"]}]}`)
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusConfigured || plan.PluginVersion != "0.4.2" {
+		t.Fatalf("settings plan = %+v, want configured at 0.4.2", plan)
+	}
+}
+
+func TestPiNativeAndLegacyEntriesNeedAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.4.0")
+	writePiLegacyEntries(t, home)
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("coexisting pi plan = %+v, want needs_attention without artifacts", plan)
+	}
+	if !strings.Contains(plan.Reason, "memctl-pi") || !strings.Contains(plan.Reason, "agent-memory-") {
+		t.Fatalf("reason does not name both paths: %q", plan.Reason)
+	}
+}
+
+func TestPiOldNativePluginNeedsAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".pi", "agent", "npm", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.3.0")
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable {
+		t.Fatalf("old native pi plan = %+v, want needs_attention", plan)
+	}
+	if !strings.Contains(plan.Reason, "0.4.0") {
+		t.Fatalf("reason does not state the minimum version: %q", plan.Reason)
+	}
+}
+
+func TestPiHostVersionBelowTheVerifiedMinimumNeedsAttention(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 0.85.0\n"})
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable {
+		t.Fatalf("old pi host plan = %+v, want needs_attention", plan)
+	}
+	if !strings.Contains(plan.Reason, "0.86.1") {
+		t.Fatalf("reason does not state the host minimum: %q", plan.Reason)
+	}
+}
+
+func TestPiUnparseableLegacyConfigNeedsAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"pi": "/usr/bin/pi"}, map[string]string{"/usr/bin/pi": "pi 1.3.0\n"})
+	writeFile(t, filepath.Join(home, ".pi", "agent", "hook", "hooks.yaml"), "hooks:\n  not a sequence\n")
+
+	plan, err := env.Plan("pi")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention {
+		t.Fatalf("unparseable hooks.yaml plan = %+v, want needs_attention", plan)
 	}
 }
 
@@ -398,6 +567,16 @@ func TestDshPluginProfileDetection(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".dsh", "hooks.json")); err != nil {
 		t.Fatalf("dsh hooks config was not written: %v", err)
+	}
+}
+
+func writePluginManifestAt(t *testing.T, manifest, name, version string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte(`{"name":"`+name+`","version":"`+version+`"}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

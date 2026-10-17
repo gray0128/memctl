@@ -59,10 +59,14 @@ type InstallPlan struct {
 	HostCommand   string
 	HostVersion   string
 	PluginVersion string
-	Status        string
-	Applicable    bool
-	Reason        string
-	Artifacts     []ArtifactPlan
+	// NativePluginDetected reports that the host's first-party memctl plugin is
+	// installed. It selects the AdapterStatus capabilities and suppresses the
+	// legacy configuration plan.
+	NativePluginDetected bool
+	Status               string
+	Applicable           bool
+	Reason               string
+	Artifacts            []ArtifactPlan
 }
 
 // Plan builds the install plan for one adapter. It only reads the current
@@ -95,19 +99,33 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 	}
 	det := env.detect(spec)
 	plan := InstallPlan{
-		Agent:         spec.Agent,
-		HostFound:     det.hostFound,
-		HostCommand:   det.hostCommand,
-		HostVersion:   det.hostVersion,
-		PluginVersion: det.pluginVersion,
+		Agent:                spec.Agent,
+		HostFound:            det.hostFound,
+		HostCommand:          det.hostCommand,
+		HostVersion:          det.hostVersion,
+		PluginVersion:        det.pluginVersion,
+		NativePluginDetected: det.nativeFound,
 	}
 	if det.nativeFound {
 		plan.PluginVersion = det.nativeVersion
 	}
 
 	// A native plugin owns the host integration. memctl only detects it and
-	// never writes hooks.json while it is installed.
+	// never writes the legacy configuration while it is installed.
 	if spec.NativePlugin != nil {
+		native := *spec.NativePlugin
+		// Most hosts prove legacy use by the legacy plugin manifest. pi can
+		// keep pi-yaml-hooks for other hooks, so its legacy state comes from
+		// the agent-memory-* entries actually present in hooks.yaml.
+		legacyConfigured := det.pluginFound
+		legacyName := ""
+		if spec.Plugin != nil {
+			legacyName = spec.Plugin.Name
+		}
+		if native.LegacyConfig != nil {
+			legacyConfigured = det.legacyFound
+			legacyName = fmt.Sprintf("legacy %s entries", native.LegacyConfig.EntryPrefix)
+		}
 		switch {
 		case !det.hostFound:
 			plan.Status = StatusNotInstalled
@@ -117,24 +135,50 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 			plan.Status = StatusUnsupported
 			plan.Reason = fmt.Sprintf("cannot parse the version reported by %s", det.hostCommand)
 			return plan, nil
-		case det.nativeFound && det.pluginFound:
+		case spec.HostMinVersion != "" && versionLessThan(det.hostVersion, spec.HostMinVersion):
 			plan.Status = StatusNeedsAttention
-			plan.Reason = fmt.Sprintf("%s and legacy %s are both installed; remove one to avoid duplicate triggers",
-				spec.NativePlugin.Name, spec.Plugin.Name)
+			plan.Reason = fmt.Sprintf("%s %s is older than the verified minimum %s",
+				spec.Agent, det.hostVersion, spec.HostMinVersion)
+			return plan, nil
+		case det.settingsErr:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("cannot parse %s to detect local packages", env.expand(native.SettingsFile))
+			return plan, nil
+		case det.legacyErr:
+			path := ""
+			if native.LegacyConfig != nil {
+				path = env.expand(native.LegacyConfig.PathTemplate)
+			}
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("cannot parse the legacy hook file %s; fix it manually", path)
+			return plan, nil
+		case det.nativeFound && legacyConfigured:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("%s and %s are both present; remove one to avoid duplicate triggers",
+				native.Name, legacyName)
 			return plan, nil
 		case det.nativeFound:
-			if minimum := spec.NativePlugin.MinVersion; minimum != "" && versionLessThan(det.nativeVersion, minimum) {
+			if minimum := native.MinVersion; minimum != "" && versionLessThan(det.nativeVersion, minimum) {
 				plan.Status = StatusNeedsAttention
 				plan.Reason = fmt.Sprintf("%s %s is older than the supported minimum %s",
-					spec.NativePlugin.Name, det.nativeVersion, minimum)
+					native.Name, det.nativeVersion, minimum)
 				return plan, nil
 			}
 			plan.Status = StatusConfigured
-			plan.Reason = fmt.Sprintf("%s is installed; dsh hooks.json is not needed", spec.NativePlugin.Name)
+			plan.Reason = fmt.Sprintf("%s is installed; legacy host configuration is not needed", native.Name)
 			return plan, nil
-		case !det.pluginFound:
+		case native.LegacyConfig != nil && !legacyConfigured:
 			plan.Status = StatusNeedsAttention
-			plan.Reason = fmt.Sprintf("no dsh plugin detected; install %s in DSH instead of writing hooks.json", spec.NativePlugin.Name)
+			plan.Reason = fmt.Sprintf("no %s detected; install it with the host package manager instead of writing the legacy configuration", native.Name)
+			return plan, nil
+		case native.LegacyConfig != nil && !det.pluginFound:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("%s are present but %s is not installed; install the legacy plugin or migrate to %s",
+				legacyName, legacyNameFor(spec), native.Name)
+			return plan, nil
+		case native.LegacyConfig == nil && !det.pluginFound:
+			plan.Status = StatusNeedsAttention
+			plan.Reason = fmt.Sprintf("no %s plugin detected; install %s in the host instead of writing the legacy configuration", native.Name, native.Name)
 			return plan, nil
 		}
 	}
@@ -205,6 +249,13 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func legacyNameFor(spec AdapterSpec) string {
+	if spec.Plugin != nil {
+		return spec.Plugin.Name
+	}
+	return "the legacy plugin"
 }
 
 func (env Env) planArtifact(artifact ArtifactSpec) (ArtifactPlan, error) {

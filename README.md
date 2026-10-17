@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理。
 
-当前版本 `v0.4.0`（2026-10-17 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.4.0`（2026-10-17 发布），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已随 `v0.4.0` 发布，真实会话验证已完成到 `v0.4.0`；`agent/disposed` 事件受宿主限制。阶段 F 的 `memctl-pi` 已实现并完成隔离 pi 会话验证，npm 包尚未发布，真实 pi 会话仍待验证。除 `version`、`help` 与 `install` 外，运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -35,6 +35,16 @@ DSH 使用专用 Host 插件 `memctl-dsh`，插件随二进制内嵌，不需要
 
 `memctl install --status` 只探测 `memctl-dsh` 与旧 `dsh-hooks-plugin`，不会修改 DSH profile，也不会在原生插件存在时写入 `hooks.json`。安装、升级与卸载由 DSH Plugin Manager 完成，详见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 
+pi 的原生插件 `memctl-pi` 通过 `pi install` 安装。npm 包尚未发布；当前可用离线本地目录：
+
+```bash
+./bin/memctl pi plugin-dir       # 输出稳定的绝对目录
+pi install /absolute/path/printed/by/the/command
+pi list
+```
+
+`memctl install --status` 探测 npm、状态目录与 pi settings 中的本地包；只有 `hooks.yaml` 仍有 `agent-memory-*` 条目时才把旧 `pi-yaml-hooks` 路径视为在用，且不会自动创建或删除这些条目。详见 [pi 专用插件](./docs/08-pi-plugin.md)。
+
 ## 帮助
 
 `memctl help` 输出面向 Agent 的概览：快速开始、使用规则、命令分组、环境变量、退出码和语言选择。单命令页包含用法、参数、输入、输出、退出码、示例和相关命令：
@@ -62,6 +72,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理接入 7 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；只写状态目录，不修改 DSH profile |
+| pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
 | 整理提案 | `dream --runner`、`dream --show`、`dream --apply` | 隔离生成带固定 Diff 的提案，人工确认后按受管事务应用；应用不重新调用模型 |
 
@@ -85,6 +96,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 - macOS amd64、Linux amd64、Windows amd64：仅交叉编译通过，文件锁、路径语义、进程生命周期与 runner 隔离未验证。
 - Dreaming：仅 macOS Seatbelt 为已验证隔离后端，Linux 与 Windows 返回 `UNSUPPORTED`；真实 runner 与模型端点未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
+- pi 专用插件：`memctl-pi`、`memctl pi plugin-dir` 与适配器探测已实现，隔离 pi `1.3.0` 会话完成注入与收尾验证；npm 包未发布，真实 pi 会话、真实模型与非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；`agent/disposed` 事件受宿主限制，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。
@@ -108,6 +120,7 @@ memctl/
   internal/            # 应用服务、CLI、仓库格式、Git、锁、状态、HTTP 服务、监听、适配器、诊断与 Dreaming
   web/                 # Preact 前端源码与内嵌入口；web/dist 由 make ui 生成，不提交
   plugins/dsh/         # memctl-dsh Host 插件源文件、Node 单元测试与 go:embed 入口
+  plugins/pi/          # memctl-pi 扩展源文件、Node 单元测试与 go:embed 入口
   tests/integration/   # CLI 二进制与跨模块集成测试
   scripts/             # 跨会话接续（next-round.sh）与发布打包（release.sh）
   docs/                # 设计契约、开发循环、任务状态与验收
@@ -129,19 +142,19 @@ make test
 ./bin/memctl help write
 ```
 
-`version` 与 `help` 不访问仓库，不要求 Git 或 Node.js。`make test` 同时运行前端测试、`plugins/dsh/test/` 的 Node 单元测试与 Go 测试。
+`version` 与 `help` 不访问仓库，不要求 Git 或 Node.js。`make test` 同时运行前端测试、`plugins/dsh/test/` 与 `plugins/pi/test/` 的 Node 单元测试以及 Go 测试。
 
 发布候选包用 `make release` 生成：先跑全量测试与前端构建，再交叉编译四个平台并打包插件 tarball。
 
 ```bash
 make release
-ls dist/                 # 四个候选二进制、memctl-dsh-<version>.tgz、SHA256SUMS、THIRD_PARTY_LICENSES.txt、RELEASE-INFO.txt
+ls dist/                 # 四个候选二进制、memctl-dsh-*.tgz、memctl-pi-*.tgz、SHA256SUMS、THIRD_PARTY_LICENSES.txt、RELEASE-INFO.txt
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
 `dist/` 与 `bin/` 不提交。发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。
 
-GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，构建四个候选二进制与插件包并保留 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制、`memctl-dsh-<version>.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。
+GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，构建四个候选二进制与插件包并保留 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。`memctl-pi` 的 tarball 只用于 npm 发布和审计，不作为 `pi install` 的输入。
 
 ```bash
 git tag <version>

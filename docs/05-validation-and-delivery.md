@@ -11,6 +11,7 @@
 | C：受管管理 | UI 写入、移动改链、冲突解决、revert、配置安装 | 多文件中断恢复、冲突多阶段、配置基线与幂等测试通过 |
 | D：Dreaming | 隔离生成、持久化预览、显式应用 | 对应 runner/平台的隔离、过期提案和幂等应用测试通过 |
 | E：DSH 专用插件 | `memctl-dsh` Host 插件、内嵌 tarball/目录、原生与旧插件探测、发布产物 | 插件单元测试、包清单、隔离 profile 安装与适配状态测试通过；真实会话注入未验证时如实记录 |
+| F：pi 专用插件 | `memctl-pi` 扩展、本地包目录、原生与旧路径探测、npm/本地分发 | 插件单元测试、包清单、隔离 pi 安装与适配状态矩阵通过；真实会话注入未验证时如实记录 |
 
 这些阶段是实现与开放顺序，不删除原定功能。每个平台、宿主及插件版本独立记录验证结果；某一组合失败不以关闭保护机制换取「支持」。以下小节定义全项目的完整实施顺序、前置依赖、交付边界与验收映射；实际执行进度、任务拆分与验证证据统一在 [STATUS.md](./STATUS.md) 维护。`A-1` 等是阶段步骤，`F01` 等是验收场景，两者不混用。
 
@@ -67,6 +68,18 @@
 | E-3：适配器探测与安装提示 | E-1、C-3 | 原生 `memctl-dsh` 与旧 `dsh-hooks-plugin` 分别探测；原生存在时不写 `hooks.json`；两者共存、缺失与版本过低给出可诊断状态和界面安装提示 | I03、I05 的适配状态场景 |
 | E-4：发布产物与隔离安装 | E-1 至 E-3 | `memctl dsh plugin-path`/`plugin-dir` 从 `go:embed` 生成绝对路径；Release 附带 `memctl-dsh-<version>.tgz` 与校验和；隔离 profile 安装与 `--dump-config` 验证 | I04、I06 |
 | E-5：真实宿主验证 | E-4；可用的 DSH 会话与隔离环境 | 在真实 DSH 会话验证注入快照、每轮提交、收尾、恢复、子代理与失败降级；不可执行时记录未验证项；由 `T052` 跟踪 | H07–H10 的真实会话部分 |
+
+### 阶段 F 的实施顺序
+
+阶段 F 由 [pi 专用插件设计](./08-pi-plugin.md) 定义。真实 pi 会话证据不可得时保留未验证状态，不用单元测试替代。
+
+| 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
+| --- | --- | --- | --- |
+| F-1：契约与骨架 | E-4 | `plugins/pi/` 的 `package.json`、`index.js`、`README.md`、`embed.go` 与 Node 单元测试骨架；无依赖与安装脚本；`npm pack` 文件清单正确 | I09 的包清单场景 |
+| F-2：生命周期与注入 | F-1；pi 扩展事件契约明确 | `session_start` 后台 `start`、`before_agent_start` 有界等待并写 `sections["memctl"]`、`agent_settled` 有界同步、`agent_end` 兼容去重、`session_shutdown` 收尾且 `reload` 不收尾；错误不阻塞会话 | H12–H15 |
+| F-3：适配器探测与状态 | F-1 | 原生 `memctl-pi` 的 npm、状态目录与 settings 本地路径探测；旧 `agent-memory-*` 条目内容探测；pi 宿主与插件版本门槛；`needs_attention` 与安装提示 | I07、I08、I10 |
+| F-4：分发与发布产物 | F-1 至 F-3 | `memctl pi plugin-dir` 从 `go:embed` 生成稳定目录；`make pi-plugin-test`、`make pi-plugin-pack`；Release 附带 npm 审计 tarball；隔离 `PI_CODING_AGENT_DIR` 安装与卸载 | I09 |
+| F-5：真实宿主验证 | F-4；可用 pi 会话与真实或可复现模型端点 | 在真实 pi 会话验证注入、同步、收尾、恢复、分叉与失败降级；不可执行时记录未验证项 | H12–H15 的真实会话部分 |
 
 ### 阶段步骤的子任务切分
 
@@ -139,6 +152,10 @@
 | H08 | 上下文注入 | 首个请求前存在 `[agent-memory]` 快照，不伪造 inbox 用户消息 |
 | H09 | 并发与失败 | 多轮快速结束只保留一个有界同步；断网/锁忙不阻塞会话 |
 | H10 | 子代理与生命周期 | 子代理不重复注入/同步；插件卸载清理子进程 |
+| H12 | pi 原生插件生命周期 | `session_start` 注入、`agent_settled` 同步、`session_shutdown` 收尾各一次；`reload` 不执行 `end` |
+| H13 | pi 上下文注入与缓存稳定 | 首个请求存在 `memctl` section；正文不变不产生新 delta；不伪造 user message；`forceSystemPrompt` 时有回退 |
+| H14 | pi 并发与失败 | 多轮快速结束只保留一个有界同步；二进制缺失、超时、非法 JSON、锁忙、断网不阻塞会话 |
+| H15 | pi 会话边界与子代理 | `new/resume/fork` 使用正确 SID；子代理不因 `parentSession` 被误跳过；显式开关行为可验证 |
 | H11 | 宿主会话结束映射 | `SessionEnd`、`session.deleted`、`agent/disposed` 与插件卸载兜底各触发一次 `end`；回合结束、空闲与压缩只触发 `sync`，不触发 `end` |
 | A01 | 注册全部 REST 路由 | Go ServeMux 不 panic，参数可取出，方法匹配正确 |
 | A02 | 缺失 Token、跨源 Origin、伪造 Host、PATCH 绕过 | 所有 API 包括读取和 SSE 都按规则拒绝 |
@@ -155,6 +172,10 @@
 | I04 | 内嵌 tarball 离线安装 | `memctl dsh plugin-path` 输出存在的绝对 `.tgz`；无 npm 网络也能在隔离 profile 安装；文件清单和版本正确 |
 | I05 | DSH 兼容拒绝 | `engines.dsh` 范围外版本被拒绝，不出现半安装或静默失效 |
 | I06 | 添加插件界面输入 | npm 包名、绝对 tarball、绝对目录均可解析并安装；`~`、相对路径、带子目录的 GitHub URL 被拒绝 |
+| I07 | pi 原生插件探测 | 原生存在时 `configured` 且无 `hooks.yaml` 计划；原生与旧条目共存时 `needs_attention` |
+| I08 | pi 安装计划与提示 | 原生缺失且无旧条目时不写 `hooks.yaml`，输出 npm 与本地目录提示；旧条目保留并标记 legacy；旧条目存在但插件缺失时 `needs_attention` |
+| I09 | pi 包安装 | `npm pack` 文件清单正确；隔离 `PI_CODING_AGENT_DIR` 下本地目录安装、`pi list`、卸载可用；无依赖和安装脚本 |
+| I10 | pi 版本与降级 | 低于下界或无法解析的 pi 版本不被报告为 `configured`；`sections` 缺失时回退，不静默失效 |
 | R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md |
 | R02 | 无 Git、无 runner、凭据环境缺失 | 分别给出针对性错误；不影响无关功能 |
 | R03 | 干净检出后使用已记录工具链构建，执行 `version/help` 与未知命令 | 实际构建与测试入口可用；version/help 不访问仓库、不要求 Git 或 Node.js；未知命令返回用法错误，无占位成功结果 |

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/adapters"
 	dshplugin "github.com/gray0128/memctl/plugins/dsh"
+	piplugin "github.com/gray0128/memctl/plugins/pi"
 )
 
 // runInstall implements `install [agent...] --all --dry-run --status`. It reads
@@ -148,6 +149,7 @@ func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 		fmt.Fprintf(stdout, "  note: %s\n", plan.Reason)
 	}
 	printDshHints(stdout, plan)
+	printPiHints(stdout, plan)
 	for _, artifact := range plan.Artifacts {
 		path := artifact.Path
 		fmt.Fprintf(stdout, "  %s (%s) %s\n", path, artifact.Format, artifact.Action)
@@ -203,6 +205,23 @@ func printRecovery(stdout io.Writer, result adapters.RecoveryResult) {
 	for _, path := range result.Skipped {
 		fmt.Fprintf(stdout, "recovery skipped %s: the file changed after the interrupted install\n", path)
 	}
+}
+
+// printPiHints mirrors docs/08-pi-plugin.md section 7.3 when pi has no native
+// plugin. It never runs `pi install` or writes settings because install --status
+// must stay read-only.
+func printPiHints(stdout io.Writer, plan adapters.InstallPlan) {
+	if plan.Agent != "pi" || plan.NativePluginDetected || plan.Status != adapters.StatusNeedsAttention {
+		return
+	}
+	version, err := piplugin.Version()
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(stdout, "  npm:   pi install npm:memctl-pi@%s\n", version)
+	fmt.Fprintln(stdout, "  离线:  memctl pi plugin-dir")
+	fmt.Fprintln(stdout, "         pi install <输出的绝对目录>")
+	fmt.Fprintln(stdout, "  校验:  pi list")
 }
 
 // printDshHints mirrors docs/07-dsh-plugin.md section 6.4 when dsh has no

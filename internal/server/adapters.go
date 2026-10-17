@@ -244,7 +244,7 @@ func toAdapterStatusDTO(plan adapters.InstallPlan) adapterStatusDTO {
 		PluginVersion: plan.PluginVersion,
 		ConfigPaths:   paths,
 		Status:        plan.Status,
-		Capabilities:  adapters.Capabilities(plan.Agent),
+		Capabilities:  adapters.CapabilitiesFor(plan.Agent, plan.NativePluginDetected),
 		Reason:        plan.Reason,
 	}
 }

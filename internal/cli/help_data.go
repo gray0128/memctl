@@ -178,7 +178,7 @@ var helpRootData = helpRoot{
 		},
 		{
 			Title: loc("Setup and maintenance", "配置与维护"),
-			Names: []string{"ui", "install", "dsh", "dream", "update"},
+			Names: []string{"ui", "install", "dsh", "pi", "dream", "update"},
 		},
 		{
 			Title: loc("Information", "信息"),
@@ -924,8 +924,9 @@ var helpCommandData = []helpCommand{
 			loc("Adapter status values: configured, needs_attention, not_installed, unsupported. An unsupported adapter is reported, not treated as success.", "适配器状态值：configured、needs_attention、not_installed、unsupported。unsupported 只报告，不视为成功。"),
 			loc("Run --dry-run first when a user configuration already exists, then apply the same agent to avoid surprise changes.", "用户配置已存在时先运行 --dry-run，再对同一 Agent 执行安装，避免意外修改。"),
 			loc("The DSH native plugin is installed by DSH Plugin Manager. install only probes it and never writes the DSH profile.", "DSH 原生插件由 DSH Plugin Manager 安装。install 只探测，不写 DSH profile。"),
+			loc("The pi native plugin is installed through `pi install`. install only probes it; it never writes hooks.yaml unless legacy agent-memory-* entries already exist.", "pi 原生插件通过 `pi install` 安装。install 只探测；只有旧 agent-memory-* 条目已存在时才继续更新 hooks.yaml。"),
 		},
-		Related: []string{"dsh", "start", "context"},
+		Related: []string{"dsh", "pi", "start", "context"},
 	},
 	{
 		Name: "dsh",
@@ -956,6 +957,38 @@ var helpCommandData = []helpCommand{
 		},
 		Notes: []localizedText{
 			loc("The native plugin is the supported DSH integration. `install --status` reports its detection state.", "原生插件是受支持的 DSH 接入方式；`install --status` 报告其探测状态。"),
+		},
+		Related: []string{"install"},
+	},
+	{
+		Name:  "pi",
+		Usage: []string{"memctl pi plugin-dir"},
+		Summary: loc(
+			"Print the embedded memctl-pi local package directory.",
+			"输出内嵌 memctl-pi 的本地包目录。",
+		),
+		Description: loc(
+			"Writes the embedded memctl-pi extension to AGENT_MEMORY_STATE/pi/ and prints its absolute path. It only writes the state directory: it does not run npm, access the network, or modify pi settings. Pass the path to `pi install <absolute dir>`; the directory is stable across upgrades and must stay readable.",
+			"把内嵌 memctl-pi 扩展写到 AGENT_MEMORY_STATE/pi/ 并输出绝对路径。只写状态目录：不运行 npm、不访问网络、不修改 pi 设置。把路径传给 `pi install <绝对目录>`；目录在升级后保持稳定，必须可读。",
+		),
+		Arguments: []helpItem{
+			{Name: "plugin-dir", Description: loc("Write and print the absolute local package directory.", "写入并输出本地包目录的绝对路径。")},
+		},
+		Output: []localizedText{
+			loc("One absolute path line.", "一行绝对路径。"),
+		},
+		ExitCodes: []helpExit{
+			{Code: 0, Meaning: loc("Directory written and printed.", "目录已写入并输出。")},
+			{Code: 1, Meaning: loc("The state directory could not be written or the embedded source is invalid.", "无法写入状态目录或内嵌源无效。")},
+			{Code: 2, Meaning: loc("Missing or unknown subcommand.", "缺少子命令或子命令未知。")},
+		},
+		Examples: []helpExample{
+			{Command: "memctl pi plugin-dir", Note: loc("Print the offline local package directory.", "输出离线本地包目录。")},
+			{Command: "pi install /absolute/path", Note: loc("Install the printed directory through pi.", "通过 pi 安装输出的目录。")},
+		},
+		Notes: []localizedText{
+			loc("The npm package `memctl-pi` is the primary channel; this directory is the offline fallback. pi does not install a tarball path.", "npm 包 `memctl-pi` 是主通道；该目录是离线备用。pi 不接受 tarball 路径作为安装输入。"),
+			loc("`install pi` only probes the native plugin and never writes hooks.yaml. Existing legacy agent-memory-* entries are kept and reported.", "`install pi` 只探测原生插件，不写 hooks.yaml。已有的旧 agent-memory-* 条目会保留并报告。"),
 		},
 		Related: []string{"install"},
 	},

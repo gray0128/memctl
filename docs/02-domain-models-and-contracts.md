@@ -82,9 +82,11 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 `DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的 Agent 状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 
-`AdapterStatus.status` 为 `unsupported | not_installed | configured | verified | needs_attention`。写入配置只得到 `configured`；只有宿主实测成功才是 `verified`。`AdapterStatus.capabilities` 为该 adapter 的受管能力，取值 `hooks`（命令 Hook 配置）、`config`（宿主功能开关配置）、`plugin`（需随宿主加载的插件文件），按注册顺序去重；它只描述本工具能维护的对象，不表示宿主已实测可用。
+`AdapterStatus.status` 为 `unsupported | not_installed | configured | verified | needs_attention`。写入配置只得到 `configured`；只有宿主实测成功才是 `verified`。`AdapterStatus.capabilities` 为该 adapter 当前接入路径的受管能力，取值 `hooks`（命令 Hook 配置）、`config`（宿主功能开关配置）、`plugin`（需随宿主加载的插件文件），按注册顺序去重；原生插件已安装时只报告 `plugin`，旧路径只报告 `hooks`。它只描述本工具维护的对象，不表示宿主已实测可用。
 
 dsh 同时支持原生插件 `memctl-dsh` 和旧 hooks 插件 `dsh-hooks-plugin`。原生插件存在时 `pluginVersion` 取该插件清单的版本，`artifacts` 为空，适配器不写 `hooks.json`；旧插件存在时 `pluginVersion` 取旧插件版本，`artifacts` 保留 `hooks.json` 合并计划。两者同时存在、只存在旧插件且未写配置、或两者都不存在时，状态和可应用性按 [Agent 配置安装](./03-workflows-and-dataflows.md#7-agent-配置安装) 处理；`needs_attention` 不允许被当作已接入。
+
+pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*` 条目。原生插件通过 npm 清单、`$STATE/pi/package.json` 或 `~/.pi/agent/settings.json` 的本地 `packages` 声明探测；存在时 `pluginVersion` 取原生插件版本，`artifacts` 为空，`capabilities` 为 `[plugin]`。旧路径是否在用由 `hooks.yaml` 中实际的 `agent-memory-*` 条目决定，`pi-yaml-hooks` 包存在但无这些条目时不构成旧接入；旧路径的 `capabilities` 为 `[hooks]`。原生与旧条目同时存在、只有旧条目但缺少旧插件、两者都不存在、pi 版本低于 `0.86.1` 或原生插件版本低于最低支持版本时报告 `needs_attention`；`install pi` 不再默认创建 `hooks.yaml`。
 
 `AdapterInstallPlan.artifacts[].currentRevision` 是预览时读取的配置内容修订，安装请求以它作为配置基线。`AdapterInstallResult` 是 `POST /api/v1/adapters/{agent}/install` 的响应：`dryRun`, `status`: `AdapterStatus`, `plan`: `AdapterInstallPlan`, `applied`: `[{path, action, backupPath?}]`, `manual`: `[{path, action, note?}]`, `skipped`: `[path]`, `recovery?`: `{recovered, restored, removed, skipped}`, `pendingRecovery`；`status` 是本次请求结束后的状态，`plan` 是被应用或将应用的预览。
 

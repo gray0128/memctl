@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Builds the cross-platform release candidates, the memctl-dsh plugin tarball,
-# their SHA-256 checksums, the third-party license notices and the release info
+# Builds the cross-platform release candidates, the memctl-dsh and memctl-pi
+# plugin tarballs, their SHA-256 checksums, the third-party license notices and
+# the release info
 # file. Run through `make release`, which first executes the full test suite and
 # the frontend build so web/dist is populated. See docs/04-ui-and-cli-specification.md section 6 and
 # docs/05-validation-and-delivery.md sections 3 and 4.
@@ -62,6 +63,12 @@ build windows amd64 memctl-windows-amd64.exe
 PLUGIN_VERSION="$(node -p "require('./plugins/dsh/package.json').version")"
 ( cd plugins/dsh && npm pack --pack-destination "$ROOT/$DIST" >/dev/null )
 printf 'wrote %s/memctl-dsh-%s.tgz\n' "$DIST" "$PLUGIN_VERSION"
+
+# The pi plugin tarball is an npm publishing and audit artifact only. pi
+# installs the npm package or a local directory, not a tarball.
+PI_PLUGIN_VERSION="$(node -p "require('./plugins/pi/package.json').version")"
+( cd plugins/pi && npm pack --pack-destination "$ROOT/$DIST" >/dev/null )
+printf 'wrote %s/memctl-pi-%s.tgz\n' "$DIST" "$PI_PLUGIN_VERSION"
 
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -138,8 +145,9 @@ fi
   printf '  build host:     %s\n' "$HOST_TARGET"
   printf '\n'
   printf 'notes:\n'
-  printf '  - embedded assets: default instructions, adapter templates, memctl-dsh sources and web/dist UI\n'
-  printf '  - plugin tarball:  memctl-dsh-%s.tgz (npm-compatible; no dependencies or install scripts)\n' "$PLUGIN_VERSION"
+  printf '  - embedded assets: default instructions, adapter templates, memctl-dsh and memctl-pi sources, and web/dist UI\n'
+  printf '  - plugin tarballs: memctl-dsh-%s.tgz, memctl-pi-%s.tgz (npm-compatible; no dependencies or install scripts)\n' "$PLUGIN_VERSION" "$PI_PLUGIN_VERSION"
+  printf '  - pi install source: npm:memctl-pi@<version> or the directory from `memctl pi plugin-dir`; not a tarball\n'
   printf '  - runtime dependency: system Git; Dreaming also needs a runner and a verified sandbox\n'
   printf '  - no external CDN: UI assets are served from the binary\n'
 } > "$DIST/RELEASE-INFO.txt"

@@ -112,6 +112,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	case "dsh":
 		return runDsh(rest, stdout, stderr)
 
+	case "pi":
+		return runPi(rest, stdout, stderr)
+
 	case "update":
 		return runUpdate(rest, stdout, stderr, version)
 

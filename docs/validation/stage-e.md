@@ -70,3 +70,13 @@
 - 验收：`R03` 回归通过；`R06` 通过。帮助路径不访问仓库、Git、Node.js 或网络；只本地化帮助文本，JSON 字段、输出键和错误码保持英文；未知主题或非法 `--lang` 返回 `2`，已知命令页返回 `0`。
 - 未验证与遗留：Linux 与 Windows 的 locale 探测和中文终端显示未在实机验证；全量集成测试中的 Dreaming sandbox 用例未通过，原因是当前宿主缺少 macOS sandbox 执行权限（runner 退出 `71`），需在具备该权限的受控环境复跑；帮助内容只覆盖当前 20 个命令，后续新增命令时必须同步帮助目录、分组和回归测试；`help --json` 的 `schemaVersion` 目前为 1，字段语义变化时需要递增。
 - 下一步：`T052` 仍进行中；下一轮验证轮次内受管写入提交与去重，确认 DSH 是否提供可触发 `agent/disposed` 的入口，并隔离复现锁忙延迟；`T059` 进行中：准备发布 `v0.4.0`（含 `T058` 的 Agent 帮助与 i18n）；完成插件版本提升、全量测试、候选包与 CI Release 后回写记录。按 [停止条件](../06-development-loop.md#3-状态与推进) 暂停自动接续并等待用户确认。
+
+## T059：发布 v0.4.0
+
+- 目标与范围：把 `T058` 的 Agent 帮助、中英 i18n 与 `help --json` 作为 `v0.4.0` 发布；插件包版本同步到 `0.4.0`，运行全量测试与 `make release`，校验四个候选二进制、插件 tarball 与校验和，推送 tag 触发 GitHub Release。不改变帮助之外的产品行为。
+- 契约：[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[面向 Agent 的帮助与中英 i18n](../04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](../07-dsh-plugin.md)。
+- 验证日期与环境：2026-10-17，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.4.0` 指向 `ecb085a`；`GOCACHE` 指向工作区外可写目录。
+- 命令与结果：`VERSION=v0.4.0 make release` 全量测试通过（前端 16 文件 85 项；插件 Node 14 项；Go 含 `tests/integration` 328.1 秒），生成四个平台候选二进制、`memctl-dsh-0.4.0.tgz` 与三个元数据文件；`dist/SHA256SUMS` 五个产物全部 `OK`，候选二进制输出 `memctl v0.4.0`，插件 tarball 版本为 `0.4.0`，`help` 输出包含新版帮助入口。tag 推送后 [GitHub Actions 运行 39044013291](https://github.com/gray0128/memctl/actions/runs/39044013291) 在 4 分 11 秒内通过并创建 [Release v0.4.0](https://github.com/gray0128/memctl/releases/tag/v0.4.0)；附件含四个平台二进制、`memctl-dsh-0.4.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。下载 Release 附件后按发布 `SHA256SUMS` 校验，五个产物全部 `OK`；下载的 `memctl-darwin-arm64` 输出 `memctl v0.4.0`，`update --check` 输出 `current: v0.4.0`、`latest: v0.4.0`、`up to date`。
+- 验收：`make release` 全量测试通过；本地与下载的 Release 附件校验全部 `OK`；tag `v0.4.0` 的 CI Release 成功；`R06` 的 Agent 帮助与中英 i18n 包含在发布测试中。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；`desktop` profile 的 `memctl-dsh` 已在发布后更新到 `0.4.0`，并复验注入与同步；`T052` 的轮次内受管写入、锁忙与断网已在隔离 0.4.0 会话复验，`agent/disposed` 事件受宿主限制。
+- 下一步：发布与 `desktop` 插件更新已完成；`T052` 已按 [验证记录](./t052-dsh-real-session.md) 的边界完成，剩余项登记为已知限制。

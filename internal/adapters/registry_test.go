@@ -134,6 +134,23 @@ func TestRegistryCapabilities(t *testing.T) {
 	if len(dsh) != 2 || dsh[0] != CapabilityHooks || dsh[1] != CapabilityPlugin {
 		t.Fatalf("dsh capabilities = %v, want [hooks plugin]", dsh)
 	}
+	// The advertised capabilities describe the integration path in use, not
+	// every path the adapter could take.
+	if native := CapabilitiesFor("dsh", true); len(native) != 1 || native[0] != CapabilityPlugin {
+		t.Fatalf("native dsh capabilities = %v, want [plugin]", native)
+	}
+	if legacy := CapabilitiesFor("dsh", false); len(legacy) != 1 || legacy[0] != CapabilityHooks {
+		t.Fatalf("legacy dsh capabilities = %v, want [hooks]", legacy)
+	}
+	if pi := CapabilitiesFor("pi", false); len(pi) != 1 || pi[0] != CapabilityHooks {
+		t.Fatalf("legacy pi capabilities = %v, want [hooks]", pi)
+	}
+	if pi := CapabilitiesFor("pi", true); len(pi) != 1 || pi[0] != CapabilityPlugin {
+		t.Fatalf("native pi capabilities = %v, want [plugin]", pi)
+	}
+	if opencode := CapabilitiesFor("opencode", false); len(opencode) != 1 || opencode[0] != CapabilityPlugin {
+		t.Fatalf("opencode capabilities = %v, want [plugin]", opencode)
+	}
 	if unknown := Capabilities("unknown"); len(unknown) != 0 {
 		t.Fatalf("unknown adapter capabilities = %v, want empty", unknown)
 	}
