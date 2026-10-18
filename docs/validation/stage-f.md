@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T073`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T074`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -143,3 +143,17 @@
 - 验收：`M08` 的宿主覆盖扩展到 Codex、pi、OpenCode、Command Code、Antigravity 与 Grok（Grok 在显式授权下）；`M05` 在六个宿主通道复验。`docs/09` 的 1、3、4.3、5.2、6.2 与 `install --status` 的注册命令已同步；`go test ./internal/cli ./tests/integration -run 'TestPrintMCPStatus|TestM09' -count=1` 通过。
 - 未验证与遗留：Claude Code 的写入路径；Grok 的自定义 profile 只验证 `read_write`，未覆盖 `restrict_network`、`deny` 等字段；Antigravity 的探针依赖真实登录态与真实配置文件，未在完全隔离的环境复现。
 - 下一步：如 `127.0.0.1:15721` 代理可用，按同一流程补 Claude Code。其余未验证项见 [STATUS](../STATUS.md#当前事实)。
+
+## T074：构建链路提速
+
+- 目标与范围：缩短 CI 与 `make release` 的耗时，不改产品行为与发布产物内容；覆盖集成测试的重复构建、流水线的作业划分与本地发布入口。附带修复 `T072` 引入的 MCP 探测超时缺陷。
+- 契约：[单文件打包与 CI](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[MCP 探测](../09-mcp-memory-tools.md#53-探测)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1，8 核。
+- 命令与结果：先测基线，`go test ./tests/integration -count=1` 为 297 秒，CI 运行 [39093963934](https://github.com/gray0128/memctl/actions/runs/39093963934) 的 `make release` 步为 3:45，其中集成测试 198.7 秒。定位到 55 处 `buildMemctlBinary` 各自 `go build` 一次（缓存命中每次约 0.6 秒），改为进程级 `sync.Once` 共享构建后，集成测试降至 210 秒；`R03` 因需要指定版本号保留独立构建，`newC3Harness` 与 `T048` 复用共享二进制。`make release-dist` 实测 13 秒产出与 `make release` 相同的九个文件，`SHA256SUMS` 六项全部 `OK`。`gofmt -l`、`go vet ./...` 无输出；`go test ./... -count=1` 全量通过（3 分 57 秒）。
+- 缺陷修复：全量并行跑测试时 `TestPrintMCPStatusServingBinary` 与 `TestProbeReadsToolsList` 稳定失败于 `signal: killed`。原因是探测预算 3 秒在并行编译争用 CPU 时不够，正常二进制会被误报为 `mcp: unavailable`。将 `ProbeTimeout` 提高到 10 秒并在 `docs/09` 5.3 写明理由；修复后在 `go test ./internal/... ./plugins/...` 三轮并行压力下均通过。
+- 作业结构的第一版实测推翻：最初把 CI 拆成 `verify`（`make test`）与 `release`（`needs: verify`）两个串行作业，运行 [39099551113](https://github.com/gray0128/memctl/actions/runs/39099551113) 后总时长从 4:49 升到 5:13——两个作业各自支付约 38 秒环境准备，而原作业本就没有重复跑测试。据此改为分片矩阵：`verify` 四个分片并行、`build` 与测试并行、`publish` 同时依赖两者。
+- 分片实现：`scripts/test-shards.txt` 提交「测试名 → 分片号」清单，`scripts/balance-test-shards.sh` 实测耗时后贪心分配，`scripts/test-shard.sh` 按清单过滤执行；清单缺项、分片号越界或分片为空时非零退出。分片按测试名而非按包切分，因为 Go 1.27 无 `-shard` 且集成测试集中在单包。本地并行跑四个分片，各分片集成部分 67–70 秒，全部退出 0；分片执行过的测试名并集与 `go test -list` 的 118 个完全一致，无遗漏或重复。前端与插件 Node 测试只在分片 1 运行。
+- 验收：集成测试单进程只构建一次；分片并集覆盖全部 118 个集成测试；`make test` 保持全量语义，`make release` 的本地入口不变；发布产物集合、校验和与 `RELEASE-INFO.txt` 内容未变。
+- 真实 CI 复测：运行 [39101067492](https://github.com/gray0128/memctl/actions/runs/39101067492) 总时长 **2:28**，较基线的 4:49 减少 49%。四个分片作业耗时 1:27–2:18，其中 `Run tests` 步 48–79 秒；`build` 作业与测试并行，49 秒完成。最长分片 1 为 2:18，是当前关键路径，其 `Run tests` 为 1:19，比预期高，因为该分片额外承担前端与插件 Node 测试。
+- 未验证与遗留：清单在新增或重命名测试后需要人工重新生成，`scripts/test-shard.sh` 只在清单缺项时报错，不能发现清单里残留已删除的测试名；`t.Parallel()` 仍不可用，因为 `a4_credentials_test.go` 等使用 `t.Setenv` 改动进程级环境。
+- 下一步：观察下一次 `main` 推送与标签发布的实际耗时，据此调整分片数；如需继续压缩，先消除进程级环境依赖以便包内并行。
