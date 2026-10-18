@@ -114,7 +114,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.1`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
-- 记忆写入通道：生命周期插件在宿主进程内运行，Agent 在 bash 中执行 `memctl read/write` 时会受工作区沙箱限制，无法写 `~/memory`。`memctl mcp` 提供不受该沙箱限制的 MCP 工具；已在 DSH 上验证宿主派生的 MCP 子进程可写记忆仓库，其余宿主未实测，见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md)。
+- 记忆写入通道：生命周期插件在宿主进程内运行，Agent 在 bash 中执行 `memctl read/write` 时会受工作区沙箱限制，无法写 `~/memory`。`memctl mcp` 提供不受该沙箱限制的 MCP 工具；DSH、Codex、pi、OpenCode、Command Code 与 Antigravity 已完成 MCP 受管写入实测，Grok 需要把记忆仓库加入 `read_write`（同时放开 shell），Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)。
 - 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。
 
@@ -134,12 +134,12 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 ```text
 memctl/
   cmd/memctl/          # CLI 进程入口与版本注入
-  internal/            # 应用服务、CLI、仓库格式、Git、锁、状态、HTTP 服务、监听、适配器、诊断与 Dreaming
+  internal/            # 应用服务、CLI、MCP 工具、自更新、仓库格式、Git、锁、状态、HTTP 服务、监听、适配器、诊断与 Dreaming
   web/                 # Preact 前端源码与内嵌入口；web/dist 由 make ui 生成，不提交
   plugins/dsh/         # memctl-dsh Host 插件源文件、Node 单元测试与 go:embed 入口
   plugins/pi/          # memctl-pi 扩展源文件、Node 单元测试与 go:embed 入口
   tests/integration/   # CLI 二进制与跨模块集成测试
-  scripts/             # 跨会话接续（next-round.sh）与发布打包（release.sh）
+  scripts/             # 跨会话接续、发布打包与集成测试分片
   docs/                # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/        # 只读参考，不作为新实现或发布入口
 ```

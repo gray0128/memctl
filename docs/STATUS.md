@@ -1,12 +1,12 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T075`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T076`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
-- 版本：`v0.6.0` 为当前二进制发布版本（2026-10-18 发布，新增 `memctl mcp` 记忆工具通道与 `install --status` 的 MCP 探测，并缩短 CI 耗时）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`，插件源码自 `v0.5.1` 起未改动，本轮不发布 npm，插件 tarball 仍为 `0.5.1`。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
+- 版本：`v0.6.0` 为当前二进制发布版本（2026-10-18 发布，新增 `memctl mcp` 记忆工具通道与 `install --status` 的 MCP 探测，并缩短 CI 耗时）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`，插件源码自 `v0.5.1` 起未改动，`v0.6.0` 不发布 npm，插件 tarball 仍为 `0.5.1`。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
 - 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`mcp`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–09 为准。
-- 发布后改动：`T040`–`T076` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布、版本发布与 MCP 记忆工具通道均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
+- 发布后改动：`T040`–`T077` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布、版本发布、MCP 记忆工具通道与文档一致性检查均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end`、绝对 tarball 界面安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，bundle 与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md)、[T067 记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
 - 宿主（pi）：`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`，真实会话确认 `<memctl>` 注入、每轮 `sync`、收尾、恢复、分叉、后台子代理与失败降级；前台 in-process 子代理不触发会话事件，不注入记忆。证据见 [T062 验证记录](./validation/t062-pi-real-session.md) 与 [pi 专用插件](./08-pi-plugin.md#11-实现状态)。
@@ -99,28 +99,35 @@
 | T073 | 已完成 | 其余宿主的受限会话实测：pi、OpenCode、Command Code、Antigravity 完成 MCP 受管写入且 shell 受限；Grok 的 `workspace` profile 会阻断子进程，需 `read_write`；Claude Code 因代理未运行未实测；[方案文档](./09-mcp-memory-tools.md#62-真实验证边界)、[归档记录](./validation/stage-f.md#t073其余宿主的受限会话实测) |
 | T074 | 已完成 | 构建链路提速：集成测试共享单次二进制构建、集成测试按名分片为四个并行 CI 作业、打包与测试并行、新增 `make release-dist`；修复 MCP 探测 3 秒超时在负载下误报的缺陷；[构建契约](./04-ui-and-cli-specification.md#6-单文件打包)、[归档记录](./validation/stage-f.md#t074构建链路提速) |
 | T075 | 已完成 | 发布 `v0.6.0`（含 `T070`–`T074`）：全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；插件源码未改动，保持 `0.5.1`，不发 npm；[归档记录](./validation/stage-f.md#t075发布-v060) |
-| T076 | 已完成 | 明确发布入口唯一为 tag 推送：`04` 新增 6.1 节说明本地 `make release` 不构成发布步骤，`05` 第 4 节同步判定依据，README 发布段改为「推标签 → 流水线产出 → 独立目录校验」；不改变产品行为；[发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[完成记录](#t076明确发布入口为标签推送) |
+| T076 | 已完成 | 明确发布入口唯一为 tag 推送：`04` 新增 6.1 节说明本地 `make release` 不构成发布步骤，`05` 第 4 节同步判定依据，README 发布段改为「推标签 → 流水线产出 → 独立目录校验」；不改变产品行为；[发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[归档记录](./validation/stage-f.md#t076明确发布入口为标签推送) |
+| T077 | 已完成 | 文档一致性检查与更新：补入架构文档缺失的 `internal/mcp`、`internal/update` 与 `docs/09`，修正 README 与 `09` 过期的 MCP 宿主验证状态，统一插件 tarball 版本语义与 Makefile 片段，归档 `T076`；不改变产品行为；[完成记录](#t077文档一致性检查与更新) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测；`T074` 完成构建链路提速；`T075` 为已完成的 `v0.6.0` 发布轮次；`T076` 明确发布入口唯一为标签推送。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测；`T074` 完成构建链路提速；`T075` 为已完成的 `v0.6.0` 发布轮次；`T076` 明确发布入口唯一为标签推送；`T077` 完成文档一致性检查与更新。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T076：明确发布入口为标签推送
+## T077：文档一致性检查与更新
 
-- 目标与范围：澄清发布入口的权威定义，消除「本地 `make release` 与流水线 `build` 都产出候选包、发布该用哪个」的歧义；不改变产品行为与流水线逻辑。
-- 契约：[发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 验证日期与环境：2026-10-18，macOS arm64；纯文档任务，不运行二进制测试。
-- 起因：`T075` 发布时在本地执行了 `make release VERSION=v0.6.0`，该步骤并非契约要求。`04` 第 6 节原文把 `make release` 与 CI 的 `build` 作业并列描述为候选包产出方式，未说明发布时以哪条为准，导致发布轮次多跑一次全量测试并产出一份会被流水线覆盖的 `dist/`。
-- 修改内容：`04` 新增 6.1 节「发布入口」，写明发布唯一入口是推送 `v*` 标签、Release 附件只由流水线产生，并给出两条理由（构建环境从干净检出开始；`RELEASE-INFO.txt` 记录的是实际产出该文件的环境）与发布轮次操作顺序；`04` 中「`make release` 仍是本地完整发布入口」改为「用于本地验证构建链路」；`05` 第 4 节新增一条判定依据。README 发布段同步改写：命令序列改为「推标签 → 等待 `publish` → 下载到独立目录校验」，并说明本地 `make release` 不构成发布步骤；同时修正该段仍写着 CI 调用 `make release` 的过期描述（`T074` 已改为 `release-dist`）。
-- 验收：文档检查通过——新增锚点可解析，`04`、`05`、README 三处对发布入口的表述一致，本地构建产物在所有位置都不再被当作发布证据。链接与锚点检查脚本无输出。
-- 未验证与遗留：无。该轮只澄清契约，`make release` 与流水线的实际行为均未改变。
-- 下一步：后续发布轮次按 6.1 的操作顺序执行，本地只跑 `make test`。
+- 目标与范围：在 `T071`–`T076` 之后复核文档与实现、文档之间的一致性，修正事实过期、模块与目录清单缺失和重复定义；不改变产品行为。
+- 契约：[模块职责](./01-architecture-and-modules.md#4-模块职责)、[目录结构与依赖](./01-architecture-and-modules.md#5-目录结构与依赖)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1；纯文档任务，不运行测试套件，仅编译当前提交的二进制核对帮助输出。
+- 检查与结果：
+  - 本地链接与锚点：根 `README.md`、`AGENTS.md`、`待办.md` 与 `docs/` 下全部 Markdown 共 28 个文件逐条解析，失效链接与锚点 0。
+  - CLI 契约：当前提交构建的二进制 `help --json` 返回 22 个命令，命令名与参数集合和 `04` 第 1 节表格一致。
+  - REST 契约：`internal/server` 注册的 23 条 API 路由（另有静态页与资源路由）与 `02` 4.2 表逐条对应。
+  - 目录与模块：`01` 第 5 节补入 `docs/09`、`internal/mcp/`、`internal/update/`，第 4 节补入 MCP 协议适配与自更新两行；第 1 节流程图与受管写入定义补入 MCP 通道；`03` 第 2 节把 MCP 工具列为同一受管事务入口。
+  - 事实同步：README 与 `09` 的 MCP 宿主验证状态改为 DSH、Codex、pi、OpenCode、Command Code、Antigravity 已实测，Grok 需 `read_write`，Claude Code 未实测；`09` 2.3 删除与 6.2 冲突的旧表并改指 6.2；`09` 5.2 标明 Antigravity 使用真实登录态而非隔离 `HOME`。
+  - 发布语义：`04`、`05` 注明插件 tarball 的 `<version>` 取插件包自身版本；`07`、`08` 补记 `v0.6.0` Release 仍附带 `0.5.1` tarball；`04` 的 Makefile 片段补齐 `release-dist` 与 `test-shard`。
+  - 待办：删除已由 `T050`/`T051` 完成的 README 条目，把 release 提速标注为 `T074` 已完成主体、剩余分片调优。
+- 验收：文档检查通过；链接与锚点脚本无失效项，CLI 命令与 REST 路由核对无差异，跨文档表述一致。`T076` 完成记录已归档到 [阶段 F](./validation/stage-f.md#t076明确发布入口为标签推送)。
+- 未验证与遗留：文档检查不替代二进制、平台或宿主测试；本轮未改代码，未重跑测试套件。
+- 下一步：可选事项为配套 Skill、Codex 插件调研、Dreaming 真实 runner 验证与 pi.dev 收录；未验证项见[当前事实](#当前事实)。
 
 ## 近期待办与下一步
 
 - `memctl mcp` 与 `install --status` 的 `mcp:` 块已随 `v0.6.0` 发布；本机 `desktop` profile 尚未插入 `@deepseek-ai/dsh-mcp-client` 条目，DSH 侧需手工添加后生效。
 - 插件包仍为 `0.5.1`，与 `v0.6.0` 的主次版本不一致；插件源码未改动，如需对齐需单独走插件版本与 npm 发布轮次。
-- 宿主侧写入已覆盖 Codex、pi、OpenCode、Command Code 与 Grok；Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
+- 宿主侧写入已覆盖 DSH、Codex、pi、OpenCode、Command Code 与 Antigravity；Grok 需显式 `read_write`，Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
 - 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。

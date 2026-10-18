@@ -23,7 +23,7 @@
 
 ## 2. 受管写入事务
 
-Agent 使用 `read` 取得文件和修订，用 `write` 提交完整新文本；UI 条目操作则先由 vault 生成局部变更计划。两者最终进入同一事务。
+Agent 通过 CLI `read`/`write` 或 MCP 的 `memory_read`/`memory_write` 取得文件和修订并提交完整新文本；UI 条目操作则先由 vault 生成局部变更计划。这些入口最终进入同一事务。
 
 ```mermaid
 sequenceDiagram

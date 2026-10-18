@@ -297,7 +297,7 @@ GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install clean release dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
+.PHONY: all ui build test test-shard install clean release release-dist dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
 all: build
 
 ui:
@@ -337,8 +337,8 @@ release: test
 release-dist: ui
 	VERSION="$(VERSION)" scripts/release.sh
 
-# Runs one quarter of the integration suite plus every unit package. CI only;
-# `make test` stays the full local gate.
+# Runs every unit package plus one quarter of the integration suite. CI only;
+# `make test` stays the full local gate that covers the same tests in one run.
 SHARD ?= 1
 test-shard: ui
 	scripts/test-shard.sh $(SHARD) 4
@@ -347,7 +347,7 @@ clean:
 	rm -rf bin dist coverage web/dist
 ```
 
-`make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 两个插件包和三个元数据文件：`SHA256SUMS`（四个候选二进制与两个插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
+`make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 两个插件包（`<version>` 取各插件 `package.json` 的版本，可能与二进制版本不同）和三个元数据文件：`SHA256SUMS`（四个候选二进制与两个插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
 ### 6.1 发布入口
 

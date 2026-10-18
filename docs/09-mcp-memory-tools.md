@@ -1,6 +1,6 @@
 # 09. 受沙箱宿主下的记忆写入通道：MCP 工具
 
-> 状态：已实现并验收（2026-10-18，`T071`、`T072`）。本文档定义 `memctl mcp` 子命令、工具契约、各宿主注册方式与验收矩阵。分发与安装细节引用 [CLI、UI 与分发](./04-ui-and-cli-specification.md)，宿主生命周期映射引用 [07](./07-dsh-plugin.md) 与 [08](./08-pi-plugin.md)。
+> 状态：已实现并验收（2026-10-18，`T071`–`T073`）。本文档定义 `memctl mcp` 子命令、工具契约、各宿主注册方式与验收矩阵。分发与安装细节引用 [CLI、UI 与分发](./04-ui-and-cli-specification.md)，宿主生命周期映射引用 [07](./07-dsh-plugin.md) 与 [08](./08-pi-plugin.md)。
 
 ## 1. 结论
 
@@ -36,14 +36,12 @@ DSH 的 `workspace-write` 可写根在实现中由 `writableRoots` 固定为工�
 
 ### 2.3 其他宿主的同类条件
 
-宿主是否阻断写入取决于其沙箱配置，而不是 memctl。本机现状如下；除 DSH 外均未做写入实测，不作为已验证结论。
+宿主是否阻断写入取决于其沙箱配置，而不是 memctl。已实测组合的结论如下，逐项证据见 [6.2](#62-真实验证边界)：
 
-| 宿主 | 沙箱现状（本机） | 影响 |
-| --- | --- | --- |
-| DSH | `workspace-write` 默认，可按会话切换为 `danger-full-access` | 默认阻断，已实测 |
-| Codex | `sandbox_mode = "danger-full-access"` | 当前不阻断；切换为受限模式后会阻断 |
-| Claude Code | 权限模式与工作目录决定可写范围 | 未实测 |
-| 其他宿主 | 以各自配置为准 | 未实测 |
+- DSH 与 Codex 的 `workspace-write` 会话中，同一会话的 bash 被拒绝，宿主派生的 MCP 子进程仍可写记忆仓库。
+- pi 与不加 `--sandbox` 的 Antigravity 没有文件沙箱，shell 与 MCP 都可写；两条通道并存不构成隔离。
+- Grok 的 `workspace` profile 对子进程同样施加写限制，必须把记忆仓库显式加入 `read_write`，而该授权同时放开 shell。
+- Claude Code 只确认注册被宿主接受，写入路径未实测。
 
 结论：不能依赖「用户把沙箱整体关掉」来保证记忆可写。需要一条与沙箱模式无关的通道。
 
@@ -168,7 +166,7 @@ Agent（模型）
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
 
-有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 用隔离 `HOME` 逐个执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。DSH 没有等价子命令，只能按上表手工编辑；本机 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。
+有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑；本机 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。
 
 pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这两个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
 
@@ -232,7 +230,7 @@ MCP 与生命周期插件互补，不互相替代：
 
 | 观测 | 结果 |
 | --- | --- |
-| 6 个有 `mcp add` 的宿主在隔离 `HOME` 中执行 5.2 的命令 | 全部被接受，状态命令显示已连接；`pi mcp list` 列出 `memory_read`、`memory_write` |
+| 6 个有 `mcp add` 的宿主在隔离 `HOME` 中执行 5.2 的命令 | 全部被接受，状态命令显示已连接；`pi mcp list` 列出 `memory_read`、`memory_write`（Antigravity 的 `agy mcp add` 在 `T073` 补测，见第三组） |
 | Codex `approval_policy = never` + 缺省审批模式 | `memory_read` 被宿主拒绝：`MCP tool call requires approval, but approval policy is never` |
 | Codex `default_tools_approval_mode = "approve"` | `memory_read` 返回 `fileRevision`，`memory_write` 返回 `transaction`、`commit`、`revision`、`sync`；提交落在探针仓库 |
 | 同一 Codex `workspace-write` 会话的 bash | `touch ~/memory/x` 返回 `Operation not permitted`，`memctl read` 返回 `IO_FAILED: cannot open repository lock` |

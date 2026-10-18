@@ -1,6 +1,6 @@
 # 07. dsh 专用插件：分发、安装与实现方案
 
-> 状态：已实现（`T048`，2026-10-17），npm 包 `memctl-dsh@0.5.1` 与 `v0.5.1` Release 已发布（`T064`）。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
+> 状态：已实现（`T048`，2026-10-17），npm 包 `memctl-dsh@0.5.1` 与 `v0.5.1` Release 已发布（`T064`），`v0.6.0` Release 仍附带同一 `0.5.1` tarball。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
 
 ## 1. 结论
 
@@ -540,7 +540,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
-- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`。`memctl-dsh@0.5.1` 与 `memctl-pi@0.5.1` 已发布到 npm 官方仓库；隔离 `HOME` 下通过 npm 安装 `memctl-dsh@0.5.1` 后，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
+- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`；`v0.6.0` Release 附带同名 `memctl-dsh-0.5.1.tgz`（插件源码未改动，版本保持 `0.5.1`）。`memctl-dsh@0.5.1` 与 `memctl-pi@0.5.1` 已发布到 npm 官方仓库；隔离 `HOME` 下通过 npm 安装 `memctl-dsh@0.5.1` 后，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
 - 验证证据：插件 Node 单元测试 14 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.4.0` 已发布，`desktop` profile 的 `memctl-dsh` 已更新到 `0.4.0`；`v0.5.0` 已发布，`desktop` profile 的插件仍为 `0.4.0`；`v0.5.1` 已发布，两个插件均可在 npm 安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，profile 的 bundle 列表与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；当前真实会话的 `runtime-context` 快照包含 `memctl:memory`，同步缓存于 23:20:24 更新为 `synced`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`0.4.0` 隔离 web 会话中模型实际执行 `memctl write`，产生提交 `61fd68e`，`turn/end` 后触发 `sync`；人工持锁时 `sync --wait` 在 3.1 秒内返回 `BUSY`，会话继续且本地提交保留；远端离线时缓存记录 `NETWORK_UNAVAILABLE`，会话继续且本地提交保留。`agent/disposed` 事件本身未在真实宿主观察到；DSH 0.2.1-rc.2 没有单会话销毁入口。
 

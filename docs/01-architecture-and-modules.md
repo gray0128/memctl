@@ -2,16 +2,18 @@
 
 ## 1. 系统如何工作
 
-`memctl` 以独立 Git 工作树保存记忆，用短生命周期 CLI 处理 Hook、读取、受管写入和同步；`memctl ui` 才启动 HTTP 服务、文件监听和完整图谱索引。UI 与 CLI 调用同一应用服务，不相互依赖进程常驻。
+`memctl` 以独立 Git 工作树保存记忆，用短生命周期 CLI 处理 Hook、读取、受管写入和同步；`memctl ui` 才启动 HTTP 服务、文件监听和完整图谱索引。宿主沙箱之外的 Agent 还可通过宿主派生的 `memctl mcp` 调用 `memory_read` 与 `memory_write`。UI、CLI 与 MCP 通道调用同一应用服务，不相互依赖进程常驻。
 
 一次受管写入包含版本校验、文件变更和本地 Git 提交。远端同步独立进行，失败不会撤销已经成功的本地提交。Dreaming 生成可审阅提案，只有显式确认后才进入同一写入事务。
 
 ```mermaid
 flowchart TB
     Agent["Agent Hook / read / write"] --> CLI["CLI 与 Hook 编解码"]
+    Host["宿主 MCP 客户端"] --> MCP["memctl mcp 协议适配"]
     Human["开发者"] --> CLI
     Human --> HTTP["本地 HTTP 与内嵌 UI"]
     CLI --> App["应用服务：事务、同步、冲突、整理"]
+    MCP --> App
     HTTP --> App
     App --> Vault["Markdown 解析与变更规划"]
     App --> Git["Git 执行与状态检查"]
@@ -29,7 +31,7 @@ flowchart TB
 
 ### 2.1 受管写入
 
-受管写入指 CLI `write`、UI 编辑、重命名、诊断修复、整理应用等通过同一事务入口修改记忆。读取返回文件修订标识；提交时携带读取基线，服务在仓库锁内重新校验。旧基线被拒绝，调用方重新读取并合并后再提交。
+受管写入指 CLI `write`、MCP `memory_write`、UI 编辑、重命名、诊断修复、整理应用等通过同一事务入口修改记忆。读取返回文件修订标识；提交时携带读取基线，服务在仓库锁内重新校验。旧基线被拒绝，调用方重新读取并合并后再提交。
 
 锁协调遵守同一协议的 `memctl` 进程，不能拦截编辑器、Agent 文件工具或手动 Git 命令。只有全部并发写入都通过受管入口时，才提供「拒绝覆盖其他已提交更新」的保证。`fsnotify` 是变更通知，不是互斥或事务机制。
 
@@ -103,6 +105,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | 包 | 输入与输出 | 职责及依赖 |
 | --- | --- | --- |
 | `internal/cli`、`hookio` | argv、stdin → 请求、stdout、退出码 | 协议转换，不直接写工作树 |
+| `internal/mcp` | stdio 上的 JSON-RPC → MCP 响应 | 协议适配，把 `memory_read`/`memory_write` 映射为 app 读写；不新增存储、锁或事务，不读宿主配置 |
 | `internal/app` | 类型化请求 → 结果或错误 | 唯一事务入口，调用锁、vault、git、state |
 | `internal/vault` | 文件快照 → 条目、图谱、变更计划 | 不执行 Git，不取得应用锁；不持有过期文件内容直接写回 |
 | `internal/git` | Git 命令请求 → 状态、结果、错误 | 使用 argv 调用 Git，检查操作状态，不自行决定 abort 或忽略错误 |
@@ -112,6 +115,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/dream` | 固定快照、runner → 提案 | 隔离生成与校验；应用交 app，不在 Agent 内直接推送 |
 | `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
 | `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复 |
+| `internal/update` | 当前版本与平台 → 下载、校验与替换结果 | 只请求固定的 GitHub Releases 地址；校验 SHA-256 后同目录原子替换，不执行下载的二进制，不自动重启 |
 | `internal/watcher` | 文件事件 → 索引失效通知 | 不解析业务状态，不承担持久化消息队列职责 |
 
 `app` 组合服务，底层包不反向导入 `app`。不要为这些本地模块引入 RPC、外部数据库或常驻系统服务。
@@ -135,6 +139,7 @@ memctl/
     06-development-loop.md   # 开发过程与完成条件
     07-dsh-plugin.md         # dsh 专用插件
     08-pi-plugin.md          # pi 专用插件
+    09-mcp-memory-tools.md   # 受沙箱宿主的 MCP 写入通道
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配
@@ -154,6 +159,8 @@ memctl/
     adapters/
     server/
     watcher/
+    mcp/          # stdio MCP server 与能力探测
+    update/       # 自更新下载、校验与替换
     assets/       # embed.go、INSTRUCTIONS.md、adapter 模板
   web/
     embed.go      # 前端内嵌入口
