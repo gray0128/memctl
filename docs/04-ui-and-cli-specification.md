@@ -353,7 +353,7 @@ GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/
 
 - `verify`：矩阵作业，四个分片并行。每个分片运行全部单元包与该分片分到的集成测试；前端与两个插件的 Node 测试只在分片 1 运行一次。
 - `build`：与 `verify` 并行，不等待测试，运行 `make release-dist` 构建四个候选二进制与两个插件包并上传 `dist/`。
-- `publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，下载构建产物后创建 GitHub Release。测试失败时该作业不会运行，因此不产出 Release。
+- `publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，检出仓库历史、下载构建产物后创建 GitHub Release。检出是必需的：`--generate-notes` 要与上一个标签比较生成变更说明，缺少 `.git` 会以 `fatal: not a git repository` 失败。测试失败时该作业不会运行，因此不产出 Release。
 
 `make release` 仍是本地完整发布入口，等于 `make test` 加 `scripts/release.sh`。`make test` 保持全量语义：它一次跑完所有单元包与全部集成测试，是本地发布的测试门槛。分片只是 CI 的调度手段，两者覆盖同一批测试，靠 `scripts/test-shards.txt` 保证。
 
