@@ -77,7 +77,13 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 
 ## 配套 Skill
 
-[`skills/memctl/`](./skills/memctl/SKILL.md) 是面向 Agent 的使用 Skill，覆盖记忆读取、受管写入与基线冲突、同步与冲突恢复，以及沙箱宿主改用 MCP 工具。把该目录复制或软链接到宿主扫描的 skills 目录即可，例如 `~/.agents/skills/memctl`；`SKILL.md` 是入口，其余文件按需加载。
+[`skills/memctl/`](./skills/memctl/SKILL.md) 是面向 Agent 的使用 Skill，覆盖记忆读取、受管写入与基线冲突、同步与冲突恢复，以及沙箱宿主改用 MCP 工具。在线安装：
+
+```bash
+npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
+```
+
+按需替换 `-a` 的宿主列表；读取 `~/.agents/skills` 的宿主（如 DSH）无需单独指定。也可把该目录复制或软链接到宿主扫描的 skills 目录，例如 `~/.agents/skills/memctl`；`SKILL.md` 是入口，其余文件按需加载。
 
 ## 能做什么
 

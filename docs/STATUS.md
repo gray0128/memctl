@@ -101,7 +101,7 @@
 | T075 | 已完成 | 发布 `v0.6.0`（含 `T070`–`T074`）：全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；插件源码未改动，保持 `0.5.1`，不发 npm；[归档记录](./validation/stage-f.md#t075发布-v060) |
 | T076 | 已完成 | 明确发布入口唯一为 tag 推送：`04` 新增 6.1 节说明本地 `make release` 不构成发布步骤，`05` 第 4 节同步判定依据，README 发布段改为「推标签 → 流水线产出 → 独立目录校验」；不改变产品行为；[发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[归档记录](./validation/stage-f.md#t076明确发布入口为标签推送) |
 | T077 | 已完成 | 文档一致性检查与更新：补入架构文档缺失的 `internal/mcp`、`internal/update` 与 `docs/09`，修正 README 与 `09` 过期的 MCP 宿主验证状态，统一插件 tarball 版本语义与 Makefile 片段，归档 `T076`；不改变产品行为；[归档记录](./validation/stage-f.md#t077文档一致性检查与更新) |
-| T078 | 已完成 | 新增配套 Agent Skill `skills/memctl/`：读取与写入时机、按基线受管写入、同步与冲突恢复、沙箱宿主改用 MCP；补 README 与目录规划；不改变产品行为；[Skill](../skills/memctl/SKILL.md)、[完成记录](#t078配套-agent-skill) |
+| T078 | 已完成 | 新增配套 Agent Skill `skills/memctl/`：读取与写入时机、按基线受管写入、同步与冲突恢复、沙箱宿主改用 MCP；补 README、目录规划与 skills CLI 在线安装；不改变产品行为；[Skill](../skills/memctl/SKILL.md)、[完成记录](#t078配套-agent-skill) |
 
 任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测；`T074` 完成构建链路提速；`T075` 为已完成的 `v0.6.0` 发布轮次；`T076` 明确发布入口唯一为标签推送；`T077` 完成文档一致性检查与更新；`T078` 新增配套 Agent Skill。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
@@ -109,13 +109,13 @@
 
 ## T078：配套 Agent Skill
 
-- 目标与范围：为使用 memctl 的 Agent 提供 `skills/memctl/`，覆盖读取与写入时机、按基线受管写入、同步与冲突恢复、沙箱宿主改用 MCP 工具；只在仓库内分发，不安装到本机 skills 目录，不改变产品行为。
+- 目标与范围：为使用 memctl 的 Agent 提供 `skills/memctl/`，覆盖读取与写入时机、按基线受管写入、同步与冲突恢复、沙箱宿主改用 MCP 工具；通过 `skills` CLI 从 GitHub 在线安装到 `~/.agents/skills`，不改变产品行为。
 - 契约：[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)、[MCP 记忆工具](./09-mcp-memory-tools.md#4-系统如何工作)、[目录结构与依赖](./01-architecture-and-modules.md#5-目录结构与依赖)。
 - 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1。
 - 结构：`SKILL.md` 的 frontmatter 只有 `name` 与 `description`，name 为 `memctl`；正文按「确认环境 → 判断读写 → 受管写入 → 同步与冲突 → MCP 降级 → 边界」组织，每步给出完成标准；`references/memory-conventions.md` 与 `references/recovery.md` 由入口按需链接。
 - 事实核对：Skill 中的 `read`、`write`、`sync`、`resolve`、`recover`、`mcp`、`install` 命令与参数逐一对照当前提交构建的 `help --json`；错误码取自 `internal/memerr` 并对照 `02` 4.3；冲突解决 JSON 字段对照 `app.ConflictView` 的 `baseRevision`、`conflictId` 与 `files`。
-- 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；已软链接到 `~/.agents/skills/memctl`，宿主技能目录识别出 `memctl`，并通过 `skill` 工具成功加载；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
-- 未验证与遗留：真实任务中的自动触发与执行未验证；本机 `skills` CLI 不在 PATH，未写入 `~/.agents/.skill-lock.json`，该软链接由手工创建。
+- 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；已用 `skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y` 在线安装到 `~/.agents/skills/memctl`，`~/.agents/.skill-lock.json` 记录来源 `gray0128/memctl`，`skills list -g --json` 可见，宿主技能目录识别出 `memctl` 并通过 `skill` 工具加载；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
+- 未验证与遗留：真实任务中的自动触发与执行未验证。
 - 下一步：需要时分发到宿主 skills 目录，并用真实会话验证触发与执行。
 
 ## 近期待办与下一步
@@ -125,6 +125,6 @@
 - 宿主侧写入已覆盖 DSH、Codex、pi、OpenCode、Command Code 与 Antigravity；Grok 需显式 `read_write`，Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
-- 配套 Skill 已软链接到 `~/.agents/skills/memctl`，宿主技能目录可识别并加载；真实任务中的自动触发与执行尚未验证。
+- 配套 Skill 已通过 `skills` CLI 从 `gray0128/memctl` 安装到 `~/.agents/skills/memctl`，lockfile 记录来源，宿主技能目录可识别并加载；真实任务中的自动触发与执行尚未验证。
 - 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
