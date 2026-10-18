@@ -181,3 +181,13 @@
 - 验收：文档检查通过——新增锚点可解析，`04`、`05`、README 三处对发布入口的表述一致，本地构建产物在所有位置都不再被当作发布证据。链接与锚点检查脚本无输出。
 - 未验证与遗留：无。该轮只澄清契约，`make release` 与流水线的实际行为均未改变。
 - 下一步：后续发布轮次按 6.1 的操作顺序执行，本地只跑 `make test`。
+
+## T077：文档一致性检查与更新
+
+- 目标与范围：在 `T071`–`T076` 之后复核文档与实现、文档之间的一致性，修正事实过期、模块与目录清单缺失和重复定义；不改变产品行为。
+- 契约：[模块职责](../01-architecture-and-modules.md#4-模块职责)、[目录结构与依赖](../01-architecture-and-modules.md#5-目录结构与依赖)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[MCP 记忆工具](../09-mcp-memory-tools.md#62-真实验证边界)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1；纯文档任务，不运行测试套件，仅编译当前提交的二进制核对帮助输出。
+- 检查与结果：根 `README.md`、`AGENTS.md`、`待办.md` 与 `docs/` 下全部 Markdown 共 28 个文件逐条解析，失效链接与锚点 0；`help --json` 的 22 个命令与 `04` 第 1 节一致；`internal/server` 的 23 条 API 路由与 `02` 4.2 表一致。`01` 第 5 节补入 `docs/09`、`internal/mcp/`、`internal/update/`，第 4 节补入 MCP 协议适配与自更新两行，第 1 节流程图与受管写入定义补入 MCP 通道；`03` 第 2 节把 MCP 工具列为同一受管事务入口。README 与 `09` 的 MCP 宿主验证状态改为 DSH、Codex、pi、OpenCode、Command Code、Antigravity 已实测，Grok 需 `read_write`，Claude Code 未实测；`09` 2.3 删除与 6.2 冲突的旧表并改指 6.2；`09` 5.2 标明 Antigravity 使用真实登录态而非隔离 `HOME`。`04`、`05` 注明插件 tarball 的 `<version>` 取插件包自身版本；`07`、`08` 补记 `v0.6.0` Release 仍附带 `0.5.1` tarball；`04` 的 Makefile 片段补齐 `release-dist` 与 `test-shard`。`待办.md` 删除已完成的 README 条目并标注 release 提速进度。
+- 验收：文档检查通过；链接与锚点脚本无失效项，CLI 命令与 REST 路由核对无差异，跨文档表述一致。`T076` 完成记录已归档到 [阶段 F](#t076明确发布入口为标签推送)。
+- 未验证与遗留：文档检查不替代二进制、平台或宿主测试；本轮未改代码，未重跑测试套件。
+- 下一步：可选事项为配套 Skill、Codex 插件调研、Dreaming 真实 runner 验证与 pi.dev 收录；未验证项见 [STATUS](../STATUS.md#当前事实)。

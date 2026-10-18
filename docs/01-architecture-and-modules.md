@@ -191,6 +191,10 @@ memctl/
       LICENSE
       test/       # Node 单元测试，不进入 npm 包
       embed.go
+  skills/
+    memctl/       # 面向 Agent 的使用 Skill，随仓库分发
+      SKILL.md
+      references/ # 按需加载：记忆内容规范、错误与恢复
   scripts/        # 按需：已有重复操作的自动化（如 next-round.sh、release.sh），不放业务逻辑
   .github/
     workflows/    # 按需：调用真实构建入口的 CI
@@ -211,6 +215,7 @@ memctl/
 - 默认指引和 adapter 模板统一放 `internal/assets/`。从参考目录采纳内容时复制必要内容并标注来源，不让新实现运行时依赖参考目录。
 - `plugins/dsh/` 只保存 `memctl-dsh` 的运行时源文件和同目录 `embed.go`；`test/` 不进入 npm 包，运行时 tarball 与目录由 `memctl dsh` 在状态目录生成，不提交生成物。
 - `plugins/pi/` 只保存 `memctl-pi` 的运行时源文件和同目录 `embed.go`；`test/` 不进入 npm 包，本地包目录由 `memctl pi plugin-dir` 在状态目录生成，不提交生成物。pi 不把 tarball 当作安装输入，因此该目录没有 tarball 生成逻辑。
+- `skills/memctl/` 只保存面向 Agent 的使用说明与按需加载的参考。Skill 描述任务流程与边界，命令、参数和错误码以 `memctl help` 与契约文档为准，不复制实现细节或运行产物。
 - 可复用测试数据使用合成内容或可追溯的公开样例；临时仓库、真实凭据、运行日志和调试脚本不放入项目。需要长期保留的验收结论使用简短报告并由 STATUS 链接。
 
 开发循环只在 [06](./06-development-loop.md) 定义；本节不另建任务状态或完成标准。

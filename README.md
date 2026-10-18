@@ -75,6 +75,10 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 
 帮助语言按 `--lang` → `MEMCTL_LANG` → 第一个非空的 `LC_ALL`/`LC_MESSAGES`/`LANG` → 英文选择。只本地化帮助文本，JSON 字段、命令输出键和错误码保持英文。帮助不访问记忆仓库、Git、Node.js 或网络。完整契约见 [面向 Agent 的帮助与中英 i18n](./docs/04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n)。
 
+## 配套 Skill
+
+[`skills/memctl/`](./skills/memctl/SKILL.md) 是面向 Agent 的使用 Skill，覆盖记忆读取、受管写入与基线冲突、同步与冲突恢复，以及沙箱宿主改用 MCP 工具。把该目录复制或软链接到宿主扫描的 skills 目录即可，例如 `~/.agents/skills/memctl`；`SKILL.md` 是入口，其余文件按需加载。
+
 ## 能做什么
 
 | 能力 | 命令 | 说明 |
@@ -139,6 +143,7 @@ memctl/
   plugins/dsh/         # memctl-dsh Host 插件源文件、Node 单元测试与 go:embed 入口
   plugins/pi/          # memctl-pi 扩展源文件、Node 单元测试与 go:embed 入口
   tests/integration/   # CLI 二进制与跨模块集成测试
+  skills/memctl/       # 面向 Agent 的使用 Skill（SKILL.md 与按需参考）
   scripts/             # 跨会话接续、发布打包与集成测试分片
   docs/                # 设计契约、开发循环、任务状态与验收
   脚本化实现参考/        # 只读参考，不作为新实现或发布入口
