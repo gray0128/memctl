@@ -17,7 +17,7 @@
   - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
   - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
 - 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071`–`T073`）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，pi 需 `--exposure direct`，Grok 的 `workspace` profile 会阻断 MCP 子进程并需要 `read_write`，pi 本身没有文件沙箱。
-- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 在 `v0.6.0` 发布后升级。CI 的 `verify` 分片作业与 `build` 作业并行，分别运行 `scripts/test-shard.sh` 与 `make release-dist`，`publish` 依赖两者；集成测试在同一进程内共享一次二进制构建。
+- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.6.0`。CI 的 `verify` 分片作业与 `build` 作业并行，分别运行 `scripts/test-shard.sh` 与 `make release-dist`，`publish` 依赖两者；集成测试在同一进程内共享一次二进制构建。
 
 ## 任务
 
@@ -107,12 +107,14 @@
 
 - 目标与范围：把 `T070`–`T074` 的 MCP 记忆工具通道、`install --status` 的 MCP 探测、宿主侧实测与构建链路提速作为 `v0.6.0` 发布；插件源码自 `v0.5.1` 起未改动，本轮只发 GitHub Release，不发布 npm。
 - 契约：[单文件打包与 CI](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.6.0` 指向 `fddd74f`。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.6.0` 指向 `184c521`。
 - 命令与结果：`go test ./... -count=1` 全量通过，`gofmt -l` 与 `go vet ./...` 无输出；`scripts/test-shard.sh 1 4` 通过，分片清单与 `go test -list` 的 118 个测试名逐行一致。`make release VERSION=v0.6.0` 通过（前端构建、插件 Node 测试、Go 全量测试），生成四个平台候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件；`dist/SHA256SUMS` 六项全部 `OK`；`dist/memctl-darwin-arm64 version` 输出 `memctl v0.6.0`，`mcp --help` 退出 `0`，`install --status` 输出 `mcp: serving memory_read, memory_write (v0.6.0)`，`help --json` 为 `schemaVersion` 1、22 个命令。
 - 版本决策：本轮新增 `memctl mcp` 子命令，按语义化版本升次版本号到 `v0.6.0`。插件包按 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态) 的约定应与主次版本对齐，但插件源码自 `v0.5.1` 起未改动，且本轮不发布 npm；若把插件升到 `0.6.0`，`install --status` 的 `pi install npm:memctl-pi@<version>` 提示会指向不存在的 npm 版本。因此插件保持 `0.5.1`，这一偏离按契约「具体发布版本以发布轮次为准」处理并在此记录。
+- CI 首次失败与修复：首次推送 tag 的运行 [39102651049](https://github.com/gray0128/memctl/actions/runs/39102651049) 中 `verify` 四个分片与 `build` 全部成功，仅 `publish` 失败于 `fatal: not a git repository`。原因是该作业只下载产物、没有检出仓库，而 `gh release create --generate-notes` 需要与上一个标签比较。补 `actions/checkout` 后删除并重建 tag，运行 [39102971477](https://github.com/gray0128/memctl/actions/runs/39102971477) 全部成功并创建 [Release v0.6.0](https://github.com/gray0128/memctl/releases/tag/v0.6.0)，总时长 4:54。
+- 远端复验：用 `gh release download` 重新下载九个附件，`SHA256SUMS` 六项全部 `OK`；下载的 `memctl-darwin-arm64` 输出 `memctl v0.6.0`，`install --status` 输出 `mcp: serving memory_read, memory_write (v0.6.0)`，`RELEASE-INFO.txt` 的 commit 与 tag 指向的 `184c521` 一致。本机 `~/.agent-memory/bin/memctl` 已替换为 Release 二进制，`update --check` 返回 `up to date`。
 - 验收：四个候选二进制、两个插件 tarball、`SHA256SUMS` 与 `RELEASE-INFO.txt` 通过；Release 由 CI 的 `verify` 分片与 `build` 作业共同把关，`publish` 在两者成功后创建。`T075` 完成。
 - 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；npm 未发布，`latest` 仍为 `0.5.1`；插件版本与二进制主次版本不一致，如需对齐需单独走插件版本与 npm 发布轮次。
-- 下一步：本机二进制升级到 `v0.6.0` 并复验 `update --check`；如需让插件跟随二进制版本，单独走一次插件版本与 npm 发布轮次。其余未验证项见[当前事实](#当前事实)。
+- 下一步：如需让插件跟随二进制版本，单独走一次插件版本与 npm 发布轮次；其余未验证项见[当前事实](#当前事实)。
 
 ## 近期待办与下一步
 
