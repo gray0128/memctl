@@ -1,9 +1,12 @@
 # Builds the cross-platform release candidates and publishes a GitHub release
-# for version tags. Both jobs call the same entry points as a local release run
+# for version tags. Every job calls the same entry points as a local release run
 # (make test and scripts/release.sh, which `make release` combines), so the CI
-# artifacts and the local candidates come from one code path. Splitting verify
-# from release keeps the test suite from running twice and lets the two run as
-# separate jobs. See docs/04-ui-and-cli-specification.md section 6 and
+# artifacts and the local candidates come from one code path.
+#
+# The test suite is the long pole: it is split into shards that run as parallel
+# jobs, and the packaging job runs alongside them instead of after them. A
+# publish job that needs both keeps a failing test from producing a release.
+# See docs/04-ui-and-cli-specification.md section 6 and
 # docs/05-validation-and-delivery.md section 4.
 
 name: build
@@ -25,9 +28,16 @@ concurrency:
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
+  # Unit packages plus one quarter of the integration suite. scripts/test-shard.sh
+  # reads the assignment from scripts/test-shards.txt, which is committed so the
+  # split is reviewable and does not depend on measuring inside CI.
   verify:
     runs-on: macos-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -45,14 +55,25 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Run tests
-        run: make test
+      - name: Build the frontend
+        run: make ui
 
-  release:
-    needs: verify
-    # The release helper records the build host in RELEASE-INFO.txt as the only
-    # runtime-verified target. macOS covers the platform the test suite is
-    # validated on; the other three targets are cross-compiled from here.
+      # The frontend and plugin suites take seconds, so they run once on the
+      # first shard instead of four times.
+      - name: Run frontend and plugin tests
+        if: matrix.shard == 1
+        run: |
+          cd web && npm test
+          cd ..
+          node --test plugins/dsh/test/*.test.js
+          node --test plugins/pi/test/*.test.js
+
+      - name: Run tests
+        run: scripts/test-shard.sh ${{ matrix.shard }} 4
+
+  # Packaging does not need the test results, so it runs in parallel with the
+  # shards. The publish job gates the release on both.
+  build:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -75,7 +96,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # The test suite ran in the verify job; this step only builds and packs.
+      # The test suite runs in the verify shards; this step only builds and packs.
       - name: Build release candidates
         run: make release-dist
 
@@ -86,8 +107,21 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Publishing waits for every shard and for the artifacts. On a branch or pull
+  # request this job only confirms the gate passed; it never publishes.
+  publish:
+    needs: [verify, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download release candidates
+        uses: actions/download-artifact@v7
+        with:
+          name: memctl-dist
+          path: dist/
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

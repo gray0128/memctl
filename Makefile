@@ -2,7 +2,7 @@ GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install clean release release-dist dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
+.PHONY: all ui build test test-shard install clean release release-dist dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
 all: build
 
 # The frontend is embedded by web/embed.go, so it must be built before any Go
@@ -10,6 +10,9 @@ all: build
 ui:
 	cd web && npm ci && npm run build
 
+# Full local gate: every package, every integration test, in one run. CI splits
+# the same suite across shards (scripts/test-shard.sh) for wall-clock time; both
+# paths must cover the same tests.
 test: ui
 	cd web && npm test
 	node --test plugins/dsh/test/*.test.js
@@ -50,6 +53,12 @@ release: test
 # gate every artifact. Do not use it for a local release.
 release-dist: ui
 	VERSION="$(VERSION)" scripts/release.sh
+
+# Runs every unit package plus one quarter of the integration suite. CI only;
+# `make test` stays the full local gate that covers the same tests in one run.
+SHARD ?= 1
+test-shard: ui
+	scripts/test-shard.sh $(SHARD) 4
 
 clean:
 	rm -rf bin dist coverage web/dist

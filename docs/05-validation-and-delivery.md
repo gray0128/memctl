@@ -219,7 +219,7 @@
 - `--readonly`、无 remote、无 runner、无 GUI 浏览器等降级路径都有明确结果。
 - 事务与配置安装恢复演练通过；不以手工删除锁或强制重置仓库作为测试通过条件。
 - 视觉 UI/UX 验证仅在明确安排时开展，不用本方案的静态检查代替浏览器实际效果验证。
-- GitHub 构建流水线（`.github/workflows/build.yml`）的 `verify` 与 `release` 两个作业都调用本地同一套入口（`make test` 与 `scripts/release.sh`，本地合并为 `make release`）；`release` 依赖 `verify`，测试不通过时不产出候选包。`v*` 标签发布附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与三个元数据文件。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
+- GitHub 构建流水线（`.github/workflows/build.yml`）的 `verify`、`build` 与 `publish` 三个作业都调用本地同一套入口（`make test` 的分片形式与 `scripts/release.sh`，本地合并为 `make release`）；`publish` 依赖 `verify` 与 `build`，测试不通过时不产出 Release。分片清单 `scripts/test-shards.txt` 必须覆盖 `tests/integration` 的全部测试，新增、重命名或删除测试时重新生成。`v*` 标签发布附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与三个元数据文件。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
 
 ## 5. 上轮审查问题追踪
 

@@ -17,7 +17,7 @@
   - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
   - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
 - 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071`–`T073`）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，pi 需 `--exposure direct`，Grok 的 `workspace` profile 会阻断 MCP 子进程并需要 `read_write`，pi 本身没有文件沙箱。
-- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。CI 的 `verify` 与 `release` 作业分别运行 `make test` 与 `make release-dist`；集成测试在同一进程内共享一次二进制构建。
+- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。CI 的 `verify` 分片作业与 `build` 作业并行，分别运行 `scripts/test-shard.sh` 与 `make release-dist`，`publish` 依赖两者；集成测试在同一进程内共享一次二进制构建。
 
 ## 任务
 
@@ -96,7 +96,7 @@
 | T071 | 已完成 | 实现 `memctl mcp` 子命令与 `memory_read`/`memory_write` 工具、协议处理与错误映射、帮助条目与 `M01`–`M12` 测试；[方案文档](./09-mcp-memory-tools.md#6-验收)、[归档记录](./validation/stage-f.md#t071实现-memctl-mcp-子命令) |
 | T072 | 已完成 | 实现 `install --status` 的 MCP 能力探测（`M09`）与 8 个宿主的注册命令输出；6 个有 `mcp add` 的宿主已逐个注册并确认连接，Codex 受限会话完成受管写入；[方案文档](./09-mcp-memory-tools.md#52-各宿主的注册命令)、[归档记录](./validation/stage-f.md#t072mcp-探测与宿主侧实测) |
 | T073 | 已完成 | 其余宿主的受限会话实测：pi、OpenCode、Command Code、Antigravity 完成 MCP 受管写入且 shell 受限；Grok 的 `workspace` profile 会阻断子进程，需 `read_write`；Claude Code 因代理未运行未实测；[方案文档](./09-mcp-memory-tools.md#62-真实验证边界)、[归档记录](./validation/stage-f.md#t073其余宿主的受限会话实测) |
-| T074 | 已完成 | 构建链路提速：集成测试共享单次二进制构建、CI 拆为 `verify` 与 `release` 两个作业、新增 `make release-dist`；同时修复 MCP 探测 3 秒超时在负载下误报的缺陷；[构建契约](./04-ui-and-cli-specification.md#6-单文件打包)、[完成记录](#t074构建链路提速) |
+| T074 | 已完成 | 构建链路提速：集成测试共享单次二进制构建、集成测试按名分片为四个并行 CI 作业、打包与测试并行、新增 `make release-dist`；修复 MCP 探测 3 秒超时在负载下误报的缺陷；[构建契约](./04-ui-and-cli-specification.md#6-单文件打包)、[完成记录](#t074构建链路提速) |
 
 任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测；`T074` 完成构建链路提速。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
@@ -107,11 +107,13 @@
 - 目标与范围：缩短 CI 与 `make release` 的耗时，不改产品行为与发布产物内容；覆盖集成测试的重复构建、流水线的作业划分与本地发布入口。附带修复 `T072` 引入的 MCP 探测超时缺陷。
 - 契约：[单文件打包与 CI](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[MCP 探测](./09-mcp-memory-tools.md#53-探测)。
 - 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1，8 核。
-- 命令与结果：先测基线，`go test ./tests/integration -count=1` 为 297 秒，CI 运行 [39093963934](https://github.com/gray0128/memctl/actions/runs/39093963934) 的 `make release` 步为 3:45，其中集成测试 198.7 秒。定位到 55 处 `buildMemctlBinary` 各自 `go build` 一次（缓存命中每次约 0.6 秒），改为进程级 `sync.Once` 共享构建后，集成测试降至 210 秒；`R03` 因需要指定版本号保留独立构建，`newC3Harness` 与 `T048` 复用共享二进制。CI 拆为 `verify`（`make test`）与 `release`（`needs: verify`，`make release-dist`）两个作业，`main` 推送的并发组改为取消旧运行、标签保持不取消。`make release-dist` 实测 13 秒产出与 `make release` 相同的九个文件，`SHA256SUMS` 六项全部 `OK`，`dist/memctl-darwin-arm64 version` 输出 `memctl v0.5.2-test2`。`gofmt -l`、`go vet ./...` 无输出；`go test ./... -count=1` 全量通过（3 分 57 秒）。
+- 命令与结果：先测基线，`go test ./tests/integration -count=1` 为 297 秒，CI 运行 [39093963934](https://github.com/gray0128/memctl/actions/runs/39093963934) 的 `make release` 步为 3:45，其中集成测试 198.7 秒。定位到 55 处 `buildMemctlBinary` 各自 `go build` 一次（缓存命中每次约 0.6 秒），改为进程级 `sync.Once` 共享构建后，集成测试降至 210 秒；`R03` 因需要指定版本号保留独立构建，`newC3Harness` 与 `T048` 复用共享二进制。`make release-dist` 实测 13 秒产出与 `make release` 相同的九个文件，`SHA256SUMS` 六项全部 `OK`。`gofmt -l`、`go vet ./...` 无输出；`go test ./... -count=1` 全量通过（3 分 57 秒）。
 - 缺陷修复：全量并行跑测试时 `TestPrintMCPStatusServingBinary` 与 `TestProbeReadsToolsList` 稳定失败于 `signal: killed`。原因是探测预算 3 秒在并行编译争用 CPU 时不够，正常二进制会被误报为 `mcp: unavailable`。将 `ProbeTimeout` 提高到 10 秒并在 `docs/09` 5.3 写明理由；修复后在 `go test ./internal/... ./plugins/...` 三轮并行压力下均通过。
-- 验收：集成测试单进程只构建一次；CI 作业拆分后测试只运行一次；`make release` 的本地语义不变。发布产物集合、校验和与 `RELEASE-INFO.txt` 内容未变。
-- 未验证与遗留：新工作流尚未在 GitHub Actions 实际运行，收益以本地测量推算；集成测试仍串行，Go 1.27 无 `-shard`，分片需要自建按名分配机制，未在本轮实现；`b1_server_test.go` 的固定端口与 `a4_credentials_test.go` 的 `t.Setenv` 使 `t.Parallel()` 暂不可用。
-- 下一步：观察下一次 `main` 推送与标签发布的实际耗时；如需继续压缩，按测试名分片或先消除固定端口与进程级环境依赖。
+- 作业结构的第一版实测推翻：最初把 CI 拆成 `verify`（`make test`）与 `release`（`needs: verify`）两个串行作业，运行 [39099551113](https://github.com/gray0128/memctl/actions/runs/39099551113) 后总时长从 4:49 升到 5:13——两个作业各自支付约 38 秒环境准备，而原作业本就没有重复跑测试。据此改为分片矩阵：`verify` 四个分片并行、`build` 与测试并行、`publish` 同时依赖两者。
+- 分片实现：`scripts/test-shards.txt` 提交「测试名 → 分片号」清单，`scripts/balance-test-shards.sh` 实测耗时后贪心分配，`scripts/test-shard.sh` 按清单过滤执行；清单缺项、分片号越界或分片为空时非零退出。分片按测试名而非按包切分，因为 Go 1.27 无 `-shard` 且集成测试集中在单包。本地并行跑四个分片，各分片集成部分 67–70 秒，全部退出 0；分片执行过的测试名并集与 `go test -list` 的 118 个完全一致，无遗漏或重复。前端与插件 Node 测试只在分片 1 运行。
+- 验收：集成测试单进程只构建一次；分片并集覆盖全部 118 个集成测试；`make test` 保持全量语义，`make release` 的本地入口不变；发布产物集合、校验和与 `RELEASE-INFO.txt` 内容未变。
+- 未验证与遗留：分片后的工作流尚未在 GitHub Actions 实际运行，收益以本地四路并行实测推算（集成部分由 156–198 秒降到约 70 秒，另加四个作业各自的环境准备）；清单在新增或重命名测试后需要人工重新生成，`scripts/test-shard.sh` 只在清单缺项时报错，不能发现清单里残留已删除的测试名；`t.Parallel()` 仍不可用，因为 `a4_credentials_test.go` 等使用 `t.Setenv` 改动进程级环境。
+- 下一步：观察下一次 `main` 推送与标签发布的实际耗时，据此调整分片数；如需继续压缩，先消除进程级环境依赖以便包内并行。
 
 ## 近期待办与下一步
 
@@ -119,5 +121,5 @@
 - 宿主侧写入已覆盖 Codex、pi、OpenCode、Command Code 与 Grok；Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
-- 构建提速的后续项：集成测试分片（Go 1.27 无 `-shard`，需自建按名分配）、消除 `b1_server_test.go` 的固定端口与 `a4_credentials_test.go` 的进程级环境依赖以便 `t.Parallel()`。
+- 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

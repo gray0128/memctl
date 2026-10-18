@@ -337,19 +337,34 @@ release: test
 release-dist: ui
 	VERSION="$(VERSION)" scripts/release.sh
 
+# Runs one quarter of the integration suite plus every unit package. CI only;
+# `make test` stays the full local gate.
+SHARD ?= 1
+test-shard: ui
+	scripts/test-shard.sh $(SHARD) 4
+
 clean:
 	rm -rf bin dist coverage web/dist
 ```
 
 `make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 两个插件包和三个元数据文件：`SHA256SUMS`（四个候选二进制与两个插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
-GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分两个作业，二者共用 `scripts/release.sh` 这一入口：
+GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分三个作业：
 
-- `verify`：在 `main` 推送、拉取请求、标签推送与手动触发时运行 `make test`（前端构建与测试、两个插件的 Node 测试、Go 全量测试）。
-- `release`：依赖 `verify`，在 `macos-latest` 上运行 `make release-dist` 构建四个候选二进制与两个插件包，上传 `dist/`；仅在推送 `v*` 标签时创建 GitHub Release，附带四个候选二进制、两个插件包与三个元数据文件。
+- `verify`：矩阵作业，四个分片并行。每个分片运行全部单元包与该分片分到的集成测试；前端与两个插件的 Node 测试只在分片 1 运行一次。
+- `build`：与 `verify` 并行，不等待测试，运行 `make release-dist` 构建四个候选二进制与两个插件包并上传 `dist/`。
+- `publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，下载构建产物后创建 GitHub Release。测试失败时该作业不会运行，因此不产出 Release。
 
-`make release` 仍是本地完整发布入口，等于 `make test` 加 `scripts/release.sh`。拆分只影响流水线调度，不改变产物：`release-dist` 不重复运行测试，由同一工作流中前置的 `verify` 作业保证。`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
+`make release` 仍是本地完整发布入口，等于 `make test` 加 `scripts/release.sh`。`make test` 保持全量语义：它一次跑完所有单元包与全部集成测试，是本地发布的测试门槛。分片只是 CI 的调度手段，两者覆盖同一批测试，靠 `scripts/test-shards.txt` 保证。
 
-`main` 推送与标签推送使用不同的并发组：前者 `cancel-in-progress: true`，新提交取消排队中的旧运行；后者为 `false`，已开始的发布不被取消。
+集成测试分片由两个脚本承担：
+
+- `scripts/test-shards.txt` 记录「测试名 → 分片号」，随代码提交，便于评审与复现。测试名有增减时必须重新生成。
+- `scripts/balance-test-shards.sh [N]` 实测各测试耗时后按最长优先贪心分配到 N 个分片，重写清单。
+- `scripts/test-shard.sh <分片> <总数>` 按清单过滤执行。清单缺项、分片号超出总数或某分片为空时以非零退出，避免静默漏测。
+
+分片按**测试名**而不是按包切分，因为 Go 1.27 没有 `-shard` 标志，且集成测试集中在单个包。分片在独立进程中运行，因此 `t.Setenv` 等进程级状态不会跨分片互相污染。
+
+`main` 推送与标签推送使用不同的并发策略：前者 `cancel-in-progress: true`，新提交取消排队中的旧运行；后者为 `false`，已开始的发布不被取消。
 
 运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。
