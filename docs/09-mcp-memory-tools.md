@@ -8,6 +8,7 @@
 - 生命周期插件只做桥接，不写入记忆。写入必须由 Agent 主动发起，因此需要一个不受 bash 沙箱约束、且跨宿主通用的调用通道。
 - 选定方案：`memctl` 二进制新增 `memctl mcp` 子命令，以标准输入输出实现 MCP server，暴露 `memory_read` 与 `memory_write` 两个工具。各宿主通过自带 MCP 客户端配置注册该 server。
 - 该通道已在 macOS arm64、DSH 0.2.1-rc.2 上验证：宿主派生的 MCP 子进程可以写入 `~/memory` 并成功执行 `memctl read`，不受 `workspace-write` 沙箱限制。
+- 「子进程不受沙箱约束」是宿主相关的结论，不是通用性质：Grok 的 `workspace` profile 会对子进程施加同样的写限制，必须显式把记忆仓库加入 `read_write`，而该授权同时放开 shell。pi 没有文件沙箱，shell 本就可写。各宿主的实测矩阵见 6.2。
 - 不采用的两条路线：把记忆仓库移入工作区会破坏跨项目共享语义；为每个宿主单独实现插件内工具会引入宿主内部依赖，且无法覆盖没有插件机制的宿主。
 
 ## 2. 写入为什么没有发生
@@ -52,13 +53,13 @@ DSH 的 `workspace-write` 可写根在实现中由 `writableRoots` 固定为工�
 | --- | --- | --- | --- | --- |
 | A. 要求 `danger-full-access` | 用户放宽会话沙箱 | 是 | 取消保护 | 失去工作区隔离；审批策略为 `never` 时无法按次升级 |
 | B. 插件内注册工具 | 宿主插件在自己的作用域注册工具，由宿主进程执行 memctl | 否，需逐宿主实现 | 天然绕过沙箱 | 依赖宿主内部 API；DSH 需要 `@deepseek-ai/dsh-tools` 的 `defineTool()` 产物，实测该包不在 profile 解析范围 |
-| C. MCP server | memctl 以标准输入输出实现 MCP，宿主作为客户端启动它 | 是 | 子进程由宿主派生，不受 bash 沙箱约束 | 需要各宿主支持 MCP 配置；工具调用有额外协议开销 |
+| C. MCP server | memctl 以标准输入输出实现 MCP，宿主作为客户端启动它 | 是 | 子进程由宿主派生，通常不受 bash 沙箱约束；Grok 例外，见 6.2 | 需要各宿主支持 MCP 配置；工具调用有额外协议开销；部分宿主需要额外暴露或审批配置 |
 | D. 常驻 HTTP 服务 | `memctl ui` 常驻，Agent 用 curl 调用写入接口 | 是 | 依赖网络可达 | 需要常驻进程与 Token 分发；等于绕过 CLI 语义 |
 
 选定 C。理由：
 
 1. MCP 是各宿主共同支持的外部工具协议，注册位置是宿主自身的配置，不需要 memctl 依赖宿主内部包。
-2. MCP 子进程由宿主直接派生，权限等同于宿主进程；DSH 实测可写 `~/memory`。
+2. MCP 子进程由宿主直接派生，权限等同于宿主进程；DSH 与 Codex 实测可写 `~/memory`，Grok 需放开 `read_write`。
 3. 工具语义可以完全映射到既有 CLI：`memory_read` 对应 `read --json`，`memory_write` 对应 `write --base --stdin`，不新增写入模型、锁或事务。
 4. B 仍需为每个宿主维护宿主专属实现；对 DSH 而言还需引入 peer 依赖，违背插件「零依赖、只执行固定 memctl 二进制」的既定边界。
 
@@ -88,6 +89,7 @@ Agent（模型）
 ### 4.3 协议与传输
 
 - 传输为标准输入输出，消息为单行 JSON，以换行分隔。不使用长度前缀，不输出非 JSON 内容到标准输出。
+- 实际内容还需要宿主侧配合：Codex 要 `default_tools_approval_mode = "approve"`，pi 要 `--exposure direct`，Grok 要可写的记忆仓库路径。缺少任一项时工具会「存在但调用失败」，见 5.2 与 6.2。
 - 标准错误用于诊断，不写入记忆正文、凭据或完整工具参数。
 - 实现 `initialize`、`notifications/initialized`、`tools/list`、`tools/call`、`ping`；未知方法返回 JSON-RPC 错误 `-32601`。
 - 协议版本以客户端请求的版本为准，回退到实现支持的最高版本；不支持时返回可诊断错误，不静默降级。
@@ -157,16 +159,18 @@ Agent（模型）
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude.json` | `claude mcp add memctl --scope user -- <memctl> mcp --agent claude-code` | 省略 `--scope` 时写入 local 作用域，用户级用 `--scope user` |
 | Codex | `~/.codex/config.toml` | `codex mcp add memctl -- <memctl> mcp --agent codex` | 需要 `default_tools_approval_mode = "approve"`，见下 |
-| pi | `~/.pi/agent/mcp.json` | `pi mcp add memctl -- <memctl> mcp --agent pi` | 项目级为 `.pi/mcp.json`（`--local`） |
+| pi | `~/.pi/agent/mcp.json` | `pi mcp add memctl --exposure direct -- <memctl> mcp --agent pi` | 省略 `--exposure` 时默认 `codemode`，模型无法直接调用工具，见下 |
 | OpenCode | `~/.config/opencode/opencode.json` | `opencode mcp add --global memctl -- <memctl> mcp --agent opencode` | 省略 `--global` 时写入当前目录的 `opencode.json` |
 | Grok | `~/.grok/config.toml` | `grok mcp add --scope user memctl -- <memctl> mcp --agent grok` | `[mcp_servers.memctl]`，写入 `enabled = true` |
 | Command Code | `~/.commandcode/mcp.json` | `commandcode mcp add --scope user memctl <memctl> mcp --agent commandcode` | 省略 `--scope user` 时写入项目级路径 |
-| Antigravity | `~/.gemini/config/mcp_config.json` | 手工编辑 `mcpServers` | 条目为 `{command, args, disabled?}`；没有等价 CLI 子命令 |
-| DSH | profile 的 `cordis.patch.yml` | 在 profile 中插入 `@deepseek-ai/dsh-mcp-client` stdio 条目 | 需要宿主自带该包；本机 `desktop` profile 尚未安装该包 |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `agy mcp add --type stdio memctl <memctl> mcp --agent antigravity` | 也可手工编辑 `mcpServers`，条目为 `{command, args, disabled}`；记忆仓库不在工作区时需同时设 `env` |
+| DSH | profile 的 `cordis.patch.yml` | 在 profile 中插入 `@deepseek-ai/dsh-mcp-client` stdio 条目，`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","dsh"]` | 需要宿主自带该包；本机 `desktop` profile 尚未安装该包 |
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
 
-有 `mcp add` 子命令的 6 个宿主已在 2026-10-18 用隔离 `HOME` 逐个执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。Antigravity 与 DSH 没有等价子命令，只能按上表手工编辑。
+有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 用隔离 `HOME` 逐个执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。DSH 没有等价子命令，只能按上表手工编辑；本机 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。
+
+pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这两个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
 
 Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件：`approval_policy = "never"`（或 `-a never`）与 `default_tools_approval_mode` 缺省或 `auto` 组合时，宿主直接拒绝调用并返回 `MCP tool call requires approval, but approval policy is never`。实测只有 `default_tools_approval_mode = "approve"` 能放行，且该配置不覆盖沙箱：同一会话的 bash 仍受 `workspace-write` 限制。注册后未改这一项时，表现为「工具存在但每次都失败」，不要误判为 memctl 故障。
 
@@ -236,7 +240,27 @@ MCP 与生命周期插件互补，不互相替代：
 
 第一组探测的隔离 `HOME` 曾放在系统临时目录下，Codex 的 `workspace-write` 允许写 `$TMPDIR`，因此该次 bash 写入成功，不能作为沙箱对照。改为真实用户目录下的临时 `HOME` 后重测，得到上表的拒绝结果；报告沙箱结论时必须区分这两种位置。
 
-待验证：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认了注册与连接，没有在受限会话中完成模型驱动的受管写入；DSH 的 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。未验证的组合如实记录，不因单宿主通过推导其他宿主可用。
+第三组在 2026-10-18 同日完成（`T073`）：每个宿主使用独立的隔离 `HOME`、独立状态目录与一次性记忆仓库，先由模型调用 `memory_read` 与 `memory_write`，再用同一会话的 shell 尝试写入记忆仓库。
+
+| 宿主 | 会话限制 | MCP 受管写入 | 同会话 shell 写记忆仓库 |
+| --- | --- | --- | --- |
+| Codex 0.160.0 | `--sandbox workspace-write`、`approval_policy = never` | 成功（`T072` 实测） | 拒绝：`Operation not permitted`、`IO_FAILED` |
+| pi 1.3.0 | 无文件沙箱；`--exposure direct` | 成功，提交 `9bacc1b` | 成功（宿主不提供文件沙箱） |
+| OpenCode 2.0.26 | `permission.bash = "deny"` | 成功，提交 `18307b3` | 无 bash 工具，模型明确报告无法执行 |
+| Command Code 1.84.0 | `-p`（print）默认拒绝 shell | 成功，提交 `4bd9b7a` | 拒绝：提示需要 `--yolo` |
+| Grok 1.0.60 | `--sandbox workspace`；另测 `devbox` 与自定义 profile | `workspace` 下失败：`IO_FAILED: cannot open repository lock`；`devbox` 与加 `read_write` 的自定义 profile 下成功（提交 `7072167`、`3e2ecc`） | `workspace` 下拒绝；`devbox` 与自定义 profile 下成功 |
+| Claude Code 2.1.220 | 未取得可用凭据 | 未实测 | 未实测 |
+| Antigravity 1.4.2 | `--sandbox --dangerously-skip-permissions` | 成功，提交 `eb15947` | 拒绝：`Operation not permitted` |
+
+Grok 与其他宿主不同：`workspace` profile 对**子进程**同样施加写限制，因此 MCP 服务进程也被拒绝访问记忆仓库。给 profile 增加 `read_write = ["<记忆仓库绝对路径>"]` 后，MCP 写入恢复为成功（提交 `3e2ecc`），同时 shell 在该路径上也变为可写；`devbox` profile 放开整个 home，MCP 与 shell 都能写。也就是说，Grok 需要用户显式把记忆仓库加入沙箱可写路径，而该授权同时放开 shell；这一点与「MCP 子进程不受 bash 沙箱限制」的假设不一致，必须在选择宿主时说明。
+
+pi 与不带 `--sandbox` 的 Antigravity 没有文件沙箱：同一会话的 shell 可以直接改记忆仓库。它们的价值在于「多一条受管写入通道」，而不是隔离。pi 默认的 `codemode` 暴露还会让工具对模型不可见，注册时必须使用 `--exposure direct`。
+
+Antigravity 的凭据存放在系统钥匙串，无法复制进隔离 `HOME`；探针改用真实登录态，在真实 `mcp_config.json` 中临时加入一个指向探针仓库的 `memctl-probe` 条目（通过 `env` 把 `AGENT_MEMORY_DIR` 与 `AGENT_MEMORY_STATE` 指向探针目录），测完按 SHA-256 校验恢复原文件，真实记忆仓库未被读写。不加 `--sandbox` 时 shell 可以直接写记忆仓库，与 pi 相同；加 `--sandbox` 后 shell 被拒绝而 MCP 写入仍成功，说明该宿主的 MCP 子进程同样在沙箱之外。
+
+Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.1:15721`，该代理当轮未运行，隔离环境拿不到模型响应，钥匙串中也没有独立的 Claude 凭据。注册命令已确认被宿主接受，写入路径未验证。
+
+未验证：Claude Code 的写入路径；Grok 的自定义 profile 只验证 `read_write`，未覆盖 `restrict_network`、`deny` 等字段。
 
 ## 7. 实现边界
 

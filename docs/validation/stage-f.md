@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T071`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T072`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -123,3 +123,13 @@
 - 验收：`M01`–`M08`、`M10`–`M12` 通过；`M09` 不在本轮范围，转入 `T072`。
 - 未验证与遗留：除 DSH 外的宿主未做受限会话写入实测；`install --status` 的 MCP 探测输出未实现；`memory_write` 不创建缺失的父目录（既有契约）。
 - 下一步：`T072` 补齐宿主侧探测与实测。
+
+## T072：MCP 探测与宿主侧实测
+
+- 目标与范围：补齐 `M09`，即 `install --status` 的 MCP 能力探测与各宿主注册命令输出；复核 `docs/09` 的宿主注册表并补充 Codex 的审批前置条件；在隔离环境完成宿主侧注册与一次受限会话写入。不修改宿主 MCP 配置，不扩大 adapter 契约。
+- 契约：[MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，DSH 0.2.1-rc.2，Claude Code 2.1.220，Codex 0.160.0，pi 1.3.0，OpenCode 2.0.26，Grok 1.0.60，Command Code 1.84.0；探针使用隔离 `HOME`、`CODEX_HOME`、`AGENT_MEMORY_STATE` 与不接触真实记忆仓库的临时仓库。
+- 命令与结果：新增 `internal/mcp/probe.go`，以 `mcp --agent status` 启动当前二进制、完成握手并读取 `tools/list`，3 秒预算；`internal/cli/mcp_status.go` 在 `install --status` 的适配器列表之后输出 `mcp: serving memory_read, memory_write (<version>)` 与 8 条注册动作，探测失败时输出 `mcp: unavailable: <原因>` 且不输出命令。`go test ./internal/mcp ./internal/cli ./tests/integration -run 'TestM|TestPrintMCPStatus' -count=1` 通过，覆盖 `M09` 的成功、失败与不写文件三个分支；`gofmt -l`、`go vet ./...` 无输出。宿主侧：Claude Code、Codex、pi、OpenCode、Grok、Command Code 各自执行 `mcp add` 后状态命令显示已连接（pi 列出 2 个工具），Antigravity 与 DSH 无等价子命令，注册表中二者改为手工编辑并标注实际文件。Codex `workspace-write` 会话中，`default_tools_approval_mode = "approve"` 时 `memory_read` 返回 `fileRevision`、`memory_write` 返回 `transaction`/`commit`/`revision`/`sync` 并产生提交，同会话 bash 的 `touch ~/memory/x` 返回 `Operation not permitted`、`memctl read` 返回 `IO_FAILED: cannot open repository lock`。
+- 验收：`M09` 通过；`M08` 由 DSH 与 Codex 两个宿主覆盖；`M05` 在 Codex 通道复验。`docs/09` 的 5.2、5.3、6.2、7 与 `04`、`README` 已同步。
+- 未验证与遗留：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认注册与连接，未在受限会话中完成模型驱动的受管写入；`desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`，DSH 侧仍按手工插入条目接入；Codex 的 `approval_policy = "never"` 会让 MCP 调用失败，属宿主行为，需要用户侧配置。
+- 下一步：如需覆盖其余宿主的受限会话写入，按 `docs/09` 6.2 的相同步骤逐个实测；其余未验证项见 [STATUS](../STATUS.md#当前事实)。

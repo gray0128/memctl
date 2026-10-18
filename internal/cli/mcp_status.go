@@ -30,16 +30,15 @@ func mcpRegistrations(memctl string) []mcpRegistration {
 		{Agent: "claude-code", Command: "claude mcp add memctl --scope user -- " + server + "claude-code"},
 		{Agent: "codex", Command: "codex mcp add memctl -- " + server + "codex"},
 		{Agent: "grok", Command: "grok mcp add --scope user memctl -- " + server + "grok"},
-		{
-			Agent:       "antigravity",
-			Instruction: `add "memctl" to mcpServers in ~/.gemini/config/mcp_config.json with command "` + memctl + `" and args ["mcp","--agent","antigravity"]`,
-		},
+		{Agent: "antigravity", Command: "agy mcp add --type stdio memctl " + server + "antigravity"},
 		{Agent: "commandcode", Command: "commandcode mcp add --scope user memctl " + server + "commandcode"},
 		{Agent: "opencode", Command: "opencode mcp add --global memctl -- " + server + "opencode"},
-		{Agent: "pi", Command: "pi mcp add memctl -- " + server + "pi"},
+		// pi defaults to codemode exposure, where the model cannot call the
+		// tool directly, so the registration must request direct exposure.
+		{Agent: "pi", Command: "pi mcp add memctl --exposure direct -- " + server + "pi"},
 		{
 			Agent:       "dsh",
-			Instruction: "add an @deepseek-ai/dsh-mcp-client stdio entry with the command above to the profile's cordis.patch.yml",
+			Instruction: `add an @deepseek-ai/dsh-mcp-client stdio entry with command "` + memctl + `" and args ["mcp","--agent","dsh"] to the profile's cordis.patch.yml`,
 		},
 	}
 }

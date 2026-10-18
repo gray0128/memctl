@@ -904,7 +904,7 @@ var helpCommandData = []helpCommand{
 		},
 		Output: []localizedText{
 			loc("Per-adapter status, detected host version, plugin version, target artifacts and patch previews. With writes, also `applied` or `manual` lines and backup paths.", "每个适配器的状态、探测到的宿主版本、插件版本、目标文件和补丁预览。执行写入时还会输出 `applied` 或 `manual` 行及备份路径。"),
-			loc("`--status` ends with one `mcp:` line and one registration command per host, so the sandbox-independent memory tools can be registered with the host's own command.", "`--status` 末尾输出一行 `mcp:` 和每个宿主一条注册命令，便于用宿主自己的命令注册不受 bash 沙箱限制的记忆工具。"),
+			loc("`--status` ends with one `mcp:` line and one registration command per host, so the memory tools can be registered with the host's own command.", "`--status` 末尾输出一行 `mcp:` 和每个宿主一条注册命令，便于用宿主自己的命令注册记忆工具。"),
 		},
 		ExitCodes: []helpExit{
 			{Code: 0, Meaning: loc("Plan or install completed; unsupported or manual adapters are reported in the output. Exit 0 does not mean every adapter was installed.", "计划或安装已完成；不支持或需人工处理的适配器会在输出中报告。退出码 0 不表示每个适配器都已安装。")},

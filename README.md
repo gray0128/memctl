@@ -55,11 +55,11 @@ pi list
 
 ```bash
 ./bin/memctl install --status     # 末尾输出 mcp: 块与每个宿主的注册命令
-# pi 为例；其他宿主见 MCP 记忆工具文档
-pi mcp add memctl -- ~/.agent-memory/bin/memctl mcp --agent pi
+# pi 为例；--exposure direct 不能省略，否则模型看不到工具
+pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 ```
 
-工具为 `memory_read` 与 `memory_write`，写入仍经过受管事务与基线校验。Codex 需要把 MCP 条目的 `default_tools_approval_mode` 设为 `approve`，否则审批策略为 `never` 时每次调用都会被宿主拒绝。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md)。
+工具为 `memory_read` 与 `memory_write`，写入仍经过受管事务与基线校验。宿主侧还有三项前置条件：Codex 需要 `default_tools_approval_mode = "approve"`，否则审批策略为 `never` 时每次调用都会被拒绝；pi 需要 `--exposure direct`；Grok 的 `workspace` 沙箱会阻断 MCP 子进程，需要把记忆仓库加入 `read_write`，而该授权同时放开 shell；Antigravity 在 `--sandbox` 下可用，但记忆仓库不在工作区时需在 MCP 条目里用 `env` 指定 `AGENT_MEMORY_DIR`。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md)。
 
 ## 帮助
 

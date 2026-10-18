@@ -29,8 +29,8 @@ func TestM09InstallStatusReportsMCP(t *testing.T) {
 		"grok: grok mcp add --scope user memctl -- " + harness.binPath + " mcp --agent grok",
 		"commandcode: commandcode mcp add --scope user memctl " + harness.binPath + " mcp --agent commandcode",
 		"opencode: opencode mcp add --global memctl -- " + harness.binPath + " mcp --agent opencode",
-		"pi: pi mcp add memctl -- " + harness.binPath + " mcp --agent pi",
-		"antigravity: add \"memctl\" to mcpServers",
+		"pi: pi mcp add memctl --exposure direct -- " + harness.binPath + " mcp --agent pi",
+		"antigravity: agy mcp add --type stdio memctl " + harness.binPath + " mcp --agent antigravity",
 		"dsh: add an @deepseek-ai/dsh-mcp-client stdio entry",
 	} {
 		if !strings.Contains(stdout, want) {

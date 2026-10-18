@@ -1,12 +1,12 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T071`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T072`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
 - 版本：`v0.5.2` 为当前二进制发布版本（2026-10-18 发布，内容为中文 CLI 帮助优化）；npm 包 `memctl-pi` 的 `0.5.0`、`0.5.1` 与 `memctl-dsh@0.5.1` 均已发布，`latest` 均为 `0.5.1`，插件版本不随本次二进制发布变化。GitHub Release 附带 darwin arm64/amd64、linux amd64、windows amd64 四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`v*` 标签推送由 GitHub Actions 构建并创建 Release，打包与发布门槛见 [单文件打包](./04-ui-and-cli-specification.md#6-单文件打包) 与 [发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
 - 能力：阶段 A–D 已全部交付并验收；阶段 E 的 `memctl-dsh` Host 插件、内嵌 tarball/目录、dsh 原生与 legacy 插件探测及发布产物已实现，真实 DSH 会话验证完成到 `v0.4.0`；阶段 F 的 `F-1`–`F-5` 已由 `T060`、`T062` 交付并验证。已交付能力包括单文件 CLI（`init`、`read`、`write`、`sync`、`start`/`context`/`pull`/`tag`/`wrap`、`resolve`、`recover`、`doctor`、`install`、`dsh`、`pi`、`mcp`、`update`、`dream`、`ui`）、面向 Agent 的中英帮助（`help`、`<command> --help`、`help --json`）、内嵌 Web UI 的只读与写入视图、Hook 会话协议、adapter 配置安装与 Dreaming 提案生成与应用；行为契约以 [方案索引](./README.md) 下的 01–09 为准。
-- 发布后改动：`T040`–`T072` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布、版本发布与 MCP 记忆工具通道均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
+- 发布后改动：`T040`–`T073` 的界面重设计、宿主协议修复、DSH/pi 插件、`update`、CLI 帮助与 i18n、npm 发布、版本发布与 MCP 记忆工具通道均已交付；逐项目标与验收链接见[任务总表](#任务)，详细证据见 [UI/UX 验证报告](./validation/ui-ux-verification.md)、[发布后轮次记录](./validation/stage-d.md#发布后轮次记录t040t051)、[阶段 E 归档](./validation/stage-e.md) 与 [阶段 F 归档](./validation/stage-f.md)。
 - 平台：darwin/arm64 完成运行时验证（全量测试、发布二进制冒烟与浏览器验证）；macOS amd64、Linux amd64、Windows amd64 仅交叉编译通过，运行、生命周期与隔离未验证。
 - 宿主（DSH）：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的宿主版本不代表 Hook 已注入或被宿主采纳。`memctl-dsh` 在 DSH 0.2.1-rc.2 的隔离 profile 与本机 `desktop` 会话验证了 `systemPrompt.context` 注入、`turn/end` 后同步、轮次内受管写入（提交 `61fd68e`）、恢复、锁忙（3.1 秒内返回 `BUSY`）与断网降级、插件卸载兜底 `end`、绝对 tarball 界面安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，bundle 与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；`agent/disposed` 因宿主没有单会话销毁入口而由插件单元测试覆盖；会话启动失败降级仅覆盖模型凭据缺失。证据见 [T052 验证记录](./validation/t052-dsh-real-session.md)、[T067 记录](./validation/stage-f.md#t067复验-dsh-界面-npm-安装与-desktop-插件升级) 与 [dsh 专用插件](./07-dsh-plugin.md#13-实现状态)。
 - 宿主（pi）：`memctl-pi` 在 pi `1.3.0`/darwin arm64 标记为 `verified`，真实会话确认 `<memctl>` 注入、每轮 `sync`、收尾、恢复、分叉、后台子代理与失败降级；前台 in-process 子代理不触发会话事件，不注入记忆。证据见 [T062 验证记录](./validation/t062-pi-real-session.md) 与 [pi 专用插件](./08-pi-plugin.md#11-实现状态)。
@@ -16,7 +16,7 @@
   - pi：前台子代理记忆注入；`agent_settled` 在 `pi -p` 立即退出时由 `end` 兜底；`sections` 缺失的宿主级回退仅由单元测试覆盖。
   - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
   - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
-- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071` 实现，`T072` 补齐探测与宿主实测）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，否则审批策略为 `never` 时 MCP 调用被宿主拒绝。
+- 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071`–`T073`）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，pi 需 `--exposure direct`，Grok 的 `workspace` profile 会阻断 MCP 子进程并需要 `read_write`，pi 本身没有文件沙箱。
 - 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。
 
 ## 任务
@@ -94,26 +94,27 @@
 | T069 | 已完成 | 发布 `v0.5.2`（含 `T068`）：全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；插件版本保持 `0.5.1`；[归档记录](./validation/stage-f.md#t069发布-v052) |
 | T070 | 已完成 | 调研受沙箱宿主的记忆写入通道并产出方案：确认插件在沙箱外、bash 在工作区内；实机验证 DSH 的 MCP stdio 子进程可写 `~/memory`；比较四条路线并选定 `memctl mcp`；[方案文档](./09-mcp-memory-tools.md)、[归档记录](./validation/stage-f.md#t070受沙箱宿主的记忆写入通道方案) |
 | T071 | 已完成 | 实现 `memctl mcp` 子命令与 `memory_read`/`memory_write` 工具、协议处理与错误映射、帮助条目与 `M01`–`M12` 测试；[方案文档](./09-mcp-memory-tools.md#6-验收)、[归档记录](./validation/stage-f.md#t071实现-memctl-mcp-子命令) |
-| T072 | 已完成 | 实现 `install --status` 的 MCP 能力探测（`M09`）与 8 个宿主的注册命令输出；6 个有 `mcp add` 的宿主已逐个注册并确认连接，Codex 受限会话完成受管写入；[方案文档](./09-mcp-memory-tools.md#52-各宿主的注册命令)、[完成记录](#t072mcp-探测与宿主侧实测) |
+| T072 | 已完成 | 实现 `install --status` 的 MCP 能力探测（`M09`）与 8 个宿主的注册命令输出；6 个有 `mcp add` 的宿主已逐个注册并确认连接，Codex 受限会话完成受管写入；[方案文档](./09-mcp-memory-tools.md#52-各宿主的注册命令)、[归档记录](./validation/stage-f.md#t072mcp-探测与宿主侧实测) |
+| T073 | 已完成 | 其余宿主的受限会话实测：pi、OpenCode、Command Code、Antigravity 完成 MCP 受管写入且 shell 受限；Grok 的 `workspace` profile 会阻断子进程，需 `read_write`；Claude Code 因代理未运行未实测；[方案文档](./09-mcp-memory-tools.md#62-真实验证边界)、[完成记录](#t073其余宿主的受限会话实测) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T072：MCP 探测与宿主侧实测
+## T073：其余宿主的受限会话实测
 
-- 目标与范围：补齐 `M09`，即 `install --status` 的 MCP 能力探测与各宿主注册命令输出；复核 `docs/09` 的宿主注册表并补充 Codex 的审批前置条件；在隔离环境完成宿主侧注册与一次受限会话写入。不修改宿主 MCP 配置，不扩大 adapter 契约。
-- 契约：[MCP 记忆工具](./09-mcp-memory-tools.md#52-各宿主的注册命令)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
-- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，DSH 0.2.1-rc.2，Claude Code 2.1.220，Codex 0.160.0，pi 1.3.0，OpenCode 2.0.26，Grok 1.0.60，Command Code 1.84.0；探针使用隔离 `HOME`、`CODEX_HOME`、`AGENT_MEMORY_STATE` 与不接触真实记忆仓库的临时仓库。
-- 命令与结果：新增 `internal/mcp/probe.go`，以 `mcp --agent status` 启动当前二进制、完成握手并读取 `tools/list`，3 秒预算；`internal/cli/mcp_status.go` 在 `install --status` 的适配器列表之后输出 `mcp: serving memory_read, memory_write (<version>)` 与 8 条注册动作，探测失败时输出 `mcp: unavailable: <原因>` 且不输出命令。`go test ./internal/mcp ./internal/cli ./tests/integration -run 'TestM|TestPrintMCPStatus' -count=1` 通过，覆盖 `M09` 的成功、失败与不写文件三个分支；`gofmt -l`、`go vet ./...` 无输出。宿主侧：Claude Code、Codex、pi、OpenCode、Grok、Command Code 各自执行 `mcp add` 后状态命令显示已连接（pi 列出 2 个工具），Antigravity 与 DSH 无等价子命令，注册表中二者改为手工编辑并标注实际文件。Codex `workspace-write` 会话中，`default_tools_approval_mode = "approve"` 时 `memory_read` 返回 `fileRevision`、`memory_write` 返回 `transaction`/`commit`/`revision`/`sync` 并产生提交，同会话 bash 的 `touch ~/memory/x` 返回 `Operation not permitted`、`memctl read` 返回 `IO_FAILED: cannot open repository lock`。
-- 验收：`M09` 通过；`M08` 由 DSH 与 Codex 两个宿主覆盖；`M05` 在 Codex 通道复验。`docs/09` 的 5.2、5.3、6.2、7 与 `04`、`README` 已同步。
-- 未验证与遗留：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认注册与连接，未在受限会话中完成模型驱动的受管写入；`desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`，DSH 侧仍按手工插入条目接入；Codex 的 `approval_policy = "never"` 会让 MCP 调用失败，属宿主行为，需要用户侧配置。
-- 下一步：如需覆盖其余宿主的受限会话写入，按 `docs/09` 6.2 的相同步骤逐个实测；其余未验证项见[当前事实](#当前事实)。
+- 目标与范围：在隔离环境中完成 pi、OpenCode、Command Code、Grok、Claude Code、Antigravity 的受限会话写入实测，补齐 `M08` 的宿主覆盖；复核 `docs/09` 的注册命令与沙箱结论；不修改宿主配置以外的产品行为。
+- 契约：[MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-18，macOS arm64，pi 1.3.0，OpenCode 2.0.26，Command Code 1.84.0，Grok 1.0.60，Claude Code 2.1.220，Antigravity 1.4.2；每个宿主使用独立隔离 `HOME`、独立 `AGENT_MEMORY_STATE` 与一次性记忆仓库，探针仓库与真实 `~/memory` 无关；Antigravity 例外，其凭据在系统钥匙串，改用真实登录态与临时配置条目，见下。
+- 命令与结果：pi `--exposure direct` 后 `memory_read` 与 `memory_write` 可用，提交 `9bacc1b`；OpenCode 配置 `permission.bash = "deny"` 后 MCP 写入仍成功，提交 `18307b3`，模型明确报告无 bash 工具；Command Code print 模式默认拒绝 shell，MCP 写入成功，提交 `4bd9b7a`；Grok `--sandbox workspace` 下 MCP 子进程与 shell 均被拒绝，改用 `devbox` 或自定义 profile 的 `read_write` 后写入成功，提交 `7072167`、`3e2ecc`；Antigravity 在 `--sandbox` 下 shell 被拒绝（`Operation not permitted`）、MCP 写入成功（提交 `eb15947`），凭据在系统钥匙串，探针临时修改真实 `mcp_config.json` 并加 `env` 指向探针仓库，测完按 SHA-256 恢复。Claude Code 的 `ANTHROPIC_BASE_URL` 指向 `127.0.0.1:15721`，该代理未运行，未实测。
+- 验收：`M08` 的宿主覆盖扩展到 Codex、pi、OpenCode、Command Code、Antigravity 与 Grok（Grok 在显式授权下）；`M05` 在六个宿主通道复验。`docs/09` 的 1、3、4.3、5.2、6.2 与 `install --status` 的注册命令已同步；`go test ./internal/cli ./tests/integration -run 'TestPrintMCPStatus|TestM09' -count=1` 通过。
+- 未验证与遗留：Claude Code 的写入路径；Grok 的自定义 profile 只验证 `read_write`，未覆盖 `restrict_network`、`deny` 等字段；Antigravity 的探针依赖真实登录态与真实配置文件，未在完全隔离的环境复现。
+- 下一步：如 `127.0.0.1:15721` 代理可用，按同一流程补 Claude Code。其余未验证项见[当前事实](#当前事实)。
 
 ## 近期待办与下一步
 
 - `memctl mcp` 与 `install --status` 的 `mcp:` 块已实现；本机 `desktop` profile 尚未插入 `@deepseek-ai/dsh-mcp-client` 条目，DSH 侧需手工添加后生效。
-- Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认注册与连接，受限会话中的模型驱动受管写入未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
+- 宿主侧写入已覆盖 Codex、pi、OpenCode、Command Code 与 Grok；Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
