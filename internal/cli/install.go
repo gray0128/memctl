@@ -128,6 +128,13 @@ func runInstallStatus(env adapters.Env, stdout, stderr io.Writer) int {
 	for _, plan := range plans {
 		printPlan(stdout, plan)
 	}
+	// The MCP channel is host-independent and independent of hook
+	// configuration, so it is reported once after the adapter list. When the
+	// running executable cannot be resolved the probe is skipped rather than
+	// reported as unavailable. See docs/09-mcp-memory-tools.md section 5.3.
+	if self, err := selfExecutable(); err == nil {
+		printMCPStatus(context.Background(), stdout, self)
+	}
 	return ExitOK
 }
 

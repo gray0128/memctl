@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T066`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T071`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -93,3 +93,33 @@
 - 验收：中文帮助术语、排版与事实一致；帮助渲染与 JSON 结构未变；Go 全量测试通过。
 - 未验证与遗留：未验证终端宽度、颜色或字体渲染（帮助文本不使用 ANSI 颜色，也不探测终端宽度）；未改变英文帮助文本。
 - 下一步：如需发布，按 [发布前检查](../05-validation-and-delivery.md#4-发布前检查) 走一次版本发布；其余未验证项见 [STATUS](../STATUS.md#当前事实)。
+
+## T069：发布 v0.5.2
+
+- 目标与范围：把 `T068` 的中文帮助优化作为 `v0.5.2` 发布；插件版本保持 `0.5.1`，不随本次二进制发布变化；运行全量测试与 `make release`，校验四个候选二进制、两个插件 tarball、校验和与元数据，推送 tag 触发 GitHub Release。
+- 契约：[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.5.2` 指向 `17fd083`。
+- 命令与结果：`make release VERSION=v0.5.2` 通过（前端构建、插件 Node 测试、Go 全量测试）；生成四个平台二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件，`SHA256SUMS` 六个产物全部 `OK`，本机二进制输出 `memctl v0.5.2`。tag 推送后 [GitHub Actions 运行 39058657201](https://github.com/gray0128/memctl/actions/runs/39058657201) 成功并创建 [Release v0.5.2](https://github.com/gray0128/memctl/releases/tag/v0.5.2)；下载附件重新校验，`memctl-darwin-arm64`、两个插件 tarball 全部 `OK`，`RELEASE-INFO.txt` 的版本与 commit 与 tag 一致。本机 `~/.agent-memory/bin/memctl` 已替换为 Release 二进制，`version` 输出 `memctl v0.5.2`，`update --check` 返回 `up to date`。
+- 验收：`v0.5.2` 二进制、两个插件 tarball、Release 产物与校验和均通过；`T069` 完成。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；插件版本未更新，npm 仍为 `0.5.1`；未发布 npm 包。
+- 下一步：如需让插件跟随二进制版本，单独走一次插件版本与 npm 发布轮次；其余未验证项见 [STATUS](../STATUS.md#当前事实)。
+
+## T070：受沙箱宿主的记忆写入通道方案
+
+- 目标与范围：定位「DSH 中多个新会话没有记忆更新」的原因，比较可行通道，产出权威方案文档并登记实现任务；不写产品代码。
+- 契约：[MCP 记忆工具](../09-mcp-memory-tools.md)。
+- 验证日期与环境：2026-10-18，macOS arm64，DSH 0.2.1-rc.2，Go 1.27.1，`memctl v0.5.2`。
+- 命令与结果：`memctl read MEMORY.md --json` 在 `workspace-write` 会话返回 `IO_FAILED: cannot open repository lock`；`touch ~/memory/x` 返回 `Operation not permitted`，同会话工作区内 `touch` 成功。检索 30 个历史 DSH 会话的 `tool/call`，无一次 `memctl write`。隔离 profile `probe` 插入 `@deepseek-ai/dsh-mcp-client` 的 stdio 条目后运行 `dsh --profile probe`，探针记录 `touch-memory=ok` 与 `memctl-read=ok`，证明 MCP 子进程不受 bash 沙箱限制。隔离 profile 内安装本地 bundle 后 `import('@deepseek-ai/dsh-tools')` 返回 `ERR_MODULE_NOT_FOUND`，排除「插件内注册工具」。核实 8 个宿主的 MCP 配置位置与 `mcp add` 参数。
+- 验收：`M08` 的沙箱子集通过（宿主派生的 MCP 子进程可写 `~/memory`）；方案比较与选型完成；`T070` 完成。
+- 未验证与遗留：除 DSH 外的宿主未做受限会话内的 MCP 写入实测；`memctl mcp` 尚未实现（`T071`）。
+- 下一步：按 [09](../09-mcp-memory-tools.md) 实现并验证 `M01`–`M12`。
+
+## T071：实现 memctl mcp 子命令
+
+- 目标与范围：按 [09](../09-mcp-memory-tools.md) 实现 `memctl mcp`、`memory_read` 与 `memory_write`、协议循环与错误映射、帮助条目；不修改宿主 MCP 配置。
+- 契约：[MCP 记忆工具](../09-mcp-memory-tools.md#4-系统如何工作)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，DSH 0.2.1-rc.2。
+- 命令与结果：`go test ./internal/mcp ./internal/cli -count=1` 与 `go test ./tests/integration -run 'TestM0|TestM1' -count=1` 通过，覆盖 `M01`–`M07`、`M10`–`M12`；`gofmt -l` 无输出，`go vet` 通过。真实 DSH 会话中，模型调用 `mcp__memctl__memory_read` 取得 `fileRevision`，`mcp__memctl__memory_write` 走受管事务；同会话 bash 的 `memctl read` 返回 `IO_FAILED`、`touch` 返回 `touch-denied`，证明两条通道的权限确实不同。
+- 验收：`M01`–`M08`、`M10`–`M12` 通过；`M09` 不在本轮范围，转入 `T072`。
+- 未验证与遗留：除 DSH 外的宿主未做受限会话写入实测；`install --status` 的 MCP 探测输出未实现；`memory_write` 不创建缺失的父目录（既有契约）。
+- 下一步：`T072` 补齐宿主侧探测与实测。

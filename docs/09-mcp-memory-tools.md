@@ -1,6 +1,6 @@
 # 09. 受沙箱宿主下的记忆写入通道：MCP 工具
 
-> 状态：方案已定，实现未开始（2026-10-18）。本文档定义 `memctl mcp` 子命令、工具契约、各宿主注册方式与验收矩阵；实现状态随任务推进更新。分发与安装细节引用 [CLI、UI 与分发](./04-ui-and-cli-specification.md)，宿主生命周期映射引用 [07](./07-dsh-plugin.md) 与 [08](./08-pi-plugin.md)。
+> 状态：已实现并验收（2026-10-18，`T071`、`T072`）。本文档定义 `memctl mcp` 子命令、工具契约、各宿主注册方式与验收矩阵。分发与安装细节引用 [CLI、UI 与分发](./04-ui-and-cli-specification.md)，宿主生命周期映射引用 [07](./07-dsh-plugin.md) 与 [08](./08-pi-plugin.md)。
 
 ## 1. 结论
 
@@ -155,23 +155,29 @@ Agent（模型）
 
 | 宿主 | 配置文件 | 注册命令 | 备注 |
 | --- | --- | --- | --- |
-| DSH | profile 的 `cordis.patch.yml` | 在 profile 中插入 `@deepseek-ai/dsh-mcp-client` 条目 | 需要宿主自带该包；0.2.1-rc.2 可用 |
-| Claude Code | `~/.claude.json` | `claude mcp add memctl -- <memctl> mcp --agent claude-code` | 顶层 `mcpServers`；项目级配置另有位置 |
-| Codex | `~/.codex/config.toml` | `codex mcp add memctl -- <memctl> mcp --agent codex` | `[mcp_servers.memctl]` |
-| pi | `~/.pi/agent/mcp.json` | `pi mcp add memctl -- <memctl> mcp --agent pi` | 项目级为 `.pi/mcp.json` |
-| OpenCode | `~/.config/opencode/opencode.jsonc` | `opencode mcp add` | `mcp.servers.memctl`；保留 JSONC 注释与顺序 |
-| Grok | `~/.grok/config.toml` | `grok mcp add memctl <memctl> -- mcp --agent grok` | `[mcp_servers.memctl]` |
-| Command Code | `~/.commandcode/projects/<project>/mcp.json` | `commandcode mcp add memctl --scope user` | 默认写入项目级路径，必须显式指定 `--scope user` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | 手工编辑 `mcpServers` | 支持 `disabled` 字段；未提供等价 CLI 子命令 |
+| Claude Code | `~/.claude.json` | `claude mcp add memctl --scope user -- <memctl> mcp --agent claude-code` | 省略 `--scope` 时写入 local 作用域，用户级用 `--scope user` |
+| Codex | `~/.codex/config.toml` | `codex mcp add memctl -- <memctl> mcp --agent codex` | 需要 `default_tools_approval_mode = "approve"`，见下 |
+| pi | `~/.pi/agent/mcp.json` | `pi mcp add memctl -- <memctl> mcp --agent pi` | 项目级为 `.pi/mcp.json`（`--local`） |
+| OpenCode | `~/.config/opencode/opencode.json` | `opencode mcp add --global memctl -- <memctl> mcp --agent opencode` | 省略 `--global` 时写入当前目录的 `opencode.json` |
+| Grok | `~/.grok/config.toml` | `grok mcp add --scope user memctl -- <memctl> mcp --agent grok` | `[mcp_servers.memctl]`，写入 `enabled = true` |
+| Command Code | `~/.commandcode/mcp.json` | `commandcode mcp add --scope user memctl <memctl> mcp --agent commandcode` | 省略 `--scope user` 时写入项目级路径 |
+| Antigravity | `~/.gemini/config/mcp_config.json` | 手工编辑 `mcpServers` | 条目为 `{command, args, disabled?}`；没有等价 CLI 子命令 |
+| DSH | profile 的 `cordis.patch.yml` | 在 profile 中插入 `@deepseek-ai/dsh-mcp-client` stdio 条目 | 需要宿主自带该包；本机 `desktop` profile 尚未安装该包 |
 
-把 `<memctl>` 替换为 `memctl dsh` 之外的实际路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
+把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
+
+有 `mcp add` 子命令的 6 个宿主已在 2026-10-18 用隔离 `HOME` 逐个执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。Antigravity 与 DSH 没有等价子命令，只能按上表手工编辑。
+
+Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件：`approval_policy = "never"`（或 `-a never`）与 `default_tools_approval_mode` 缺省或 `auto` 组合时，宿主直接拒绝调用并返回 `MCP tool call requires approval, but approval policy is never`。实测只有 `default_tools_approval_mode = "approve"` 能放行，且该配置不覆盖沙箱：同一会话的 bash 仍受 `workspace-write` 限制。注册后未改这一项时，表现为「工具存在但每次都失败」，不要误判为 memctl 故障。
 
 ### 5.3 探测
 
-- `memctl install --status` 只报告 MCP 工具是否存在：确认 `~/.agent-memory/bin/memctl`（或解析到的二进制）能响应 `mcp` 子命令，并输出上表的注册命令。
+- `memctl install --status` 在适配器列表之后输出 `mcp:` 块：把当前可执行文件按 `mcp --agent status` 启动一次，完成握手并读取 `tools/list`，成功时输出 `mcp: serving memory_read, memory_write (<version>)`，随后按 5.2 输出每个宿主的注册命令。
+- 探测只使用协议，不读状态目录，不写任何文件；超时上限 3 秒，子进程无论成功失败都会被回收。
+- 二进制无法响应 `mcp`（旧版本、路径不可执行、未返回 `tools/list`）时输出 `mcp: unavailable: <原因>` 并省略全部注册命令：注册一个每次调用都失败的 server 比不注册更难排查。
 - 不解析、不合并宿主的 MCP 配置文件。宿主间的字段名、数组与字符串拼写、项目级与用户级作用域均不同，手写解析器会随宿主升级失效；注册由各宿主自有的命令负责，失败时由宿主给出错误。
 - 已注册同名 server 但命令不同：由宿主的 `mcp add` 覆盖或拒绝，memctl 不介入。
-- 宿主没有 MCP 支持：不输出注册提示，其余接入方式不变。
+- 宿主没有 MCP 支持：不输出该宿主的注册提示，其余接入方式不变。
 
 ### 5.4 与生命周期插件的关系
 
@@ -207,7 +213,7 @@ MCP 与生命周期插件互补，不互相替代：
 
 ### 6.2 真实验证边界
 
-2026-10-18 在 macOS arm64、DSH 0.2.1-rc.2 上完成以下实测：
+2026-10-18 在 macOS arm64、DSH 0.2.1-rc.2 上完成以下实测（`T070`、`T071`）：
 
 | 观测 | 结果 |
 | --- | --- |
@@ -218,19 +224,32 @@ MCP 与生命周期插件互补，不互相替代：
 
 以上覆盖 `M05`、`M08` 与 `M12` 的核心路径。`memory_write` 不创建缺失的父目录，返回 `NOT_FOUND`，与 CLI `write` 一致；这是既有契约，不是 MCP 的缺陷。
 
-待验证：其余宿主通过其 MCP 配置加载 `memctl mcp` 后，模型能否在受限会话中完成一次受管写入。未验证的组合如实记录，不因单宿主通过推导其他宿主可用。
+同日补充两组宿主侧验证（`T072`）：
+
+| 观测 | 结果 |
+| --- | --- |
+| 6 个有 `mcp add` 的宿主在隔离 `HOME` 中执行 5.2 的命令 | 全部被接受，状态命令显示已连接；`pi mcp list` 列出 `memory_read`、`memory_write` |
+| Codex `approval_policy = never` + 缺省审批模式 | `memory_read` 被宿主拒绝：`MCP tool call requires approval, but approval policy is never` |
+| Codex `default_tools_approval_mode = "approve"` | `memory_read` 返回 `fileRevision`，`memory_write` 返回 `transaction`、`commit`、`revision`、`sync`；提交落在探针仓库 |
+| 同一 Codex `workspace-write` 会话的 bash | `touch ~/memory/x` 返回 `Operation not permitted`，`memctl read` 返回 `IO_FAILED: cannot open repository lock` |
+| `install --status` 的 `mcp:` 块 | 输出 `serving memory_read, memory_write` 与 8 条注册动作；不写任何文件 |
+
+第一组探测的隔离 `HOME` 曾放在系统临时目录下，Codex 的 `workspace-write` 允许写 `$TMPDIR`，因此该次 bash 写入成功，不能作为沙箱对照。改为真实用户目录下的临时 `HOME` 后重测，得到上表的拒绝结果；报告沙箱结论时必须区分这两种位置。
+
+待验证：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认了注册与连接，没有在受限会话中完成模型驱动的受管写入；DSH 的 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。未验证的组合如实记录，不因单宿主通过推导其他宿主可用。
 
 ## 7. 实现边界
 
-本轮实现范围：
+已实现（`T071`、`T072`）：
 
 - `memctl mcp` 子命令、两个工具、协议处理与错误映射。
-- `internal/mcp` 包与对应单元、集成测试。
-- 帮助目录新增 `mcp` 条目，中英文一致。
+- `internal/mcp` 包与对应单元、集成测试；`internal/mcp/probe.go` 提供 `M09` 的能力探测。
+- `install --status` 的 `mcp:` 块：探测当前二进制并按 5.2 输出注册动作。
+- 帮助目录的 `mcp` 条目与 `install` 的 MCP 说明，中英文一致。
 
-不在本轮范围：
+不在实现范围：
 
 - 修改宿主 MCP 配置文件；注册使用各宿主自有的 `mcp add` 命令。
 - 多仓库、多记忆域、检索或语义搜索工具。
 - 通过 MCP 触发 Dreaming 或 UI 操作。
-- `install --status` 的 MCP 探测输出（作为后续任务，避免本轮扩大 adapter 契约）。
+- 读取或校验宿主已注册的 MCP 条目；`install --status` 只探测二进制自身。

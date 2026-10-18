@@ -54,11 +54,12 @@ pi list
 受沙箱限制的宿主要让 Agent 主动写记忆，需要 `memctl mcp`：一个在标准输入输出上运行 MCP 的工具进程，由宿主启动，因此不受 Agent 的 bash 沙箱限制：
 
 ```bash
+./bin/memctl install --status     # 末尾输出 mcp: 块与每个宿主的注册命令
 # pi 为例；其他宿主见 MCP 记忆工具文档
 pi mcp add memctl -- ~/.agent-memory/bin/memctl mcp --agent pi
 ```
 
-工具为 `memory_read` 与 `memory_write`，写入仍经过受管事务与基线校验。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md)。
+工具为 `memory_read` 与 `memory_write`，写入仍经过受管事务与基线校验。Codex 需要把 MCP 条目的 `default_tools_approval_mode` 设为 `approve`，否则审批策略为 `never` 时每次调用都会被宿主拒绝。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md)。
 
 ## 帮助
 
