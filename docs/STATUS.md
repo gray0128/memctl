@@ -1,6 +1,6 @@
 # 开发状态
 
-本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T072`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
+本文件是开发任务状态、当前事实与近期事项的热台账。状态含义、完成条件与归档规则见 [开发循环规范](./06-development-loop.md#1-最小记录结构)，完整阶段顺序见 [验收与交付](./05-validation-and-delivery.md#1-交付顺序)，阶段 A、阶段 B、阶段 C、阶段 D、阶段 E 与阶段 F 的已完成任务历史验收记录分别归档于 [阶段 A 归档](./validation/stage-a.md)、[阶段 B 归档](./validation/stage-b.md)、[阶段 C 归档](./validation/stage-c.md)、[阶段 D 归档](./validation/stage-d.md)（含 `T040`–`T051` 的发布后轮次记录）、[阶段 E 归档](./validation/stage-e.md)（含 `T048`、`T052`–`T059`）与 [阶段 F 归档](./validation/stage-f.md)（含 `T060`–`T073`），各阶段实现审查见 [阶段 A 实现审查报告](./validation/stage-a-review.md)、[阶段 B 实现审查报告](./validation/stage-b-review.md)、[阶段 C 实现审查报告](./validation/stage-c-review.md) 与 [阶段 D 实现审查报告](./validation/stage-d-review.md)。
 
 ## 当前事实
 
@@ -17,7 +17,7 @@
   - 其他宿主：Codex `SessionEnd` 与 OpenCode `session.deleted` 未在真实会话结束路径复验；Codex 模型回复受账号额度限制；Command Code 没有 `SessionEnd`，Antigravity 的 `Stop` 语义待真实宿主确认。
   - Dreaming 与自更新：真实 runner 与模型端点（`claude` 在隔离 scratch HOME 下退出 `1`）；非 macOS 平台的 runner 隔离；`update` 仅在 darwin/arm64 真实执行。
 - 已知限制：pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071`–`T073`）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，pi 需 `--exposure direct`，Grok 的 `workspace` profile 会阻断 MCP 子进程并需要 `read_write`，pi 本身没有文件沙箱。
-- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。
+- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 已升级到 `v0.5.2`。CI 的 `verify` 与 `release` 作业分别运行 `make test` 与 `make release-dist`；集成测试在同一进程内共享一次二进制构建。
 
 ## 任务
 
@@ -95,21 +95,23 @@
 | T070 | 已完成 | 调研受沙箱宿主的记忆写入通道并产出方案：确认插件在沙箱外、bash 在工作区内；实机验证 DSH 的 MCP stdio 子进程可写 `~/memory`；比较四条路线并选定 `memctl mcp`；[方案文档](./09-mcp-memory-tools.md)、[归档记录](./validation/stage-f.md#t070受沙箱宿主的记忆写入通道方案) |
 | T071 | 已完成 | 实现 `memctl mcp` 子命令与 `memory_read`/`memory_write` 工具、协议处理与错误映射、帮助条目与 `M01`–`M12` 测试；[方案文档](./09-mcp-memory-tools.md#6-验收)、[归档记录](./validation/stage-f.md#t071实现-memctl-mcp-子命令) |
 | T072 | 已完成 | 实现 `install --status` 的 MCP 能力探测（`M09`）与 8 个宿主的注册命令输出；6 个有 `mcp add` 的宿主已逐个注册并确认连接，Codex 受限会话完成受管写入；[方案文档](./09-mcp-memory-tools.md#52-各宿主的注册命令)、[归档记录](./validation/stage-f.md#t072mcp-探测与宿主侧实测) |
-| T073 | 已完成 | 其余宿主的受限会话实测：pi、OpenCode、Command Code、Antigravity 完成 MCP 受管写入且 shell 受限；Grok 的 `workspace` profile 会阻断子进程，需 `read_write`；Claude Code 因代理未运行未实测；[方案文档](./09-mcp-memory-tools.md#62-真实验证边界)、[完成记录](#t073其余宿主的受限会话实测) |
+| T073 | 已完成 | 其余宿主的受限会话实测：pi、OpenCode、Command Code、Antigravity 完成 MCP 受管写入且 shell 受限；Grok 的 `workspace` profile 会阻断子进程，需 `read_write`；Claude Code 因代理未运行未实测；[方案文档](./09-mcp-memory-tools.md#62-真实验证边界)、[归档记录](./validation/stage-f.md#t073其余宿主的受限会话实测) |
+| T074 | 已完成 | 构建链路提速：集成测试共享单次二进制构建、CI 拆为 `verify` 与 `release` 两个作业、新增 `make release-dist`；同时修复 MCP 探测 3 秒超时在负载下误报的缺陷；[构建契约](./04-ui-and-cli-specification.md#6-单文件打包)、[完成记录](#t074构建链路提速) |
 
-任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
+任务 ID 不代表执行顺序。阶段 A–D 的全部交付任务（`A-1`–`A-6`、`B-1`–`B-3`、`C-1`–`C-3`、`D-1`–`D-2`）与 `T040`–`T051`、`T053`、`T054`、`T055` 均已完成；阶段 E 的 `E-1`–`E-4` 由 `T048` 交付，`E-5` 由 `T052` 完成；`T056` 为已完成的发布后能力补充；`T057` 为已完成的发布轮次；`T058` 为已完成的 Agent 帮助与 i18n 轮次；`T059` 为已完成的 `v0.4.0` 发布轮次；`T060` 为已完成的 pi 插件实现轮次；`T061` 为已完成的 `v0.5.0` 发布轮次；`T062` 完成 `F-5` 真实宿主验证；`T063` 为已完成的 `memctl-pi` npm 发布轮次；`T064` 为已完成的 `memctl-dsh` npm 与 `v0.5.1` Release 轮次；`T065` 删除 npm 占位版本；`T066` 完成文档一致性检查与整理；`T067` 复验 DSH 界面 npm 安装与 `desktop` 插件升级；`T068` 完成中文帮助的术语、排版与契约一致性优化；`T069` 为已完成的 `v0.5.2` 发布轮次；`T070` 完成受沙箱宿主写入通道的调研与方案；`T071` 实现 `memctl mcp` 子命令与记忆工具；`T072` 完成 `install --status` 的 MCP 探测与宿主侧注册实测；`T073` 完成其余宿主的受限会话写入实测；`T074` 完成构建链路提速。阶段 F 的 `F-1`–`F-5` 均已交付，`memctl-pi` 与 `memctl-dsh` 均已在 npm 发布 `0.5.1`。完成记录与验收证据按任务总表的链接指向 `docs/validation/` 或本文件的最近一轮记录。
 
 完整阶段顺序（[阶段 A](./05-validation-and-delivery.md#阶段-a-的实施顺序)、[阶段 B](./05-validation-and-delivery.md#阶段-b-的实施顺序)、[阶段 C](./05-validation-and-delivery.md#阶段-c-的实施顺序)、[阶段 D](./05-validation-and-delivery.md#阶段-d-的实施顺序)、[阶段 E](./05-validation-and-delivery.md#阶段-e-的实施顺序)）、交付边界、子任务切分点和验收映射的权威定义见 [交付顺序](./05-validation-and-delivery.md#1-交付顺序)，本表只维护执行状态。`A-2` 拆为 `T006`（初始化与读取）和 `T008`（格式解析），`A-5` 拆为 `T018`（后台同步派生与进程生命周期）和 `T019`（Hook 协议、会话身份与宿主性能实测），子任务之间范围不重叠。
 
-## T073：其余宿主的受限会话实测
+## T074：构建链路提速
 
-- 目标与范围：在隔离环境中完成 pi、OpenCode、Command Code、Grok、Claude Code、Antigravity 的受限会话写入实测，补齐 `M08` 的宿主覆盖；复核 `docs/09` 的注册命令与沙箱结论；不修改宿主配置以外的产品行为。
-- 契约：[MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)、[CLI 命令](./04-ui-and-cli-specification.md#1-cli-命令)。
-- 验证日期与环境：2026-10-18，macOS arm64，pi 1.3.0，OpenCode 2.0.26，Command Code 1.84.0，Grok 1.0.60，Claude Code 2.1.220，Antigravity 1.4.2；每个宿主使用独立隔离 `HOME`、独立 `AGENT_MEMORY_STATE` 与一次性记忆仓库，探针仓库与真实 `~/memory` 无关；Antigravity 例外，其凭据在系统钥匙串，改用真实登录态与临时配置条目，见下。
-- 命令与结果：pi `--exposure direct` 后 `memory_read` 与 `memory_write` 可用，提交 `9bacc1b`；OpenCode 配置 `permission.bash = "deny"` 后 MCP 写入仍成功，提交 `18307b3`，模型明确报告无 bash 工具；Command Code print 模式默认拒绝 shell，MCP 写入成功，提交 `4bd9b7a`；Grok `--sandbox workspace` 下 MCP 子进程与 shell 均被拒绝，改用 `devbox` 或自定义 profile 的 `read_write` 后写入成功，提交 `7072167`、`3e2ecc`；Antigravity 在 `--sandbox` 下 shell 被拒绝（`Operation not permitted`）、MCP 写入成功（提交 `eb15947`），凭据在系统钥匙串，探针临时修改真实 `mcp_config.json` 并加 `env` 指向探针仓库，测完按 SHA-256 恢复。Claude Code 的 `ANTHROPIC_BASE_URL` 指向 `127.0.0.1:15721`，该代理未运行，未实测。
-- 验收：`M08` 的宿主覆盖扩展到 Codex、pi、OpenCode、Command Code、Antigravity 与 Grok（Grok 在显式授权下）；`M05` 在六个宿主通道复验。`docs/09` 的 1、3、4.3、5.2、6.2 与 `install --status` 的注册命令已同步；`go test ./internal/cli ./tests/integration -run 'TestPrintMCPStatus|TestM09' -count=1` 通过。
-- 未验证与遗留：Claude Code 的写入路径；Grok 的自定义 profile 只验证 `read_write`，未覆盖 `restrict_network`、`deny` 等字段；Antigravity 的探针依赖真实登录态与真实配置文件，未在完全隔离的环境复现。
-- 下一步：如 `127.0.0.1:15721` 代理可用，按同一流程补 Claude Code。其余未验证项见[当前事实](#当前事实)。
+- 目标与范围：缩短 CI 与 `make release` 的耗时，不改产品行为与发布产物内容；覆盖集成测试的重复构建、流水线的作业划分与本地发布入口。附带修复 `T072` 引入的 MCP 探测超时缺陷。
+- 契约：[单文件打包与 CI](./04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](./05-validation-and-delivery.md#4-发布前检查)、[MCP 探测](./09-mcp-memory-tools.md#53-探测)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1，8 核。
+- 命令与结果：先测基线，`go test ./tests/integration -count=1` 为 297 秒，CI 运行 [39093963934](https://github.com/gray0128/memctl/actions/runs/39093963934) 的 `make release` 步为 3:45，其中集成测试 198.7 秒。定位到 55 处 `buildMemctlBinary` 各自 `go build` 一次（缓存命中每次约 0.6 秒），改为进程级 `sync.Once` 共享构建后，集成测试降至 210 秒；`R03` 因需要指定版本号保留独立构建，`newC3Harness` 与 `T048` 复用共享二进制。CI 拆为 `verify`（`make test`）与 `release`（`needs: verify`，`make release-dist`）两个作业，`main` 推送的并发组改为取消旧运行、标签保持不取消。`make release-dist` 实测 13 秒产出与 `make release` 相同的九个文件，`SHA256SUMS` 六项全部 `OK`，`dist/memctl-darwin-arm64 version` 输出 `memctl v0.5.2-test2`。`gofmt -l`、`go vet ./...` 无输出；`go test ./... -count=1` 全量通过（3 分 57 秒）。
+- 缺陷修复：全量并行跑测试时 `TestPrintMCPStatusServingBinary` 与 `TestProbeReadsToolsList` 稳定失败于 `signal: killed`。原因是探测预算 3 秒在并行编译争用 CPU 时不够，正常二进制会被误报为 `mcp: unavailable`。将 `ProbeTimeout` 提高到 10 秒并在 `docs/09` 5.3 写明理由；修复后在 `go test ./internal/... ./plugins/...` 三轮并行压力下均通过。
+- 验收：集成测试单进程只构建一次；CI 作业拆分后测试只运行一次；`make release` 的本地语义不变。发布产物集合、校验和与 `RELEASE-INFO.txt` 内容未变。
+- 未验证与遗留：新工作流尚未在 GitHub Actions 实际运行，收益以本地测量推算；集成测试仍串行，Go 1.27 无 `-shard`，分片需要自建按名分配机制，未在本轮实现；`b1_server_test.go` 的固定端口与 `a4_credentials_test.go` 的 `t.Setenv` 使 `t.Parallel()` 暂不可用。
+- 下一步：观察下一次 `main` 推送与标签发布的实际耗时；如需继续压缩，按测试名分片或先消除固定端口与进程级环境依赖。
 
 ## 近期待办与下一步
 
@@ -117,4 +119,5 @@
 - 宿主侧写入已覆盖 Codex、pi、OpenCode、Command Code 与 Grok；Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：为 memctl 设计配套 Skill；独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
+- 构建提速的后续项：集成测试分片（Go 1.27 无 `-shard`，需自建按名分配）、消除 `b1_server_test.go` 的固定端口与 `a4_credentials_test.go` 的进程级环境依赖以便 `t.Parallel()`。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

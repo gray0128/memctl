@@ -29,27 +29,6 @@ type cliResult struct {
 	stderr string
 }
 
-func buildMemctlBinary(t *testing.T) string {
-	t.Helper()
-	binName := "memctl"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	binPath := filepath.Join(t.TempDir(), binName)
-
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-	build := exec.Command("go", "build", "-trimpath", "-o", binPath, "./cmd/memctl")
-	build.Dir = repoRoot
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s", err, string(out))
-	}
-	return binPath
-}
-
 // a2Env builds an isolated child environment. When withIdentity is false no
 // author or committer identity is available and no global Git config exists.
 func a2Env(home, repo string, withIdentity bool) []string {

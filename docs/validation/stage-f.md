@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T072`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T073`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -133,3 +133,13 @@
 - 验收：`M09` 通过；`M08` 由 DSH 与 Codex 两个宿主覆盖；`M05` 在 Codex 通道复验。`docs/09` 的 5.2、5.3、6.2、7 与 `04`、`README` 已同步。
 - 未验证与遗留：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认注册与连接，未在受限会话中完成模型驱动的受管写入；`desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`，DSH 侧仍按手工插入条目接入；Codex 的 `approval_policy = "never"` 会让 MCP 调用失败，属宿主行为，需要用户侧配置。
 - 下一步：如需覆盖其余宿主的受限会话写入，按 `docs/09` 6.2 的相同步骤逐个实测；其余未验证项见 [STATUS](../STATUS.md#当前事实)。
+
+## T073：其余宿主的受限会话实测
+
+- 目标与范围：在隔离环境中完成 pi、OpenCode、Command Code、Grok、Claude Code、Antigravity 的受限会话写入实测，补齐 `M08` 的宿主覆盖；复核 `docs/09` 的注册命令与沙箱结论；不修改宿主配置以外的产品行为。
+- 契约：[MCP 记忆工具](../09-mcp-memory-tools.md#62-真实验证边界)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)。
+- 验证日期与环境：2026-10-18，macOS arm64，pi 1.3.0，OpenCode 2.0.26，Command Code 1.84.0，Grok 1.0.60，Claude Code 2.1.220，Antigravity 1.4.2；每个宿主使用独立隔离 `HOME`、独立 `AGENT_MEMORY_STATE` 与一次性记忆仓库，探针仓库与真实 `~/memory` 无关；Antigravity 例外，其凭据在系统钥匙串，改用真实登录态与临时配置条目，见下。
+- 命令与结果：pi `--exposure direct` 后 `memory_read` 与 `memory_write` 可用，提交 `9bacc1b`；OpenCode 配置 `permission.bash = "deny"` 后 MCP 写入仍成功，提交 `18307b3`，模型明确报告无 bash 工具；Command Code print 模式默认拒绝 shell，MCP 写入成功，提交 `4bd9b7a`；Grok `--sandbox workspace` 下 MCP 子进程与 shell 均被拒绝，改用 `devbox` 或自定义 profile 的 `read_write` 后写入成功，提交 `7072167`、`3e2ecc`；Antigravity 在 `--sandbox` 下 shell 被拒绝（`Operation not permitted`）、MCP 写入成功（提交 `eb15947`），凭据在系统钥匙串，探针临时修改真实 `mcp_config.json` 并加 `env` 指向探针仓库，测完按 SHA-256 恢复。Claude Code 的 `ANTHROPIC_BASE_URL` 指向 `127.0.0.1:15721`，该代理未运行，未实测。
+- 验收：`M08` 的宿主覆盖扩展到 Codex、pi、OpenCode、Command Code、Antigravity 与 Grok（Grok 在显式授权下）；`M05` 在六个宿主通道复验。`docs/09` 的 1、3、4.3、5.2、6.2 与 `install --status` 的注册命令已同步；`go test ./internal/cli ./tests/integration -run 'TestPrintMCPStatus|TestM09' -count=1` 通过。
+- 未验证与遗留：Claude Code 的写入路径；Grok 的自定义 profile 只验证 `read_write`，未覆盖 `restrict_network`、`deny` 等字段；Antigravity 的探针依赖真实登录态与真实配置文件，未在完全隔离的环境复现。
+- 下一步：如 `127.0.0.1:15721` 代理可用，按同一流程补 Claude Code。其余未验证项见 [STATUS](../STATUS.md#当前事实)。

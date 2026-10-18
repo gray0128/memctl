@@ -2,7 +2,7 @@ GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v2.0.0-dev")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build test install clean release dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
+.PHONY: all ui build test install clean release release-dist dsh-plugin-test dsh-plugin-pack pi-plugin-test pi-plugin-pack
 all: build
 
 # The frontend is embedded by web/embed.go, so it must be built before any Go
@@ -43,6 +43,12 @@ install: build
 # test prerequisite keeps cross-compilation from being mistaken for a runtime
 # acceptance run; see docs/04-ui-and-cli-specification.md section 6.
 release: test
+	VERSION="$(VERSION)" scripts/release.sh
+
+# Builds the same candidates as `release` without running the test suite. CI
+# uses it in a job that depends on a separate verify job, so the tests still
+# gate every artifact. Do not use it for a local release.
+release-dist: ui
 	VERSION="$(VERSION)" scripts/release.sh
 
 clean:

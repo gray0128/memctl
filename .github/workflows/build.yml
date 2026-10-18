@@ -1,8 +1,10 @@
 # Builds the cross-platform release candidates and publishes a GitHub release
-# for version tags. The build step calls the same entry point as local release
-# runs (make release -> scripts/release.sh), so the CI artifacts and the local
-# candidates come from one code path. See docs/04-ui-and-cli-specification.md
-# section 6 and docs/05-validation-and-delivery.md section 4.
+# for version tags. Both jobs call the same entry points as a local release run
+# (make test and scripts/release.sh, which `make release` combines), so the CI
+# artifacts and the local candidates come from one code path. Splitting verify
+# from release keeps the test suite from running twice and lets the two run as
+# separate jobs. See docs/04-ui-and-cli-specification.md section 6 and
+# docs/05-validation-and-delivery.md section 4.
 
 name: build
 
@@ -16,17 +18,43 @@ on:
 permissions:
   contents: write
 
+# A newer push on main cancels a queued older run; a tag run is never
+# cancelled, because a half-finished release is worse than a slow one.
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.10.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Run tests
+        run: make test
+
   release:
+    needs: verify
     # The release helper records the build host in RELEASE-INFO.txt as the only
     # runtime-verified target. macOS covers the platform the test suite is
     # validated on; the other three targets are cross-compiled from here.
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -47,8 +75,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # The test suite ran in the verify job; this step only builds and packs.
       - name: Build release candidates
-        run: make release
+        run: make release-dist
 
       - name: Upload release candidates
         uses: actions/upload-artifact@v7

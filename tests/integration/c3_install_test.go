@@ -30,20 +30,9 @@ func newC3Harness(t *testing.T) *c3Harness {
 		t.Skip("the synthetic host executable uses a POSIX shell")
 	}
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "memctl")
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-	build := exec.Command("go", "build", "-trimpath", "-o", binPath, "./cmd/memctl")
-	build.Dir = repoRoot
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s", err, out)
-	}
 	return &c3Harness{
 		t:        t,
-		binPath:  binPath,
+		binPath:  buildMemctlBinary(t),
 		home:     filepath.Join(tmpDir, "home"),
 		stateDir: filepath.Join(tmpDir, "state"),
 		binDir:   filepath.Join(tmpDir, "bin"),

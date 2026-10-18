@@ -10,8 +10,11 @@ import (
 	"time"
 )
 
-// ProbeTimeout bounds one capability probe of a memctl binary.
-const ProbeTimeout = 3 * time.Second
+// ProbeTimeout bounds one capability probe of a memctl binary. The probe is a
+// single-process round trip that normally finishes in milliseconds, but it runs
+// on a machine that may be busy compiling, so the budget is generous enough not
+// to misreport a slow-but-working binary as unavailable.
+const ProbeTimeout = 10 * time.Second
 
 // ProbeResult describes what one memctl binary reports over the MCP channel.
 type ProbeResult struct {

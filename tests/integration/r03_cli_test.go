@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,23 +19,9 @@ import (
 // return placeholder success.
 func TestR03BuildAndCLIEntry(t *testing.T) {
 	tmpDir := t.TempDir()
-	binName := "memctl"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	binPath := filepath.Join(tmpDir, binName)
-
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-
-	buildCmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w -X main.version=v2.0.0-r03test", "-o", binPath, "./cmd/memctl")
-	buildCmd.Dir = repoRoot
-	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s", err, string(out))
-	}
+	// R03 asserts on a known version string, so it uses a dedicated build
+	// instead of the shared one.
+	binPath := buildMemctlBinaryWithVersion(t, "v2.0.0-r03test")
 
 	isolatedHome := filepath.Join(tmpDir, "nonexistent-home")
 	isolatedMem := filepath.Join(tmpDir, "nonexistent-memory")

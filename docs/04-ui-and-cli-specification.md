@@ -290,7 +290,7 @@ var files embed.FS
 
 兼容读取 `$STATE/INSTRUCTIONS.md` 作为用户显式创建的附加指引，不覆盖内嵌安全规则、不自动执行其中命令，输出时标明来源。升级不改写该文件；不存在时全部功能仍可运行。
 
-以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试（含两个插件的 Node 测试）再由 `scripts/release.sh` 交叉编译四个候选二进制、打包两个插件 tarball 并生成发布元数据。Windows 运行支持仍需对应平台测试。
+以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试（含两个插件的 Node 测试）再由 `scripts/release.sh` 交叉编译四个候选二进制、打包两个插件 tarball 并生成发布元数据。`make release-dist` 只构建与打包、不跑测试，仅供「测试已由前置作业保证」的流水线使用，不用于本地发布。Windows 运行支持仍需对应平台测试。
 
 ```makefile
 GO ?= go
@@ -334,12 +334,22 @@ install: build
 release: test
 	VERSION="$(VERSION)" scripts/release.sh
 
+release-dist: ui
+	VERSION="$(VERSION)" scripts/release.sh
+
 clean:
 	rm -rf bin dist coverage web/dist
 ```
 
 `make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 两个插件包和三个元数据文件：`SHA256SUMS`（四个候选二进制与两个插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
-GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，在 `macos-latest` 上构建四个候选二进制和两个插件包并上传 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制、两个插件包与三个元数据文件。工作流不改变发布内容，`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
+GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分两个作业，二者共用 `scripts/release.sh` 这一入口：
+
+- `verify`：在 `main` 推送、拉取请求、标签推送与手动触发时运行 `make test`（前端构建与测试、两个插件的 Node 测试、Go 全量测试）。
+- `release`：依赖 `verify`，在 `macos-latest` 上运行 `make release-dist` 构建四个候选二进制与两个插件包，上传 `dist/`；仅在推送 `v*` 标签时创建 GitHub Release，附带四个候选二进制、两个插件包与三个元数据文件。
+
+`make release` 仍是本地完整发布入口，等于 `make test` 加 `scripts/release.sh`。拆分只影响流水线调度，不改变产物：`release-dist` 不重复运行测试，由同一工作流中前置的 `verify` 作业保证。`RELEASE-INFO.txt` 仍记录该次构建宿主的运行时验证状态。
+
+`main` 推送与标签推送使用不同的并发组：前者 `cancel-in-progress: true`，新提交取消排队中的旧运行；后者为 `false`，已开始的发布不被取消。
 
 运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。

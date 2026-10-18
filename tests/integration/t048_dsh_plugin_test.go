@@ -18,18 +18,8 @@ func TestT048DshPluginTarballInstall(t *testing.T) {
 	if err != nil {
 		t.Skip("dsh is not installed; the isolated profile install cannot run")
 	}
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "memctl")
-	build := exec.Command("go", "build", "-trimpath", "-o", binPath, "./cmd/memctl")
-	build.Dir = repoRoot
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s", err, out)
-	}
+	binPath := buildMemctlBinary(t)
 
 	home := filepath.Join(tmpDir, "home")
 	state := filepath.Join(tmpDir, "state")
