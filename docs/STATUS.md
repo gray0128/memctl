@@ -114,8 +114,8 @@
 - 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1。
 - 结构：`SKILL.md` 的 frontmatter 只有 `name` 与 `description`，name 为 `memctl`；正文按「确认环境 → 判断读写 → 受管写入 → 同步与冲突 → MCP 降级 → 边界」组织，每步给出完成标准；`references/memory-conventions.md` 与 `references/recovery.md` 由入口按需链接。
 - 事实核对：Skill 中的 `read`、`write`、`sync`、`resolve`、`recover`、`mcp`、`install` 命令与参数逐一对照当前提交构建的 `help --json`；错误码取自 `internal/memerr` 并对照 `02` 4.3；冲突解决 JSON 字段对照 `app.ConflictView` 的 `baseRevision`、`conflictId` 与 `files`。
-- 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
-- 未验证与遗留：未在真实宿主加载该 Skill（本机 `skills` CLI 不在 PATH，按本轮选择不写入 `~/.agents/skills`）；未验证触发词在实际会话中的命中率。
+- 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；已软链接到 `~/.agents/skills/memctl`，宿主技能目录识别出 `memctl`，并通过 `skill` 工具成功加载；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
+- 未验证与遗留：真实任务中的自动触发与执行未验证；本机 `skills` CLI 不在 PATH，未写入 `~/.agents/.skill-lock.json`，该软链接由手工创建。
 - 下一步：需要时分发到宿主 skills 目录，并用真实会话验证触发与执行。
 
 ## 近期待办与下一步
@@ -125,6 +125,6 @@
 - 宿主侧写入已覆盖 DSH、Codex、pi、OpenCode、Command Code 与 Antigravity；Grok 需显式 `read_write`，Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。
-- 配套 Skill 已随仓库提供于 `skills/memctl/`，尚未安装到本机 skills 目录，也未做真实会话的触发与执行验证。
+- 配套 Skill 已软链接到 `~/.agents/skills/memctl`，宿主技能目录可识别并加载；真实任务中的自动触发与执行尚未验证。
 - 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
