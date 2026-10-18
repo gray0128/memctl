@@ -1,6 +1,6 @@
 # 阶段 F 归档：pi 专用插件
 
-本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T074`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
+本文件归档阶段 F（pi 专用插件）及后续发布后轮次的完成记录，含 `T060`–`T075`。阶段步骤与验收映射见 [验收与交付](../05-validation-and-delivery.md#阶段-f-的实施顺序)，当前进度见 [开发状态](../STATUS.md)。
 
 ## T060：实现 pi 专用插件
 
@@ -157,3 +157,16 @@
 - 真实 CI 复测：运行 [39101067492](https://github.com/gray0128/memctl/actions/runs/39101067492) 总时长 **2:28**，较基线的 4:49 减少 49%。四个分片作业耗时 1:27–2:18，其中 `Run tests` 步 48–79 秒；`build` 作业与测试并行，49 秒完成。最长分片 1 为 2:18，是当前关键路径，其 `Run tests` 为 1:19，比预期高，因为该分片额外承担前端与插件 Node 测试。
 - 未验证与遗留：清单在新增或重命名测试后需要人工重新生成，`scripts/test-shard.sh` 只在清单缺项时报错，不能发现清单里残留已删除的测试名；`t.Parallel()` 仍不可用，因为 `a4_credentials_test.go` 等使用 `t.Setenv` 改动进程级环境。
 - 下一步：观察下一次 `main` 推送与标签发布的实际耗时，据此调整分片数；如需继续压缩，先消除进程级环境依赖以便包内并行。
+
+## T075：发布 v0.6.0
+
+- 目标与范围：把 `T070`–`T074` 的 MCP 记忆工具通道、`install --status` 的 MCP 探测、宿主侧实测与构建链路提速作为 `v0.6.0` 发布；插件源码自 `v0.5.1` 起未改动，本轮只发 GitHub Release，不发布 npm。
+- 契约：[单文件打包与 CI](../04-ui-and-cli-specification.md#6-单文件打包)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1；tag `v0.6.0` 指向 `184c521`。
+- 命令与结果：`go test ./... -count=1` 全量通过，`gofmt -l` 与 `go vet ./...` 无输出；`scripts/test-shard.sh 1 4` 通过，分片清单与 `go test -list` 的 118 个测试名逐行一致。`make release VERSION=v0.6.0` 通过（前端构建、插件 Node 测试、Go 全量测试），生成四个平台候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz` 与三个元数据文件；`dist/SHA256SUMS` 六项全部 `OK`；`dist/memctl-darwin-arm64 version` 输出 `memctl v0.6.0`，`mcp --help` 退出 `0`，`install --status` 输出 `mcp: serving memory_read, memory_write (v0.6.0)`，`help --json` 为 `schemaVersion` 1、22 个命令。
+- 版本决策：本轮新增 `memctl mcp` 子命令，按语义化版本升次版本号到 `v0.6.0`。插件包按 [dsh 专用插件](../07-dsh-plugin.md#13-实现状态) 的约定应与主次版本对齐，但插件源码自 `v0.5.1` 起未改动，且本轮不发布 npm；若把插件升到 `0.6.0`，`install --status` 的 `pi install npm:memctl-pi@<version>` 提示会指向不存在的 npm 版本。因此插件保持 `0.5.1`，这一偏离按契约「具体发布版本以发布轮次为准」处理并在此记录。
+- CI 首次失败与修复：首次推送 tag 的运行 [39102651049](https://github.com/gray0128/memctl/actions/runs/39102651049) 中 `verify` 四个分片与 `build` 全部成功，仅 `publish` 失败于 `fatal: not a git repository`。原因是该作业只下载产物、没有检出仓库，而 `gh release create --generate-notes` 需要与上一个标签比较。补 `actions/checkout` 后删除并重建 tag，运行 [39102971477](https://github.com/gray0128/memctl/actions/runs/39102971477) 全部成功并创建 [Release v0.6.0](https://github.com/gray0128/memctl/releases/tag/v0.6.0)，总时长 4:54。
+- 远端复验：用 `gh release download` 重新下载九个附件，`SHA256SUMS` 六项全部 `OK`；下载的 `memctl-darwin-arm64` 输出 `memctl v0.6.0`，`install --status` 输出 `mcp: serving memory_read, memory_write (v0.6.0)`，`RELEASE-INFO.txt` 的 commit 与 tag 指向的 `184c521` 一致。本机 `~/.agent-memory/bin/memctl` 已替换为 Release 二进制，`update --check` 返回 `up to date`。
+- 验收：四个候选二进制、两个插件 tarball、`SHA256SUMS` 与 `RELEASE-INFO.txt` 通过；Release 由 CI 的 `verify` 分片与 `build` 作业共同把关，`publish` 在两者成功后创建。`T075` 完成。
+- 未验证与遗留：macOS amd64、Linux 与 Windows 仅交叉编译；npm 未发布，`latest` 仍为 `0.5.1`；插件版本与二进制主次版本不一致，如需对齐需单独走插件版本与 npm 发布轮次。
+- 下一步：如需让插件跟随二进制版本，单独走一次插件版本与 npm 发布轮次；其余未验证项见 [STATUS](../STATUS.md#当前事实)。

@@ -349,13 +349,24 @@ clean:
 
 `make release` 在 `dist/` 产出 `memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe` 四个候选二进制，以及 `memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 两个插件包和三个元数据文件：`SHA256SUMS`（四个候选二进制与两个插件包的 SHA-256）、`THIRD_PARTY_LICENSES.txt`（Go 运行时模块与前端运行时依赖的许可证全文，构建期前端依赖只列 SPDX 标识）与 `RELEASE-INFO.txt`（版本、提交、Go/Node/npm/Git 版本与逐平台验证状态）。同一宿主上的重复构建在相同工具链下产出相同二进制。`bin/` 与 `dist/` 都不提交。
 
+### 6.1 发布入口
+
+发布唯一入口是推送 `v*` 标签。Release 的附件只能由流水线产生，不从本地 `dist/` 上传。原因有两条，都与产物可信度有关：
+
+- **构建环境**：流水线从干净检出开始，不依赖本机残留的 `web/node_modules`、`dist/` 或 Go 缓存。本地构建混入的任何残留都不会出现在 Release 中，因此本地构建不能作为发布产物的证据。
+- **元数据语义**：`RELEASE-INFO.txt` 记录的构建宿主与运行时验证状态描述的是实际产出该文件的环境。本地 `make release` 生成的文件描述开发者机器，与 Release 附件的真实来源不符。
+
+`make release` 的定位是离线或调试时验证构建链路，以及在没有网络的机器上产出候选包；它不是发布步骤，重复执行只会得到一份会被流水线覆盖的产物。发布前在本地应运行 `make test` 验证代码，而不是 `make release` 构建产物。
+
+发布轮次的操作顺序：更新版本与台账 → 推送 `main` → 创建并推送 `v*` 标签 → 等待流水线的 `publish` 作业创建 Release → 把附件下载到独立目录（不与本地 `dist/` 混用）并按 `SHA256SUMS` 校验 → 升级本机二进制。本地构建产物不参与其中的校验步骤。
+
 GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分三个作业：
 
 - `verify`：矩阵作业，四个分片并行。每个分片运行全部单元包与该分片分到的集成测试；前端与两个插件的 Node 测试只在分片 1 运行一次。
 - `build`：与 `verify` 并行，不等待测试，运行 `make release-dist` 构建四个候选二进制与两个插件包并上传 `dist/`。
 - `publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，检出仓库历史、下载构建产物后创建 GitHub Release。检出是必需的：`--generate-notes` 要与上一个标签比较生成变更说明，缺少 `.git` 会以 `fatal: not a git repository` 失败。测试失败时该作业不会运行，因此不产出 Release。
 
-`make release` 仍是本地完整发布入口，等于 `make test` 加 `scripts/release.sh`。`make test` 保持全量语义：它一次跑完所有单元包与全部集成测试，是本地发布的测试门槛。分片只是 CI 的调度手段，两者覆盖同一批测试，靠 `scripts/test-shards.txt` 保证。
+`make release` 等于 `make test` 加 `scripts/release.sh`，用于本地验证构建链路；发布入口见 6.1。`make test` 保持全量语义：它一次跑完所有单元包与全部集成测试。分片只是 CI 的调度手段，两者覆盖同一批测试，靠 `scripts/test-shards.txt` 保证。
 
 集成测试分片由两个脚本承担：
 

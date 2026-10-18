@@ -161,24 +161,24 @@ make test
 
 `version` 与 `help` 不访问仓库，不要求 Git 或 Node.js。`make test` 同时运行前端测试、`plugins/dsh/test/` 与 `plugins/pi/test/` 的 Node 单元测试以及 Go 测试。
 
-发布候选包用 `make release` 生成：先跑全量测试与前端构建，再交叉编译四个平台并打包插件 tarball。
+发布唯一入口是推送 `v*` 标签，Release 附件只由流水线产生，不从本地 `dist/` 上传。原因是构建环境与元数据语义：流水线从干净检出开始，`RELEASE-INFO.txt` 记录的构建宿主与验证状态描述的是实际产出该文件的环境。
 
 ```bash
-make release
-ls dist/                 # 四个候选二进制、memctl-dsh-*.tgz、memctl-pi-*.tgz、SHA256SUMS、THIRD_PARTY_LICENSES.txt、RELEASE-INFO.txt
-(cd dist && shasum -a 256 -c SHA256SUMS)
-```
-
-`dist/` 与 `bin/` 不提交。发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。
-
-GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）在 `main` 推送、拉取请求、`v*` 标签推送与手动触发时调用同一 `make release` 入口，构建四个候选二进制与插件包并保留 `dist/` 构建产物；推送 `v*` 标签时创建 GitHub Release，并附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与 `SHA256SUMS`、`THIRD_PARTY_LICENSES.txt`、`RELEASE-INFO.txt`。`memctl-pi` 的 tarball 只用于 npm 发布和审计，不作为 `pi install` 的输入。
-
-```bash
-git tag <version>
+git tag -a <version> -m "<说明>"
 git push origin <version>
+gh release view <version>            # 等待 publish 作业创建 Release
+
+# 下载到独立目录校验，避免与本地 make release 的产物混在一起
+mkdir -p /tmp/release-check && cd /tmp/release-check
+gh release download <version>
+shasum -a 256 -c SHA256SUMS
 ```
 
-工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
+本地 `make release` 只用于离线或调试时验证构建链路，产物会被流水线覆盖，不构成发布步骤。发布前在本地应运行 `make test` 验证代码。发布入口与理由的权威定义见 [发布入口](./docs/04-ui-and-cli-specification.md#61-发布入口)。
+
+GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）分三个作业：`verify` 四个分片并行跑测试，`build` 与测试并行运行 `make release-dist` 产出候选包，`publish` 在两者成功后创建 Release。工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
+
+发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。`memctl-pi` 的 tarball 只用于 npm 发布和审计，不作为 `pi install` 的输入。`dist/` 与 `bin/` 不提交。
 
 ## 上游与参考
 
