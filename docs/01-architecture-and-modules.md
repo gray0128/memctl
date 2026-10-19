@@ -140,6 +140,7 @@ memctl/
     07-dsh-plugin.md         # dsh 专用插件
     08-pi-plugin.md          # pi 专用插件
     09-mcp-memory-tools.md   # 受沙箱宿主的 MCP 写入通道
+    10-memory-lifecycle.md   # 记忆更新、过期与时间线规则
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配

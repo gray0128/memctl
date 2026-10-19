@@ -203,3 +203,27 @@
 - 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；已用 `skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y` 在线安装到 `~/.agents/skills/memctl`，`~/.agents/.skill-lock.json` 记录来源 `gray0128/memctl`，`skills list -g --json` 可见，宿主技能目录识别出 `memctl` 并通过 `skill` 工具加载；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
 - 未验证与遗留：真实任务中的自动触发与执行未验证。
 - 下一步：需要时分发到宿主 skills 目录，并用真实会话验证触发与执行。
+
+## T079：DSH 的 MCP 通道生效
+
+- 目标与范围：在本机 `desktop` profile 注册 `memctl` 的 MCP server，确认 DSH 的 MCP 通道可用；更正 `09` 5.2 与 `T072` 中把「profile 未安装 `@deepseek-ai/dsh-mcp-client`」当作阻塞原因的错误前提。不改变产品代码与协议契约。
+- 契约：[MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)。
+- 验证日期与环境：2026-10-19，macOS arm64，DSH 0.2.1-rc.2，`memctl v0.6.0`。
+- 排查与结果：`install --status` 的 `mcp:` 块正常，`dsh:` 块只有手工编辑提示；`desktop` profile 的 `cordis.patch.yml` 无 mcp 条目，`package.json` 的 bundles 与 `node_modules` 也没有 mcp-client，这与「无需安装」并不矛盾——该包与其他内核包一起放在应用包的 `dsh/node_modules/@deepseek-ai/dsh-mcp-client`。用空依赖的隔离 profile 加一条 `insert:` patch 启动 `dsh`，探针记录到两次 `mcp --agent dsh` 派生（连接探测与正式连接），证明包可加载、缺的只是配置条目。补丁写法只有 `insert:` 有效：不带 `insert` 的顶层 `- id:` 记录分别报 `patch: entry "<id>" not found` 与 `id is required for non-insert patches`。
+- 配置改动：`~/.dsh/profiles/desktop/cordis.patch.yml` 追加一条 `insert:`，`id` 为 `mcp-memctl`、`serverName` 为 `memctl`、`transport` 为 `stdio`、`command` 为 `/Users/libo/.agent-memory/bin/memctl`、`args` 为 `["mcp","--agent","dsh"]`；改动前已备份原文件。
+- 验收：`dsh --profile <隔离 profile> --patch <真实补丁文件> --dump-config` 能合成出 `mcp-memctl` 条目，其余 4 条 id 定向补丁因目标不存在而被跳过，符合预期；保存后 13 秒内宿主派生 `memctl mcp --agent dsh`（PID 7710，父进程为 DSH 主进程 `61792`），无需重启应用；本轮已通过该通道调用 `memory_read`，返回的 `fileRevision` 与 CLI `read --json` 一致。
+- 文档更正：`09` 5.2 的 DSH 行改为「该包随 DSH 应用分发，profile 无需安装」，并新增配置片段、`insert:` 必需性、免重启生效与工具名说明；`T072` 记录以「更正」条目保留原文并指向现行结论。
+- 未验证与遗留：只在 macOS arm64 的 DSH 0.2.1-rc.2 验证；其他平台与其他 DSH 版本的路径与热加载行为未复验。
+- 下一步：其他 DSH 用户按 `09` 5.2 手工插入同一条目；如需让 memctl 自动写入该条目，需要另行设计并扩大 `install` 的边界。
+
+## T080：记忆更新与过期策略调研
+
+- 目标与范围：调研其他 Agent 记忆项目如何处理记忆更新与过期，回答「过期记忆应删除还是保留完整时间线」，并把结论固化为规则文档 [10. 记忆更新与过期](../10-memory-lifecycle.md)。本轮只做调研与文档，不实现过滤、过期或删除能力。
+- 契约：[10. 记忆更新与过期](../10-memory-lifecycle.md)、[DOMAIN 格式保真](../02-domain-models-and-contracts.md#12-格式保真)、[Dreaming 提案](../03-workflows-and-dataflows.md#6-dreaming-提案)、[受管写入与条目删除](../02-domain-models-and-contracts.md#42-路由)。
+- 验证日期与环境：2026-10-19，macOS arm64；调研通过官方文档与仓库源码直取，未依赖二手转述。
+- 调研来源：Mem0 的 [how-it-works](https://docs.mem0.ai/core-concepts/how-it-works)、[memory expiration](https://docs.mem0.ai/platform/features/memory-expiration)、[history API](https://docs.mem0.ai/api-reference/memory/history-memory) 与 [v2→v3 迁移说明](https://docs.mem0.ai/migration/oss-v2-to-v3)；Zep 的 [facts](https://help.getzep.com/v4/facts)、[how graph creation works](https://help.getzep.com/v4/how-graph-creation-works)、[context retention](https://help.getzep.com/v4/context-retention)、[observations](https://help.getzep.com/v4/observations)；Letta 的 [memory blocks](https://docs.letta.com/guides/agents/memory-blocks) 与 [MemFS](https://docs.letta.com/concepts/memfs)；[LangMem 概念指南](https://langchain-ai.github.io/langmem/concepts/conceptual_guide/)；[Anthropic memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)；[Cognee forget](https://docs.cognee.ai/core-concepts/main-operations/forget)；arXiv 论文 [Mem0](https://arxiv.org/abs/2504.19413)、[Zep](https://arxiv.org/abs/2501.13956)、[MemGPT](https://arxiv.org/abs/2310.08560)、[MemoryBank](https://arxiv.org/abs/2305.10250)、[A-MEM](https://arxiv.org/abs/2502.12110)、[Generative Agents](https://arxiv.org/abs/2304.03442)。
+- 结论：默认删除过期记忆，但删除只作用于注入与检索可见的当前内容，历史由 Git 提交保存；不默认保留完整时间线。记忆按状态型、事件型、有时效型三档处理，状态型就地改写、事件型追加保留、有时效型带 `until` 元数据到期隐藏。Zep 的失效而非删除与 Mem0 的 ADD-only 收敛是两条关键对照：前者说明矛盾事实不能并存，后者说明让模型自动判删不可靠。
+- 代码核对：`internal/app/session.go` 的 `buildSessionBody` 注入 `MEMORY.md` 全文，无过滤点；`internal/vault/parse.go` 以 `MetadataField.Raw` 保留开放元数据，未读取 `until`；`internal/app/entries.go` 的 `DeleteEntry` 已提供条目级删除；`internal/dream` 的 `ChangeDelete` 已进入提案 Diff 与固定 Diff 展示。文档 §4 按此登记现状。
+- 验收：新增 `docs/10-memory-lifecycle.md`，`docs/README.md` 第 10 行导航、`docs/01` 第 5 节目录树已登记；`docs/STATUS.md` 的能力段改为「01–10」并新增 `T080` 行。全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
+- 未验证与遗留：文档中的过滤与过期规则尚未实现，`until` 过滤点（注入阶段或 `read` 阶段）、隐藏期长度与事件型记忆目录归属三项未决，记录在 §7。
+- 下一步：确认 §7 的三个未决问题后再拆实现任务，并补充 §6 列出的验收场景编号。
