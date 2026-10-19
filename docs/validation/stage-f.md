@@ -227,3 +227,13 @@
 - 验收：新增 `docs/10-memory-lifecycle.md`，`docs/README.md` 第 10 行导航、`docs/01` 第 5 节目录树已登记；`docs/STATUS.md` 的能力段改为「01–10」并新增 `T080` 行。全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
 - 未验证与遗留：文档中的过滤与过期规则尚未实现，`until` 过滤点（注入阶段或 `read` 阶段）、隐藏期长度与事件型记忆目录归属三项未决，记录在 §7。
 - 下一步：确认 §7 的三个未决问题后再拆实现任务，并补充 §6 列出的验收场景编号。
+## T081：注入条目失效的判定规则
+
+- 目标与范围：把 [10. 记忆更新与过期](../10-memory-lifecycle.md) 第 3 节的分类规则落到每轮注入的内嵌默认指引，并同步 Skill 约定；不改变命令、协议与提案机制。
+- 契约：[10. 记忆更新与过期](../10-memory-lifecycle.md#3-记忆分类与处理规则)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[Web UI 与内嵌指引注入](../04-ui-and-cli-specification.md#4-web-ui)。
+- 验证日期与环境：2026-10-19，macOS arm64，Go 1.27.1。
+- 改动：`internal/assets/INSTRUCTIONS.md` 的 Writing 段新增「After an entry stops being true」小节（状态型就地改写或删除、事件型追加并保留旧条目、不维护 changelog），并把原「Update or delete entries that became wrong」改为指向该小节的表述，避免两处规则冲突；`skills/memctl/SKILL.md` 第 2 节与 `skills/memctl/references/memory-conventions.md` 的条目格式段同步同一规则。
+- 契约同步：`04` 第 6 节在用户指引导段之后补一段，说明该小节的规则来源与注入路径，类型划分改指 `10`；`05` 的 `R01` 预期结果补入新规则的断言点；`10` 第 4 节把「写入时的类型判定」登记为已有内嵌指引与 Skill 约定、仍依赖模型执行，第 6 节补一条验收场景，第 7 节补一条未决问题（是否需要用 `doctor` 做确定性检查）。
+- 验证：`go test ./...` 全量通过；`go vet ./...` 无输出；`TestR01EmbeddedInstructionsFromEmptyHome` 增加对 `### After an entry stops being true`、`rewrite the entry in place` 与 `No change log in memory files` 的断言并单独重跑通过；`make build` 后执行 `./bin/memctl start --json`，实际注入正文含新小节；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
+- 未验证与遗留：新规则只约束模型行为，没有确定性检查；实际会话中是否遵守需要观察。指引篇幅从 2322 字节增加到 2913 字节，每轮注入的增量约 590 字节。
+- 下一步：观察真实写入是否符合三档规则；若出现「把决策条目当错误改写」的实例，再考虑用 `doctor` 诊断补充确定性提示。
