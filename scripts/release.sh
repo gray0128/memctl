@@ -145,10 +145,10 @@ fi
   printf '  build host:     %s\n' "$HOST_TARGET"
   printf '\n'
   printf 'notes:\n'
-  printf '  - embedded assets: default instructions, adapter templates, memctl-dsh and memctl-pi sources, and web/dist UI\n'
+  printf '  - embedded assets: default instructions, adapter templates, the Dreaming Actions workflow, memctl-dsh and memctl-pi sources, and web/dist UI\n'
   printf '  - plugin tarballs: memctl-dsh-%s.tgz, memctl-pi-%s.tgz (npm-compatible; no dependencies or install scripts)\n' "$PLUGIN_VERSION" "$PI_PLUGIN_VERSION"
   printf '  - pi install source: npm:memctl-pi@<version> or the directory from `memctl pi plugin-dir`; not a tarball\n'
-  printf '  - runtime dependency: system Git; Dreaming also needs a runner and a verified sandbox\n'
+  printf '  - runtime dependency: system Git; Dreaming additionally needs a confirmed private GitHub remote, the installed Actions workflow and a provider API key in the repository secrets\n'
   printf '  - no external CDN: UI assets are served from the binary\n'
 } > "$DIST/RELEASE-INFO.txt"
 printf 'wrote %s/RELEASE-INFO.txt\n' "$DIST"

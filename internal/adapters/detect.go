@@ -54,8 +54,11 @@ func DefaultEnv(stateDir string) Env {
 // hostVersionPattern extracts the first semver-like token from a version line.
 var hostVersionPattern = regexp.MustCompile(`[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[-+][0-9A-Za-z.\-]+)?`)
 
-// hostVersionTimeout bounds one host version probe.
-const hostVersionTimeout = 3 * time.Second
+// hostVersionTimeout bounds one host version probe. It must stay well above a
+// cold `--version` on a loaded machine: probing several hosts while the test
+// suite compiles in parallel can otherwise turn a healthy host into an
+// unparsable version and make an install report UNSUPPORTED.
+const hostVersionTimeout = 10 * time.Second
 
 type detection struct {
 	hostFound      bool
