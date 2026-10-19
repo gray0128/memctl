@@ -46,6 +46,11 @@ const (
 	CodeGitOperationActive     = "GIT_OPERATION_ACTIVE"
 	CodeGitUnmergedIndex       = "GIT_UNMERGED_INDEX"
 	CodeGitIndexLocked         = "GIT_INDEX_LOCKED"
+	// CodeExpiredEntry is the info-level hint that a time-limited entry is
+	// hidden from every read surface. It is not an error: hiding is the
+	// documented behavior, and removing the entry is an explicit action after
+	// the hidden period. See docs/10-memory-lifecycle.md section 3.3.
+	CodeExpiredEntry = "EXPIRED_ENTRY"
 )
 
 // EntryBloatLineThreshold is the project hint that MEMORY.md is growing past a
@@ -94,8 +99,14 @@ type Report struct {
 // Check runs every read-only diagnostic against one repository root. The
 // caller has already established that repoPath is a Git working-tree root.
 func Check(ctx context.Context, repoPath string) (Report, error) {
+	return CheckAt(ctx, repoPath, time.Now)
+}
+
+// CheckAt runs every read-only diagnostic with an explicit clock. Tests use it
+// to pin the expiry boundary of EXPIRED_ENTRY.
+func CheckAt(ctx context.Context, repoPath string, now func() time.Time) (Report, error) {
 	report := Report{
-		CheckedAt: time.Now().UTC().Format(time.RFC3339),
+		CheckedAt: now().UTC().Format(time.RFC3339),
 		Issues:    []Issue{},
 	}
 
@@ -160,7 +171,7 @@ func Check(ctx context.Context, repoPath string) (Report, error) {
 		report.Issues = append(report.Issues, checkOrphans(paths, parsed)...)
 	}
 	report.Issues = append(report.Issues, checkEntryBloat(parsed)...)
-	report.Issues = append(report.Issues, checkEntries(parsed)...)
+	report.Issues = append(report.Issues, checkEntries(parsed, now())...)
 
 	gitIssues, repoState, err := checkGitState(ctx, repoPath)
 	if err != nil {
@@ -287,7 +298,7 @@ func checkEntryBloat(parsed map[string]vault.ParsedFile) []Issue {
 
 // checkEntries reports the recommended provenance metadata and conservative
 // prompt-injection phrases.
-func checkEntries(parsed map[string]vault.ParsedFile) []Issue {
+func checkEntries(parsed map[string]vault.ParsedFile, now time.Time) []Issue {
 	paths := make([]string, 0, len(parsed))
 	for rel := range parsed {
 		paths = append(paths, rel)
@@ -320,6 +331,23 @@ func checkEntries(parsed map[string]vault.ParsedFile) []Issue {
 					Suggestion: "append trailing metadata such as [source: <tag>; added: YYYY-MM-DD]",
 				})
 			}
+		}
+		// An expired time-limited entry is already hidden from every read
+		// surface; report it once so an operator can decide whether to delete
+		// it after the hidden period. This is not an error and is not
+		// auto-fixable.
+		for _, entry := range file.Entries {
+			if entry.UntilDate == "" || !vault.EntryExpired(entry.UntilDate, now) {
+				continue
+			}
+			issues = append(issues, Issue{
+				Code:       CodeExpiredEntry,
+				Severity:   SeverityInfo,
+				FilePath:   rel,
+				LineNumber: entry.LineNumber,
+				Message:    fmt.Sprintf("entry expired on %s and is hidden from reads", entry.UntilDate),
+				Suggestion: "keep it until the 30-day hidden period ends, then delete it through the Dreaming proposal or the entry view",
+			})
 		}
 		// The whole text is scanned line by line because pull/start inject the
 		// file into host context: a phrase in a heading, a paragraph or an

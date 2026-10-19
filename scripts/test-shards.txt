@@ -125,3 +125,4 @@ TestT091MCPStatusWritesNothing 1
 TestT094ReadHidesExpiredEntry 2
 TestT094SnapshotHidesExpiredEntries 2
 TestT094InjectionHidesExpiredEntry 2
+TestT094DoctorReportsExpiredEntry 3

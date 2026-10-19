@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/git"
@@ -360,5 +361,50 @@ func TestCheckFlagsEntryMissingOneRecommendedMetadata(t *testing.T) {
 	}
 	if issue.Severity != doctor.SeverityInfo {
 		t.Fatalf("severity = %q, want info", issue.Severity)
+	}
+}
+
+// TestCheckReportsExpiredEntryAsInfo covers the EXPIRED_ENTRY hint: an entry
+// whose `until` has passed is reported once with its line, as info, and it is
+// not auto-fixable. A future or missing `until` produces no issue.
+func TestCheckReportsExpiredEntryAsInfo(t *testing.T) {
+	dir := newDoctorRepo(t)
+	writeRepoFile(t, dir, "MEMORY.md", "# Memory\n\n## Index\n\n- [[topic]]\n- active [until: 2999-01-01]\n- expired [until: 2000-01-01]\n- no until\n")
+	writeRepoFile(t, dir, "topic.md", "# Topic\n\n- expired here [until: 2000-01-02]\n")
+
+	clock := func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.Local) }
+	report, err := doctor.CheckAt(context.Background(), dir, clock)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	var expired []doctor.Issue
+	for _, issue := range report.Issues {
+		if issue.Code == doctor.CodeExpiredEntry {
+			expired = append(expired, issue)
+		}
+	}
+	if len(expired) != 2 {
+		t.Fatalf("EXPIRED_ENTRY issues = %d, want 2 (%+v)", len(expired), expired)
+	}
+	for _, issue := range expired {
+		if issue.Severity != doctor.SeverityInfo {
+			t.Errorf("EXPIRED_ENTRY severity = %q, want info", issue.Severity)
+		}
+		if issue.AutoFixable {
+			t.Error("EXPIRED_ENTRY must not be auto-fixable: deletion needs confirmation")
+		}
+		if issue.LineNumber == 0 {
+			t.Error("EXPIRED_ENTRY should point at its line")
+		}
+	}
+	byFile := map[string]doctor.Issue{}
+	for _, issue := range expired {
+		byFile[issue.FilePath] = issue
+	}
+	if _, ok := byFile["MEMORY.md"]; !ok {
+		t.Errorf("MEMORY.md expired entry was not reported: %+v", expired)
+	}
+	if _, ok := byFile["topic.md"]; !ok {
+		t.Errorf("topic.md expired entry was not reported: %+v", expired)
 	}
 }

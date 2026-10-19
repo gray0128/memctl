@@ -150,3 +150,5 @@
 - 验证（2026-10-19，darwin/arm64）：`go test ./internal/...` 全部通过；`web/src` 未改动。新增 `internal/vault/lifecycle_test.go`（判定边界、解析、投影）、`internal/app/lifecycle_test.go`（读取投影、快照、注入、写入保留）、`tests/integration/t094_expiry_test.go`（HTTP 读取、快照与条目、注入），分片清单登记三条集成测试。
 - 真实二进制手测（隔离 `HOME` 与临时仓库）：`read MEMORY.md --json` 返回 `hiddenExpired: 1`，正文里到期条目变成占位符且保留 `until`/`source`/`added`；`entries --json` 的 `total` 为 3，不含到期条目；`start --sid s1` 注入的同样是占位符；磁盘文件仍含原文；基于该读取结果做一次 `write` 后，被隐藏条目仍完整保留，再次读取仍报 `hiddenExpired: 1`。
 - 未验证与遗留：隐藏期满 30 天后的删除入口未实现（不在读取路径自动删除）；`until` 只支持日期粒度，不含时刻；时区取本地时钟，跨时区设备对同一 `until` 的切换时刻可能相差数小时；UI 未展示 `hiddenExpired`（本轮未要求视觉验证）。
+
+- 补充（同日）：`doctor` 新增 `EXPIRED_ENTRY`（info）诊断，报告已隐藏条目及其行号，不标记 `autoFixable`；`doctor.CheckAt` 允许测试固定时钟。新增 `TestCheckReportsExpiredEntryAsInfo` 与 `TestT094DoctorReportsExpiredEntry`，分片清单登记后者。
