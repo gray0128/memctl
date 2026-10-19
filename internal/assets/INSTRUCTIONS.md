@@ -32,9 +32,21 @@ Report it to the user instead.
   A stale baseline is rejected instead of overwriting another update.
 - The `<tag>` is the source tag printed in this context. If it is reported as
   unavailable, do not invent one; leave the source off or ask the user.
-- Keep a fact in one place and link to it elsewhere. Update or delete entries
-  that became wrong; never append a contradicting entry. Keep `MEMORY.md`
-  short and list every new file in its index.
+- Keep a fact in one place and link to it elsewhere. Never append a
+  contradicting entry; see the rules below for rewriting versus appending.
+  Keep `MEMORY.md` short and list every new file in its index.
+
+### After an entry stops being true
+
+- State that changes (preferences, environment, current role, project
+  situation): rewrite the entry in place or delete it. Never keep the old
+  value as a second entry.
+- Decisions and events (why an option was chosen, releases, incidents,
+  migrations): append a new entry with its `added:` date and leave the older
+  one untouched; it records what was true then. A reversed decision is not an
+  error, and the earlier entry is not rewritten.
+- No change log in memory files: no "previously X, now Y". Git history holds
+  the earlier versions.
 
 ## Syncing
 

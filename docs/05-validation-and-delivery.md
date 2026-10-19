@@ -177,7 +177,7 @@
 | I09 | pi 包安装 | `npm pack` 文件清单正确；隔离 `PI_CODING_AGENT_DIR` 下本地目录安装、`pi list`、卸载可用；无依赖和安装脚本 |
 | I10 | pi 版本与降级 | 低于下界或无法解析的 pi 版本不被报告为 `configured`；`sections` 缺失时回退，不静默失效 |
 | M01–M12 | MCP 记忆工具：协议、工具、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
-| R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md |
+| R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md；默认指引含条目失效的判定规则（状态型改写、事件型追加、禁止 changelog） |
 | R02 | 无 Git、无 runner、凭据环境缺失 | 分别给出针对性错误；不影响无关功能 |
 | R03 | 干净检出后使用已记录工具链构建，执行 `version/help` 与未知命令 | 实际构建与测试入口可用；version/help 不访问仓库、不要求 Git 或 Node.js；未知命令返回用法错误，无占位成功结果 |
 | R04 | 在合成诊断仓库运行 `doctor` / `doctor --json`，对比执行前后文件与 Git 状态 | 诊断级别、路径和计数符合契约；error 返回 1，仅 warning/info 返回 0；只读检查不改变记忆内容、Git 索引或 HEAD |
