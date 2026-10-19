@@ -24,6 +24,7 @@ func (a *App) dreamService() *dream.Service {
 			RepoID:   config.RepoID(a.cfg.RepoPath),
 			StateDir: a.cfg.StateDir,
 		})
+		a.dreamSvc.Version = a.version
 	}
 	return a.dreamSvc
 }
@@ -33,6 +34,21 @@ func (a *App) dreamService() *dream.Service {
 func (a *App) SetDreamService(service *dream.Service) {
 	a.dreamMu.Lock()
 	a.dreamSvc = service
+	if service != nil && service.Version == "" {
+		service.Version = a.version
+	}
+	a.dreamMu.Unlock()
+}
+
+// SetVersion records the running binary version. Callers that care about the
+// Dreaming workflow pin (the CLI and the UI server) set it before the first
+// Dreaming call, so readiness can compare the workflow with this binary.
+func (a *App) SetVersion(version string) {
+	a.version = version
+	a.dreamMu.Lock()
+	if a.dreamSvc != nil && a.dreamSvc.Version == "" {
+		a.dreamSvc.Version = version
+	}
 	a.dreamMu.Unlock()
 }
 

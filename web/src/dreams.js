@@ -3,7 +3,8 @@
 // docs/04-ui-and-cli-specification.md section 4 requires the view to generate a
 // proposal, preview the fixed diff, query its status and only apply an
 // already-reviewed proposal whose patchHash is quoted. A stale proposal can
-// never be applied and generation stays disabled without a verified sandbox.
+// never be applied and generation stays disabled until the repository is ready
+// for the GitHub Actions backend.
 // This module keeps that decision logic free of request-shape details so it can
 // be unit tested without a DOM.
 

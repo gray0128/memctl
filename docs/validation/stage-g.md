@@ -52,3 +52,12 @@
   4. 空提案执行 `--apply` 返回 `INVALID_ARGUMENT: proposal ... has no changes to apply`，主库未产生提交（`HEAD` 仍为 `9bfbf0e`）。
   5. 本地无残留 `refs/memctl/dream/*`，远端无残留 `dream/req/*` 与 `dream/res/*`。
 - 未验证与遗留：`G-4` 只验证了「运行成功但模型无改动」的路径，尚未验证一次带实际文件变更的提案被 `apply` 提交；诊断仓库 `gray0128/memctl-dream-diag` 需要 `delete_repo` scope 才能删除（`gh auth refresh -h github.com -s delete_repo`）。
+
+## T087：工作流版本绑定与漂移拦截
+
+- 目标与范围：把「工作流固定 worker 版本」从安装时的隐含约定变成可检查的不变量。提出问题的背景是：`--init-workflow` 把当时的 memctl 版本写进工作流后，升级 memctl 会让本地校验规则与 Actions 中运行的 worker 版本错位，而就绪检查只验证文件存在，不读内容，漂移完全无声。
+- 契约：[11. GitHub Actions Dreaming](../11-github-actions-dreaming.md#25-工作流文件与自部署配置) 的「版本绑定规则」、[CLI 与 UI](../04-ui-and-cli-specification.md#5-http-安全)。权威定义只写在 `11`，其余位置链接引用。
+- 决策：继续固定版本，不改成 `latest`。`latest` 是可变指针，无法用 `SHA256SUMS` 固定内容，同一份记忆在不同时间会被不同版本的 worker 处理，Step Guard 与输出 Schema 会随上游静默漂移，提案失去可复现性；工作流本身是仓库中被审阅、被提交的产物，固定值才可审计。代价是升级后需要刷新工作流，因此由就绪检查强制提示。
+- 实现：`dream.Service.Version` 由应用服务注入（CLI `dream`/`ui` 通过 `App.SetVersion`）；就绪检查读取工作流的 `MEMCTL_DREAM_VERSION`，与当前版本不一致或仍是占位符时返回新增的 `WORKFLOW_STALE`，`dream --runner` 在仓库锁内以 `UNSUPPORTED` 拒绝生成并提示 `memctl dream --init-workflow`。开发构建（`v2.0.0-dev`）没有 Release 可下载，豁免校验并保留占位符。
+- 验证：`go test ./internal/dream/ ./internal/app/ ./internal/cli/ ./internal/server/` 与 `make test` 全量通过；新增 `TestWorkflowVersionDriftBlocksGenerationCoversD01`（占位符、版本不一致、刷新后恢复、开发构建豁免）与 `TestWorkflowPinnedVersionParsing`；`cd web && npm test` 86 项通过。用 `-X main.version=v0.7.2` 构建的二进制在临时仓库实测：占位符工作流被拒绝，`--init-workflow` 后写入 `v0.7.2` 并通过就绪检查进入等待。
+- 未验证与遗留：真实环境中尚未出现一次「升级 memctl 后未刷新工作流」的实际拦截；UI 侧只通过 meta 的 `unavailable` 与原因文案呈现，未做浏览器验证（本轮未要求）。

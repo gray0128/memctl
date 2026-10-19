@@ -49,6 +49,11 @@ type Service struct {
 	// SkipWorkflowRequirement disables the workflow-file precondition. Tests of
 	// the transport use it because they never run the actual workflow.
 	SkipWorkflowRequirement bool
+	// Version is the running memctl version. The managed workflow pins the
+	// release it downloads, so a workflow written by another version would run a
+	// different binary than the one validating its result. A mismatch is
+	// reported as a readiness failure instead of silently drifting.
+	Version string
 	// Now is the injectable clock.
 	Now func() time.Time
 	// NewProvider builds the worker's model transport. It defaults to the
@@ -274,6 +279,7 @@ const (
 	BackendNotReadyNoRemote      = "NO_REMOTE"
 	BackendNotReadyUnapproved    = "REMOTE_NOT_APPROVED"
 	BackendNotReadyNoWorkflow    = "WORKFLOW_MISSING"
+	BackendNotReadyWorkflowStale = "WORKFLOW_STALE"
 	BackendNotReadyInspectFailed = "INSPECT_FAILED"
 )
 
@@ -311,14 +317,72 @@ func (s *Service) backendStatus(ctx context.Context) (string, string) {
 	}
 	if !s.SkipWorkflowRequirement {
 		workflow := s.workflowPath()
-		info, err := os.Lstat(filepath.Join(s.Source.RepoPath, filepath.FromSlash(workflow)))
+		path := filepath.Join(s.Source.RepoPath, filepath.FromSlash(workflow))
+		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() {
 			return BackendNotReadyNoWorkflow,
 				"the repository has no " + workflow + "; run `memctl dream --init-workflow`"
 		}
+		if code, reason := s.workflowVersionStatus(path, workflow); code != "" {
+			return code, reason
+		}
 	}
 	return "", ""
 }
+
+// workflowVersionStatus reports whether the installed workflow pins the release
+// this binary would run. A workflow from another memctl version downloads a
+// different worker, so its Step Guard and validation rules no longer match the
+// local side; that is a readiness failure the operator can fix with one command.
+// A development build has no release artifact and keeps the placeholder, so it
+// is exempt.
+func (s *Service) workflowVersionStatus(path, workflow string) (string, string) {
+	if !pinnedVersionRelevant(s.Version) {
+		return "", ""
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return BackendNotReadyInspectFailed, "cannot read " + workflow
+	}
+	pinned := workflowPinnedVersion(string(content))
+	if pinned == "" {
+		return BackendNotReadyWorkflowStale,
+			workflow + " does not pin MEMCTL_DREAM_VERSION; run `memctl dream --init-workflow`"
+	}
+	if pinned != s.Version {
+		return BackendNotReadyWorkflowStale,
+			workflow + " pins " + pinned + " but this memctl is " + s.Version +
+				"; run `memctl dream --init-workflow` to refresh it"
+	}
+	return "", ""
+}
+
+// workflowPinnedVersion extracts the MEMCTL_DREAM_VERSION value from the
+// workflow text. An unrendered placeholder counts as unpinned.
+func workflowPinnedVersion(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok || strings.TrimSpace(key) != "MEMCTL_DREAM_VERSION" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if strings.Contains(value, workflowVersionPlaceholder) {
+			return ""
+		}
+		return value
+	}
+	return ""
+}
+
+// pinnedVersionRelevant reports whether the running binary can be compared with
+// the workflow pin. A development build downloads no release artifact.
+func pinnedVersionRelevant(version string) bool {
+	version = strings.TrimSpace(version)
+	return version != "" && version != devVersion
+}
+
+// devVersion is the version string of a build that is not a release.
+const devVersion = "v2.0.0-dev"
 
 func (s *Service) workflowPath() string {
 	if s.WorkflowFile != "" {
@@ -393,7 +457,7 @@ func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (bas
 		if code == BackendNotReadyUnapproved {
 			return nil, "", "", memerr.New(memerr.RemoteNotApproved, "%s", reason)
 		}
-		if code == BackendNotReadyNoRemote || code == BackendNotReadyNoWorkflow {
+		if code == BackendNotReadyNoRemote || code == BackendNotReadyNoWorkflow || code == BackendNotReadyWorkflowStale {
 			return nil, "", "", memerr.New(memerr.Unsupported, "%s", reason)
 		}
 		return nil, "", "", memerr.New(memerr.NoRepo, "%s", reason)

@@ -495,3 +495,68 @@ func contractCode(err error, code string) bool {
 	}
 	return strings.Contains(err.Error(), code)
 }
+
+// TestWorkflowVersionDriftBlocksGenerationCoversD01 covers the version half of
+// the D01 preconditions: the workflow pins the release it downloads, so a
+// workflow written by another memctl must stop generation with an actionable
+// error instead of running a worker whose rules differ from the local ones.
+func TestWorkflowVersionDriftBlocksGenerationCoversD01(t *testing.T) {
+	repo, _ := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	service.Version = "v0.9.9"
+	installWorkflow(t, service)
+
+	// The fixture installed the workflow through InitWorkflow with no version,
+	// so it still carries the placeholder.
+	code, reason := service.BackendStatus(context.Background())
+	if code != BackendNotReadyWorkflowStale || !strings.Contains(reason, "does not pin") {
+		t.Fatalf("unpinned workflow: code=%s reason=%q, want WORKFLOW_STALE", code, reason)
+	}
+
+	// A workflow pinned to a different release is refused too, and the message
+	// names both versions so the operator can see the drift.
+	result, err := service.InitWorkflow(context.Background(), "v0.7.2")
+	if err != nil || result.State != InitWorkflowWritten {
+		t.Fatalf("InitWorkflow: %+v (err=%v)", result, err)
+	}
+	code, reason = service.BackendStatus(context.Background())
+	if code != BackendNotReadyWorkflowStale {
+		t.Fatalf("stale pin: code=%s, want WORKFLOW_STALE", code)
+	}
+	if !strings.Contains(reason, "v0.7.2") || !strings.Contains(reason, "v0.9.9") {
+		t.Fatalf("drift message does not name both versions: %q", reason)
+	}
+	if _, err := service.Preview(context.Background(), PreviewRequest{Runner: ProviderDeepSeek}); !contractCode(err, "UNSUPPORTED") {
+		t.Fatalf("preview with a stale workflow: err=%v, want UNSUPPORTED", err)
+	}
+
+	// Refreshing the workflow with the running version clears the block.
+	if _, err := service.InitWorkflow(context.Background(), "v0.9.9"); err != nil {
+		t.Fatalf("refresh workflow: %v", err)
+	}
+	if code, reason := service.BackendStatus(context.Background()); code != "" {
+		t.Fatalf("after refresh: code=%s reason=%q, want ready", code, reason)
+	}
+
+	// A development build has no release artifact to pin and is exempt.
+	dev := newTestService(t, repo, t.TempDir())
+	dev.Version = devVersion
+	if code, reason := dev.BackendStatus(context.Background()); code != "" {
+		t.Fatalf("development build: code=%s reason=%q, want ready", code, reason)
+	}
+}
+
+func TestWorkflowPinnedVersionParsing(t *testing.T) {
+	cases := map[string]string{
+		"      MEMCTL_DREAM_VERSION: v0.7.2\n":                     "v0.7.2",
+		"  MEMCTL_DREAM_VERSION: __MEMCTL_DREAM_VERSION__\n":       "",
+		"      MEMCTL_DREAM_VERSION: ${{ vars.MEMCTL_DREAM_X }}\n": "${{ vars.MEMCTL_DREAM_X }}",
+		"      OTHER: v0.7.2\n":                                    "",
+	}
+	for content, want := range cases {
+		if got := workflowPinnedVersion(content); got != want {
+			t.Errorf("workflowPinnedVersion(%q) = %q, want %q", content, got, want)
+		}
+	}
+}

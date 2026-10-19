@@ -111,6 +111,7 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 		return fail(stderr, "dream", err)
 	}
 	service := app.New(cfg)
+	service.SetVersion(version)
 	ctx := context.Background()
 
 	switch {
@@ -127,6 +128,7 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 			return fail(stderr, "dream", workspaceErr)
 		}
 		service = app.New(workspace)
+		service.SetVersion(version)
 		result, err := service.DreamWorker(ctx, workerRequestRef(workerRef), baseHead)
 		if err != nil {
 			return fail(stderr, "dream", err)

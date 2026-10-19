@@ -39,12 +39,11 @@ export function createApi(options = {}) {
   const token = options.token !== undefined ? options.token : metaContent('memctl-token')
   const readOnly =
     options.readOnly !== undefined ? options.readOnly : metaContent('memctl-readonly') === 'true'
-  // The Dreaming isolation capability is server-injected like the read-only
-  // flag. Generation stays disabled until a verified sandbox is available.
-  // The Dreaming backend state is injected into the page. `dreamSandbox` keeps
-  // its historical name because the panel contract already used it; the value
-  // now reports whether the repository has a confirmed private remote and the
-  // managed Actions workflow.
+  // The Dreaming backend state is injected into the page like the read-only
+  // flag: generation stays disabled until the repository has a confirmed
+  // private remote and a managed Actions workflow pinned to this memctl
+  // version. `dreamSandbox` keeps its historical name because the panel
+  // contract already used it.
   const dreamSandbox =
     options.dreamSandbox !== undefined
       ? options.dreamSandbox

@@ -77,6 +77,9 @@ type App struct {
 	// request.
 	dreamMu  sync.Mutex
 	dreamSvc *dream.Service
+	// version is the running binary version, used to check the Dreaming
+	// workflow pin. See App.SetVersion.
+	version string
 }
 
 // New builds the application service for the given configuration.

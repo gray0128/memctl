@@ -119,7 +119,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 		return runUpdate(rest, stdout, stderr, version)
 
 	case "ui":
-		return runUI(rest, stdout, stderr)
+		return runUI(rest, stdout, stderr, version)
 
 	case "mcp":
 		return runMCP(rest, stdin, stdout, stderr, version)

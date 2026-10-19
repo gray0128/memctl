@@ -72,7 +72,7 @@ func parseUIPort(value string) (int, error) {
 // documented loopback port (or an ephemeral loopback port for --port 0),
 // serves the embedded frontend plus the read-only API, watches the repository
 // for external edits and runs until interrupted.
-func runUI(args []string, stdout, stderr io.Writer) int {
+func runUI(args []string, stdout, stderr io.Writer, version string) int {
 	options, err := parseUIOptions(args)
 	if err != nil {
 		message := err.Error()
@@ -97,8 +97,10 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	}
 	addr := listener.Addr().String()
 
+	application := app.New(cfg)
+	application.SetVersion(version)
 	srv, err := server.New(server.Options{
-		App:      app.New(cfg),
+		App:      application,
 		Addr:     addr,
 		ReadOnly: options.readOnly,
 	})

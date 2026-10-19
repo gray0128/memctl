@@ -185,7 +185,13 @@ worker 内置以下 4 个模型提供商，全部使用 Go 标准库 `net/http` 
 
 ### 2.5 工作流文件与自部署配置
 
-记忆仓库中的工作流路径固定为 `.github/workflows/memctl-dream.yml`。`memctl` 二进制在 `internal/assets` 内嵌该模板，可通过 `memctl dream --init-workflow` 写入记忆仓库并提交；模板中的版本占位符会被替换为执行安装的 `memctl` 版本，使工作流下载与当前二进制一致的 Linux 发布产物（开发构建不替换，保留占位符以便发现）。
+记忆仓库中的工作流路径固定为 `.github/workflows/memctl-dream.yml`。`memctl` 二进制在 `internal/assets` 内嵌该模板，可通过 `memctl dream --init-workflow` 写入记忆仓库并提交。
+
+**版本绑定规则**：模板中的 `MEMCTL_DREAM_VERSION` 会被替换为执行安装的 `memctl` 版本，工作流据此下载对应 Release 的 `memctl-linux-amd64`。因此 Actions 中的 worker 与本地的校验规则来自同一份代码，提案可复现、也可用 `SHA256SUMS` 校验。约束如下：
+
+- 不使用 `latest` 或任何可变指针：动态地址无法用发布校验和固定内容，同一份记忆在不同时间会被不同版本的 worker 处理，`DreamStepOutput` 校验规则会随上游静默漂移。
+- 本地就绪检查会比较工作流固定的版本与当前二进制版本：不一致时返回 `WORKFLOW_STALE`，`dream --runner` 在锁内拒绝生成并提示运行 `memctl dream --init-workflow` 刷新。开发构建（`v2.0.0-dev`）没有对应 Release，豁免该校验并保留占位符。
+- 升级 `memctl` 后必须重新执行 `memctl dream --init-workflow` 并提交推送，否则 Actions 仍运行旧二进制。刷新是幂等的：内容一致时不产生空提交。
 
 工作流模板核心结构如下：
 

@@ -90,7 +90,7 @@ const workflowVersionPlaceholder = "__MEMCTL_DREAM_VERSION__"
 // workflowContent renders the embedded workflow with the running version.
 func workflowContent(version string) []byte {
 	version = strings.TrimSpace(version)
-	if version == "" || version == "v2.0.0-dev" {
+	if !pinnedVersionRelevant(version) {
 		// A development build has no release artifact to download. Keeping the
 		// placeholder visible makes the missing pin obvious instead of writing
 		// a version that does not exist.
