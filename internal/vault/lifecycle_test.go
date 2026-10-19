@@ -104,3 +104,33 @@ func TestHideExpiredEntriesCoversReadProjection(t *testing.T) {
 		t.Fatal("a zero clock must not hide anything")
 	}
 }
+
+// TestDeletionWindowCoversHiddenPeriod covers the 30-day hidden period: hiding
+// starts the day after until, and deletion stays blocked for 30 more days.
+func TestDeletionWindowCoversHiddenPeriod(t *testing.T) {
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.Local)
+	if DeletionDue("2026-10-01", now) {
+		t.Fatal("an entry must stay in its hidden period for 30 days")
+	}
+	if DeletionDue("2999-01-01", now) {
+		t.Fatal("an entry that has not expired cannot be deleted")
+	}
+	if DeletionDue("", now) {
+		t.Fatal("an entry without until never becomes deletable by expiry")
+	}
+	if got := DeletionBlockedReason("2026-10-01", now); got != "the entry is in its hidden period until 2026-11-01" {
+		t.Fatalf("blocked reason = %q", got)
+	}
+	if DeletionBlockedReason("2026-09-01", now) != "" {
+		t.Fatal("an entry past its hidden period should be deletable")
+	}
+	// The period starts the day after until: until 2026-09-19 expires on the
+	// 20th and becomes deletable on 2026-10-20.
+	deletable, ok := DeletableAt("2026-09-19", now)
+	if !ok || deletable.Format(DateLayout) != "2026-10-20" {
+		t.Fatalf("DeletableAt = %v, %v", deletable, ok)
+	}
+	if DeletionDue("2026-09-19", time.Date(2026, 10, 20, 0, 0, 0, 0, time.Local)) != true {
+		t.Fatal("the entry should become deletable exactly on the boundary date")
+	}
+}

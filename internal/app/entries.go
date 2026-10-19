@@ -192,6 +192,13 @@ func (a *App) DeleteEntry(ctx context.Context, req DeleteEntryRequest) (Mutation
 	if err != nil {
 		return MutationResult{}, err
 	}
+	// An expired time-limited entry stays visible to the delete path only after
+	// its hidden period. Deleting it earlier would erase a fact the operator
+	// may still be relying on; the error names the date so the retry is
+	// deliberate. See docs/10-memory-lifecycle.md section 3.3.
+	if err := a.requireDeleteWindow(session, req); err != nil {
+		return MutationResult{}, err
+	}
 	plans, err := session.plan(MutationRequest{Changes: []FileChange{change}})
 	if err != nil {
 		return MutationResult{}, err
@@ -318,6 +325,32 @@ func planEntryPatch(session *writeSession, req PatchEntryRequest, factText strin
 		RawContent:       targetContent,
 	})
 	return changes, targetLine, nil
+}
+
+// requireDeleteWindow refuses to delete an entry whose `until` has expired but
+// whose 30-day hidden period has not finished. Entries without `until`, or with
+// a future one, are deleted normally: the rule only protects time-limited
+// entries from being removed in the same round they were hidden.
+func (a *App) requireDeleteWindow(session *writeSession, req DeleteEntryRequest) error {
+	relPath, err := vault.ValidateRelPath(req.FilePath)
+	if err != nil {
+		return err
+	}
+	file, err := session.root.ReadFile(relPath)
+	if err != nil {
+		return err
+	}
+	parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
+	entry, ok := findEntry(parsed, req.ID)
+	if !ok || entry.UntilDate == "" {
+		return nil
+	}
+	now := a.clock()
+	if !vault.EntryExpired(entry.UntilDate, now) || vault.DeletionDue(entry.UntilDate, now) {
+		return nil
+	}
+	return memerr.New(memerr.DeletionDeferred, "entry %s cannot be deleted yet: %s",
+		req.ID, vault.DeletionBlockedReason(entry.UntilDate, now))
 }
 
 // planEntryDelete returns the put of the source file without the entry line.

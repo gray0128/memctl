@@ -154,3 +154,5 @@
 - 补充（同日）：`doctor` 新增 `EXPIRED_ENTRY`（info）诊断，报告已隐藏条目及其行号，不标记 `autoFixable`；`doctor.CheckAt` 允许测试固定时钟。新增 `TestCheckReportsExpiredEntryAsInfo` 与 `TestT094DoctorReportsExpiredEntry`，分片清单登记后者。
 
 - 再补充（同日）：MCP `memory_read` 的返回体带上 `hiddenExpired`，`docs/09` 的 `M03` 与工具表同步；新增 `TestMemoryReadReportsHiddenExpired`。`make test` 全量通过（含 `tests/integration` 178 秒）。
+
+- 删除闸门（同日）：`vault.DeletionDue`/`DeletionBlockedReason`/`HiddenPeriodDays` 给出 30 天隐藏期判定；`App.DeleteEntry` 在删除已到期条目时校验隐藏期，未满返回新错误码 `DELETION_DEFERRED`（HTTP 409，消息给出可删除日期）。新增 `TestDeletionWindowCoversHiddenPeriod`、`TestDeleteEntryRespectsHiddenPeriod`、`TestDeleteEntryWithoutUntilIsAlwaysAllowed`、`TestT094DeleteDeferredInsideHiddenPeriod` 与 `TestT094DeleteWithoutUntilStillWorks`；后两条登记到分片清单。批量清理由哪个入口发起仍未定。

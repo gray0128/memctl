@@ -28,6 +28,10 @@ const (
 	ProposalStale        Code = "PROPOSAL_STALE"
 	Busy                 Code = "BUSY"
 	PreconditionRequired Code = "PRECONDITION_REQUIRED"
+	// DeletionDeferred refuses to delete an expired time-limited entry before
+	// its documented hidden period ends. The message names the first allowed
+	// date. See docs/10-memory-lifecycle.md section 3.3.
+	DeletionDeferred Code = "DELETION_DEFERRED"
 
 	// Internal Git failure classes from
 	// docs/02-domain-models-and-contracts.md section 4.3. They select the

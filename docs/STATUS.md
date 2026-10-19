@@ -137,5 +137,5 @@
 - 审计视图：提交来源只取提交说明末尾的 `Agent:`/`Session:`/`Device:` trailer，旧版本写入的历史提交没有 trailer，界面显示「未记录来源」，本轮不做历史改写；游标分页无总数，页码只列已访问页。
 - `T091` 已拆出「整理」与「客户端接入」并展示 MCP 状态，`T092` 已发布 `v0.8.0`；`skills/memctl` 已通过 `skills update -g` 同步到仓库版本。
 - `T093` 已定位 pi.dev 未收录的根因：pi.dev 目录消费 npm search 索引，本包在该索引中 `score.final=0` 且不在可枚举窗口内，与关键字、仓库字段、下载量、README 均无关。解除需要重新发布 `memctl-pi`（建议 `0.5.2`）以触发重新索引；本机 npm token 已失效，等待用户重新登录。
-- 记忆过期规则：三个未决问题已由用户确认（隐藏期 30 天、三个读取入口统一过滤、事件型条目留在 `MEMORY.md`/`notes/`），读取侧已由 `T094` 实现；剩余为隐藏期满 30 天后的删除入口（待定为 Dreaming 提案统一发起）。`doctor` 已补 `EXPIRED_ENTRY` 诊断。
+- 记忆过期规则：三个未决问题已由用户确认（隐藏期 30 天、三个读取入口统一过滤、事件型条目留在 `MEMORY.md`/`notes/`），读取侧已由 `T094` 实现；删除闸门也已实现（隐藏期未满返回 `DELETION_DEFERRED`），`doctor` 补了 `EXPIRED_ENTRY` 诊断。剩余仅为「批量清理由哪个入口发起」这一设计选择。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

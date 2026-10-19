@@ -126,3 +126,5 @@ TestT094ReadHidesExpiredEntry 2
 TestT094SnapshotHidesExpiredEntries 2
 TestT094InjectionHidesExpiredEntry 2
 TestT094DoctorReportsExpiredEntry 3
+TestT094DeleteDeferredInsideHiddenPeriod 3
+TestT094DeleteWithoutUntilStillWorks 3
