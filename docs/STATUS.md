@@ -108,6 +108,7 @@
 | T081 | 已完成 | 内嵌默认指引新增条目失效的判定规则（状态型改写、事件型追加、禁止 changelog），`skills/memctl` 同步；`R01` 断言新段落，`04`/`05`/`10` 同步；不改变命令与协议；[归档记录](./validation/stage-f.md#t081注入条目失效的判定规则) |
 | T082 | 已完成 | 对应阶段 G 的 `G-1`：基于 GitHub Actions 的 Dreaming 远端整理方案与契约修订；删除本地 runner 与 Seatbelt 沙箱契约，改用代码控制的有界多步结构化模型调用（`memctl dream --worker`）与内置四家提供商（`deepseek`、`minimax`、`openai`、`anthropic`）；新增 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) 并修订 `01`–`05`；不改变当前产品代码；[归档记录](./validation/stage-f.md#t082基于-github-actions-的-dreaming-远端整理方案与契约修订g-1) |
 | T089 | 已完成 | 新增条目检索通道：CLI `memctl entries` 与 MCP `memory_entries` 共用 `App.ListEntries`，支持关键词/文件/来源/日期筛选与分页；只读，不建索引、不做语义检索；[归档记录](./validation/stage-g.md#t089新增条目检索通道entries-与-memory_entries) |
+| T093 | 阻塞 | 定位 pi.dev 目录未收录的根因：详情页正常但分类页 0 条，npm search 索引中 `score.final=0` 且不在可枚举窗口；解除条件为重新发布 `memctl-pi` 新版本（需用户重新登录 npm，本机 token 已失效）；[排查记录](./validation/stage-g.md#t093定位-pidev-目录未收录的根因) |
 | T092 | 已完成 | 发布 `v0.8.0`（含 `T090`、`T091`）：全量测试、四平台候选包、两个插件 tarball、校验和与 CI Release；本机升级到 `v0.8.0` 并验证 MCP 状态接口；插件源码未改动，保持 `0.5.1`，不发 npm；[归档记录](./validation/stage-g.md#t092发布-v080) |
 | T091 | 已完成 | 拆分「整理」与「客户端接入」为两个视图：整理只保留 Dreaming 提案，客户端接入承载 MCP 通道状态与 adapter 安装；新增 `GET /api/v1/mcp` 与 `internal/mcp` 共享的探测/注册表，UI 展示可执行文件、版本、工具、不可用原因与每个宿主的注册命令；[归档记录](./validation/stage-g.md#t091拆分整理与客户端接入视图并展示-mcp-状态) |
 | T090 | 已完成 | 审计视图修正：审计提交来源补齐 trailer（`init`、`dream --init-workflow`、`dream --apply`、revert），无来源文案改为「未记录来源」；分页改为每页 20 条的上一页/下一页与已访问页码；时间轴修正竖线与圆点错位、按日期分组、本地时间格式、来源拆分标签与紧凑卡片；[归档记录](./validation/stage-g.md#t090审计视图来源分页与时间轴修正) |
@@ -133,5 +134,7 @@
 - 配套 Skill 已通过 `skills` CLI 从 `gray0128/memctl` 安装到 `~/.agents/skills/memctl`，lockfile 记录来源，宿主技能目录可识别并加载；真实任务中的自动触发与执行尚未验证。
 - 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。
 - 审计视图：提交来源只取提交说明末尾的 `Agent:`/`Session:`/`Device:` trailer，旧版本写入的历史提交没有 trailer，界面显示「未记录来源」，本轮不做历史改写；游标分页无总数，页码只列已访问页。
-- `T091` 已拆出「整理」与「客户端接入」并展示 MCP 状态，`T092` 已发布 `v0.8.0`；`skills/memctl` 已通过 `skills update -g` 同步到仓库版本。待办中剩余项：pi.dev 收录（外部平台，需人工提交）、记忆过期规则（依赖 [10](./10-memory-lifecycle.md#7-未决问题) 的三个未决问题）。
+- `T091` 已拆出「整理」与「客户端接入」并展示 MCP 状态，`T092` 已发布 `v0.8.0`；`skills/memctl` 已通过 `skills update -g` 同步到仓库版本。
+- `T093` 已定位 pi.dev 未收录的根因：pi.dev 目录消费 npm search 索引，本包在该索引中 `score.final=0` 且不在可枚举窗口内，与关键字、仓库字段、下载量、README 均无关。解除需要重新发布 `memctl-pi`（建议 `0.5.2`）以触发重新索引；本机 npm token 已失效，等待用户重新登录。
+- 记忆过期规则（[10](./10-memory-lifecycle.md#7-未决问题)）实现前需要用户确认三个问题：隐藏期长度、过滤发生在注入还是读取入口、事件型条目是否独立目录；确认后拆为 `until` 过滤、隐藏期与删除任务。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。

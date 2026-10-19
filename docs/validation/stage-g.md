@@ -120,3 +120,18 @@
 - 本机升级与冒烟：按记录用「下载到 `/tmp` → 校验 → `mv` 原子替换」升级 `~/.agent-memory/bin/memctl` 到 `v0.8.0`；`version` 输出 `memctl v0.8.0`，`install --status` 的 `mcp:` 块输出 `serving memory_read, memory_entries, memory_write (v0.8.0)` 与 8 条注册动作。用发布二进制在隔离 `HOME` 与临时状态目录启动 `ui --port 0`，`GET /api/v1/mcp` 返回 `executable=~/.agent-memory/bin/memctl`、`version=v0.8.0`、三个工具与 8 条注册；内嵌脚本 `/assets/index-BGLdd-0y.js` 含「记忆整理」「MCP 记忆工具通道」「客户端接入」。
 - 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；浏览器内的视觉与交互未复验（本轮未安排 UI/UX 验证）；npm 插件包未随本版发布，仍为 `0.5.1`。
 - pi.dev 目录（2026-10-19 核对）：`memctl-pi` 已发布到 npm 且带 `pi-package` 关键字与 `pi.extensions` 清单，但 `https://pi.dev/packages?name=memctl` 返回 0 条。目录只索引满足其收录条件的包（页面写明「published to npm」，同类未收录包亦可检索到），从外部无法确认是索引延迟、收录条件还有额外要求，还是需要人工提交；下一步需查 pi 的包文档或向维护者确认，不在本轮猜测提交路径。
+
+## T093：定位 pi.dev 目录未收录的根因
+
+- 目标与范围：待办要求「让插件出现在 pi.dev」。本轮只做只读排查与证据收集，不发布、不改包内容；结论用于决定下一步是重新发布、补元数据还是向上游报 issue。
+- 契约：[pi 专用插件 §8.1](../08-pi-plugin.md#81-npm-主通道)。
+- 观测（2026-10-19）：
+  1. `https://pi.dev/packages/memctl-pi` 返回 200，正常渲染版本 `0.5.1`、README、`pi` manifest、License 与安装命令——详情页数据源正常。
+  2. `https://pi.dev/packages?name=memctl-pi` 与 `?name=memctl` 均返回 `0 / 5327`；分类页不出现该包。
+  3. npm 官方 search 索引里 `keywords:memctl` 能命中该包，但 `score.final = 0`、`downloads = {monthly: 0, weekly: 0}`，`name:memctl-pi`、`memctl-pi`、`keywords:pi-package` 的分页枚举（含尾部 `from=12000`–`from=20000`）都找不到它；npm 官方统计接口 `downloads/point/last-week` 却返回 21 次，说明包已发布且被下载。
+  4. 对照已收录的 `pi-theme-aura`（184 次/月）、`pi-smart-ralph`、`pi-thought-bubbles`、`pi-cbmem`（未收录但属于 monorepo、有 `repository.directory`）与 `pi-researcher`（未收录）后，收录与下载量、readme 长度、`author`、`homepage`、`bugs`、`repository.directory` 均无一致相关性；已收录包在同名查询下的 `score.final` 为 46–84，未收录的为 0 或不在索引。
+  5. `pi-theme-aura` 的 registry 文档 `readmeFilename` 为 `README.md`，`memctl-pi` 的 `readme` 为空、`readmeFilename` 为空；但 `pi-smart-ralph` 同样 `readme = 0` 却已收录，因此 README 缺失不是充分条件。
+  6. 上游 [issue #11130](https://github.com/earendil-works/pi/issues/11130)（2026-10-19 自动关闭）记录同类现象：详情页 200、`?name=` 0 条、npm search 分数 0；报告者的排查同样排除了下载量与发布时间，并推测与索引文档构建有关。
+- 结论：pi.dev 目录直接消费 npm search 索引，收录门槛不在 pi.dev 侧。本包的问题表现为 npm 索引文档的 `score.final = 0` 且不在可枚举窗口内，属于 npm 侧的索引状态，`pi` 仓库文档只声明 `pi-package` 关键字即可发现。因此「补关键字、补仓库字段」不是修复路径。
+- 阻塞与解除条件：修复需要让 npm 重新索引该包，可行做法是发布一个新版本（例如 `0.5.2`，同时补齐 registry 文档缺失的 README 元数据）；本机 `~/.npmrc` 的 `registry.npmjs.org` token 已失效（`npm whoami` 返回 401，`GET /-/whoami` 返回 401），无法执行发布。解除条件：用户重新执行 npm 登录并确认可以发布 `memctl-pi` 新版本。
+- 未验证：重新发布能否让索引恢复，需要一次真实发布后复测 `?name=memctl-pi` 与 `name:memctl-pi` 才能确认；向 npm 提交索引重建请求是否可行未验证。
