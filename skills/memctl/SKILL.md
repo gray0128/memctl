@@ -75,6 +75,8 @@ IO_FAILED: cannot open repository lock
 
 这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_write` 工具时改用它；查事实位置用 `memory_entries`，读基线用 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
+需要核对通道是否可用、或查看某宿主的注册命令时，读 `memctl install --status` 的 `mcp:` 块；本机 Web UI 的「客户端接入」视图展示同一结果。注册由宿主自己的 `mcp add` 完成，不要替用户执行。
+
 完成标准：写入发生在可用的 MCP 通道，或已向用户说明无法写入的原因。
 
 ## 6. 边界
