@@ -2,7 +2,7 @@
 
 ## 1. 系统如何工作
 
-`memctl` 以独立 Git 工作树保存记忆，用短生命周期 CLI 处理 Hook、读取、受管写入和同步；`memctl ui` 才启动 HTTP 服务、文件监听和完整图谱索引。宿主沙箱之外的 Agent 还可通过宿主派生的 `memctl mcp` 调用 `memory_read` 与 `memory_write`。UI、CLI 与 MCP 通道调用同一应用服务，不相互依赖进程常驻。
+`memctl` 以独立 Git 工作树保存记忆，用短生命周期 CLI 处理 Hook、读取、受管写入和同步；`memctl ui` 才启动 HTTP 服务、文件监听和完整图谱索引。宿主沙箱之外的 Agent 还可通过宿主派生的 `memctl mcp` 调用 `memory_entries`（检索条目）、`memory_read` 与 `memory_write`。UI、CLI 与 MCP 通道调用同一应用服务，不相互依赖进程常驻。
 
 一次受管写入包含版本校验、文件变更和本地 Git 提交。远端同步独立进行，失败不会撤销已经成功的本地提交。Dreaming 生成可审阅提案，只有显式确认后才进入同一写入事务。
 

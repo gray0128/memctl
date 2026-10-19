@@ -170,7 +170,7 @@ var helpRootData = helpRoot{
 	Groups: []helpGroup{
 		{
 			Title: loc("Repository", "仓库"),
-			Names: []string{"init", "read", "write", "sync", "resolve", "recover", "doctor"},
+			Names: []string{"init", "read", "entries", "write", "sync", "resolve", "recover", "doctor"},
 		},
 		{
 			Title: loc("Host hooks and sessions", "宿主 Hook 与会话"),
@@ -429,7 +429,48 @@ var helpCommandData = []helpCommand{
 			loc("Use `absent` as --base when creating a new file.", "创建新文件时使用 `absent` 作为 `--base`。"),
 			loc("Binary or oversized files are not editable text and fail instead of being truncated.", "二进制或超限文件不属于可编辑文本，会明确失败而不是截断。"),
 		},
-		Related: []string{"write", "help"},
+		Related: []string{"entries", "write", "help"},
+	},
+	{
+		Name: "entries",
+		Usage: []string{
+			"memctl entries",
+			"memctl entries --q TEXT [--file PATH] [--limit N] [--json]",
+		},
+		Summary: loc("List or filter memory entries.", "列出或筛选记忆条目。"),
+		Description: loc(
+			"Reads parsed memory entries across the repository without loading whole files. `--q` matches the entry fact text case-insensitively as a substring; `--file`, `--agent`, `--device`, `--from` and `--to` narrow the result. This is a lookup over stored facts, not a semantic search index. It is the same query behind GET /api/v1/entries and the `memory_entries` MCP tool. Read-only: it never writes the repository.",
+			"在不整份读取文件的情况下检索仓库中已解析的记忆条目。`--q` 按大小写不敏感的子串匹配条目正文；`--file`、`--agent`、`--device`、`--from` 与 `--to` 收窄结果。这是对已存储事实的查找，不是语义检索索引。它与 `GET /api/v1/entries` 和 `memory_entries` MCP 工具共用同一实现。只读，不写仓库。",
+		),
+		Flags: []helpItem{
+			{Name: "--q", Value: "TEXT", Description: loc("Case-insensitive substring over the entry fact text.", "对条目正文做大小写不敏感的子串匹配。")},
+			{Name: "--file", Value: "PATH", Description: loc("Only entries of this repository-relative file.", "只返回该仓库相对路径文件的条目。")},
+			{Name: "--agent", Value: "NAME", Description: loc("Only entries whose source records this agent.", "只返回来源记录为该 Agent 的条目。")},
+			{Name: "--device", Value: "NAME", Description: loc("Only entries whose source records this device label.", "只返回来源记录为该设备标签的条目。")},
+			{Name: "--from", Value: "YYYY-MM-DD", Description: loc("Earliest added date, inclusive.", "最早的 added 日期，含当天。")},
+			{Name: "--to", Value: "YYYY-MM-DD", Description: loc("Latest added date, inclusive.", "最晚的 added 日期，含当天。")},
+			{Name: "--limit", Value: "N", Description: loc("Page size, 1-200. Defaults to 50.", "每页条数，1–200，默认 50。")},
+			{Name: "--offset", Value: "N", Description: loc("Number of matching entries to skip.", "跳过的匹配条目数。")},
+			{Name: "--json", Description: loc("Return {revision, items, total} instead of text lines.", "返回 {revision, items, total}，而不是文本行。")},
+		},
+		Output: []localizedText{
+			loc("Text: one `<path>:<line> <fact>` per entry plus a `--- N of M entries` trailer.", "文本：每个条目一行 `<path>:<line> <fact>`，末尾输出 `--- N of M entries`。"),
+			loc("JSON: {revision, items, total}. Each item carries id, filePath, lineNumber, factText, sources and metadata.", "JSON：{revision, items, total}；每项包含 id、filePath、lineNumber、factText、sources 与 metadata。"),
+		},
+		ExitCodes: []helpExit{
+			{Code: 0, Meaning: loc("Entries listed, including an empty result.", "已列出条目，包括空结果。")},
+			{Code: 1, Meaning: loc("NO_REPO, BUSY, RECOVERY_REQUIRED, LIMIT_EXCEEDED or IO_FAILED.", "NO_REPO、BUSY、RECOVERY_REQUIRED、LIMIT_EXCEEDED 或 IO_FAILED。")},
+			{Code: 2, Meaning: loc("Unknown flag, missing value or a non-integer limit/offset.", "未知选项、缺少取值，或 limit/offset 不是整数。")},
+		},
+		Examples: []helpExample{
+			{Command: "memctl entries --q vim", Note: loc("Find entries mentioning vim.", "查找提到 vim 的条目。")},
+			{Command: "memctl entries --file notes/prefs.md --json", Note: loc("Read one file's entries as JSON.", "以 JSON 读取某个文件的条目。")},
+		},
+		Notes: []localizedText{
+			loc("Use this to locate where a fact lives, then `memctl read <path>` for the full file.", "先用它定位事实所在文件，再用 `memctl read <path>` 读取整份文件。"),
+			loc("There is no semantic or vector search; only the stored fact text is matched.", "不提供语义或向量检索，只匹配已存储的条目正文。"),
+		},
+		Related: []string{"read", "write", "mcp"},
 	},
 	{
 		Name:    "write",
@@ -1061,8 +1102,8 @@ var helpCommandData = []helpCommand{
 		Usage:   []string{"memctl mcp [--agent NAME] [--sid ID]"},
 		Summary: loc("Serve the memory tools over the Model Context Protocol.", "以 Model Context Protocol 提供记忆工具。"),
 		Description: loc(
-			"Serves two tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_read returns one file with its fileRevision baseline, and memory_write applies one managed write. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
-			"在标准输入输出上以单行 JSON-RPC 2.0 提供两个工具：memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
+			"Serves three tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_entries searches stored entries by keyword, memory_read returns one file with its fileRevision baseline, and memory_write applies one managed write. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
+			"在标准输入输出上以单行 JSON-RPC 2.0 提供三个工具：memory_entries 按关键词检索已存条目，memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded on every write. Falls back to AGENT_MEMORY_AGENT, then unknown.", "每次写入记录的 Agent 名称。依次回退到 AGENT_MEMORY_AGENT 和 unknown。")},
@@ -1078,13 +1119,13 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl mcp --agent dsh", Note: loc("Start the MCP server; the host speaks the protocol on stdin and stdout.", "启动 MCP server，由宿主在标准输入输出上使用协议。")},
-			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_read and memory_write.", "一行请求；工具为 memory_read 与 memory_write。")},
+			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_entries, memory_read and memory_write.", "一行请求；工具为 memory_entries、memory_read 与 memory_write。")},
 		},
 		Notes: []localizedText{
 			loc("Tool failures return isError with the same `CODE: message` text as the CLI, so a model can act on REVISION_MISMATCH or BUSY.", "工具失败返回 isError，文本与 CLI 的 `CODE: message` 一致，使模型可以处理 REVISION_MISMATCH 或 BUSY。"),
 			loc("Register this command in the host's MCP configuration. `install` only probes and plans; it does not run a host's own mcp add command.", "在宿主的 MCP 配置中注册该命令。`install` 只探测并生成计划，不运行宿主自己的 mcp add 命令。"),
 		},
-		Related: []string{"read", "write", "install"},
+		Related: []string{"entries", "read", "write", "install"},
 	},
 }
 

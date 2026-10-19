@@ -114,7 +114,8 @@ func TestM01MCPHandshake(t *testing.T) {
 	if err := json.Unmarshal(responses[1].Result, &list); err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(list.Tools) != 2 || list.Tools[0].Name != "memory_read" || list.Tools[1].Name != "memory_write" {
+	if len(list.Tools) != 3 || list.Tools[0].Name != "memory_read" ||
+		list.Tools[1].Name != "memory_entries" || list.Tools[2].Name != "memory_write" {
 		t.Fatalf("unexpected tool list %+v", list.Tools)
 	}
 }
@@ -295,5 +296,107 @@ func TestM01MCPUsageErrors(t *testing.T) {
 	result = runMemctl(t, bin, home, env, "mcp", "--agent")
 	if result.code != 2 {
 		t.Fatalf("want exit 2 for a missing value, got %d", result.code)
+	}
+}
+
+// TestM13MCPEntriesFindsFactThenReads proves the read path an agent actually
+// needs behind a host sandbox: locate a fact with memory_entries, then read the
+// file it names with memory_read. It also proves the tool is read-only and that
+// the CLI returns the same match.
+func TestM13MCPEntriesFindsFactThenReads(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	home, repo, env := a5LocalRepo(t, bin, root, "home")
+
+	topic := filepath.Join(repo, "notes", "prefs.md")
+	if err := os.MkdirAll(filepath.Dir(topic), 0o755); err != nil {
+		t.Fatalf("create notes: %v", err)
+	}
+	if err := os.WriteFile(topic, []byte(
+		"# Preferences\n\n- 编辑器偏好是 Vim [source: test; added: 2026-01-05]\n"+
+			"- 终端使用 Ghostty [source: test; added: 2026-06-01]\n"), 0o644); err != nil {
+		t.Fatalf("write topic: %v", err)
+	}
+	if out, err := gitCommandAt(repo, "add", "-A"); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	if out, err := gitCommandAt(repo, "commit", "-q", "-m", "seed topic"); err != nil {
+		t.Fatalf("git commit: %v\n%s", err, out)
+	}
+	before := gitOutput(t, env, repo, "rev-parse", "HEAD")
+
+	responses, stderr := runMCPSession(t, bin, home, env,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_entries","arguments":{"q":"vim"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"memory_read","arguments":{"path":"notes/prefs.md"}}}`,
+	)
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if len(responses) != 3 {
+		t.Fatalf("want 3 responses, got %d", len(responses))
+	}
+
+	entries := decodeCallResult(t, responses[1])
+	if entries.IsError {
+		t.Fatalf("memory_entries failed: %+v", entries)
+	}
+	var page struct {
+		Revision string `json:"revision"`
+		Total    int    `json:"total"`
+		Items    []struct {
+			FilePath string `json:"filePath"`
+			FactText string `json:"factText"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(entries.Content[0].Text), &page); err != nil {
+		t.Fatalf("decode entry page: %v\n%s", err, entries.Content[0].Text)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("entry page = %+v, want the single Vim entry", page)
+	}
+	if page.Items[0].FilePath != "notes/prefs.md" || !strings.Contains(page.Items[0].FactText, "Vim") {
+		t.Fatalf("entry page returned %+v", page.Items[0])
+	}
+
+	// The path the query returned is directly readable.
+	read := decodeCallResult(t, responses[2])
+	if read.IsError {
+		t.Fatalf("memory_read failed: %+v", read)
+	}
+	var file struct {
+		FilePath     string `json:"filePath"`
+		FileRevision string `json:"fileRevision"`
+		RawContent   string `json:"rawContent"`
+	}
+	if err := json.Unmarshal([]byte(read.Content[0].Text), &file); err != nil {
+		t.Fatalf("decode file: %v", err)
+	}
+	if file.FilePath != page.Items[0].FilePath || !strings.Contains(file.RawContent, "Ghostty") {
+		t.Fatalf("read returned %+v", file)
+	}
+
+	// Read-only: neither the query nor the read changed the repository.
+	if after := gitOutput(t, env, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a read path created a commit: %s -> %s", before, after)
+	}
+	if status := gitOutput(t, env, repo, "status", "--porcelain"); status != "" {
+		t.Fatalf("a read path changed the worktree: %s", status)
+	}
+
+	// The CLI reports the same match, so scripts and agents see one answer.
+	cli := runMemctl(t, bin, home, env, "entries", "--q", "vim", "--json")
+	if cli.code != 0 {
+		t.Fatalf("entries: code=%d stderr=%q", cli.code, cli.stderr)
+	}
+	var cliPage struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(cli.stdout), &cliPage); err != nil {
+		t.Fatalf("decode CLI page: %v\n%s", err, cli.stdout)
+	}
+	if cliPage.Total != page.Total {
+		t.Fatalf("CLI total = %d, MCP total = %d", cliPage.Total, page.Total)
 	}
 }

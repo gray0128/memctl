@@ -70,3 +70,14 @@
 - 真实验收：本机升级到 `v0.7.3` 后，`~/memory` 的工作流仍固定 `v0.7.2`，`memctl dream --runner deepseek` 被拦截为 `UNSUPPORTED: ... pins v0.7.2 but this memctl is v0.7.3; run memctl dream --init-workflow to refresh it`；执行 `--init-workflow` 并推送后版本一致，随后运行 [39229750039](https://github.com/gray0128/agent-memory-repo/actions/runs/39229750039) 成功，提案 `dp-0774eb99…` 状态 `ready`（模型仍判定无需改动，0 处变更）。
 - 附带修复（运维侧，非产品缺陷）：直接 `cp` 覆盖正在运行的 `memctl`（`memctl ui` 进程持有该 inode）会触发 macOS SIGKILL，表现为二进制文件校验和正确但一执行就退出；改用「写临时文件 + `mv` 原子替换」后正常。`internal/update` 已采用 `os.Rename`，不受影响；手工升级应按同样方式替换。
 - 未验证与遗留：带实际文件变更的提案被 `apply` 提交仍未在真实环境验证。诊断仓库 `gray0128/memctl-dream-diag2` 已创建并配好工作流，但没有对应 Secret；删除两个诊断仓库需要 `delete_repo` scope。
+
+## T089：新增条目检索通道（`entries` 与 `memory_entries`）
+
+- 目标与范围：补齐「Agent 按内容查询记忆」的缺口。此前只有 hook 注入（给出 `MEMORY.md` 全文）与按路径读取（`memctl read` / `memory_read`），子串检索能力只存在于 Web UI 使用的 `GET /api/v1/entries`，CLI 与 MCP 都没有入口；沙箱宿主的 bash 又读不到 `~/memory`，Agent 因此无法自行定位事实。
+- 契约：[CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令) 的命令表、[MCP 记忆工具](../09-mcp-memory-tools.md#44-工具集) 的工具表与 `M13`。
+- 实现：把已有的 `App.ListEntries` 暴露为两条通道，不新增存储、索引或检索算法。
+  1. `memctl entries`：`--q`（大小写不敏感子串）、`--file`、`--agent`、`--device`、`--from`、`--to`、`--limit`、`--offset`、`--json`；文本输出为 `path:line\tfact` 加 `--- N of M entries` 尾部，JSON 输出 `{revision, items, total}`。
+  2. MCP `memory_entries`：同一组参数与同一返回结构，参数原样下发到 `ListEntries`；负 `limit`/`offset` 在调用前拒绝，契约失败以 `isError` 携带错误码返回。
+- 边界：`q` 只匹配已存储的条目正文，不建立索引、不做语义或向量检索；`limit` 上限 200、默认 50，与 HTTP 路由一致；只读，不写仓库、不产生提交。
+- 验证：`make test` 全量通过；新增 `TestEntriesCLIFilters`、`TestEntriesCLIUsageErrors`、`TestEntriesRejectsPageBeyondLimit`、`TestM13MemoryEntries`（MCP 层）与 `TestM13MCPEntriesFindsFactThenReads`（真实二进制端到端：`memory_entries` 定位 → `memory_read` 读取 → 确认 HEAD 与工作树未变 → CLI 与 MCP 返回同一 `total`）。`docs/09` 的 `M02` 与工具表同步为三个工具。
+- 未验证与遗留：各宿主侧只更新了文档与帮助文本，未逐个宿主重跑「模型实际调用 `memory_entries`」；宿主注册的命令没变（仍是同一个 `memctl mcp`），已有注册无需改动。

@@ -131,7 +131,7 @@ func TestM01ToolsCallOverStream(t *testing.T) {
 	var list struct {
 		Tools []Tool `json:"tools"`
 	}
-	if err := json.Unmarshal(raw, &list); err != nil || len(list.Tools) != 2 {
+	if err := json.Unmarshal(raw, &list); err != nil || len(list.Tools) != len(ToolNames()) {
 		t.Fatalf("tools/list result: %v %+v", err, list)
 	}
 	if responses[1].Error != nil {

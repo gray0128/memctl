@@ -13,6 +13,7 @@ description: 读写共享的 Agent 记忆仓库：用 memctl 查看 MEMORY.md �
 
 1. 定位二进制：优先 `command -v memctl`，否则用 `~/.agent-memory/bin/memctl`。
 2. 读取入口：`memctl read MEMORY.md --json`。成功时记下 `fileRevision` 和正文。
+   不知道事实在哪个文件时，先用 `memctl entries --q <关键词>`（或 MCP `memory_entries`）定位，再按返回的 `filePath` 读取整份文件。
 3. 读取失败时按错误处置：`NO_REPO` 表示尚未初始化，请用户运行 `memctl init`；`NOT_FOUND` 表示仓库缺少该文件，不要自行创建。
 
 会话上下文已经注入 `[agent-memory]` 正文时，先复用它；需要未注入的文件时再读取。
@@ -72,7 +73,7 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 IO_FAILED: cannot open repository lock
 ```
 
-这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_write` 工具时改用它；基线规则相同：先 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
+这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_write` 工具时改用它；查事实位置用 `memory_entries`，读基线用 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
 完成标准：写入发生在可用的 MCP 通道，或已向用户说明无法写入的原因。
 

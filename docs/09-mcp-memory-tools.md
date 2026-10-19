@@ -6,7 +6,7 @@
 
 - 会话没有记忆更新的直接原因不是插件失效，而是写入动作落在宿主沙箱之外：生命周期插件在宿主进程内运行，能注入和同步；Agent 通过 bash 执行 `memctl read/write` 时，子进程受工作区沙箱约束，无法打开记忆仓库的锁文件。
 - 生命周期插件只做桥接，不写入记忆。写入必须由 Agent 主动发起，因此需要一个不受 bash 沙箱约束、且跨宿主通用的调用通道。
-- 选定方案：`memctl` 二进制新增 `memctl mcp` 子命令，以标准输入输出实现 MCP server，暴露 `memory_read` 与 `memory_write` 两个工具。各宿主通过自带 MCP 客户端配置注册该 server。
+- 选定方案：`memctl` 二进制新增 `memctl mcp` 子命令，以标准输入输出实现 MCP server，暴露 `memory_read`、`memory_entries` 与 `memory_write` 三个工具。各宿主通过自带 MCP 客户端配置注册该 server。
 - 该通道已在 macOS arm64、DSH 0.2.1-rc.2 上验证：宿主派生的 MCP 子进程可以写入 `~/memory` 并成功执行 `memctl read`，不受 `workspace-write` 沙箱限制。
 - 「子进程不受沙箱约束」是宿主相关的结论，不是通用性质：Grok 的 `workspace` profile 会对子进程施加同样的写限制，必须显式把记忆仓库加入 `read_write`，而该授权同时放开 shell。pi 没有文件沙箱，shell 本就可写。各宿主的实测矩阵见 6.2。
 - 不采用的两条路线：把记忆仓库移入工作区会破坏跨项目共享语义；为每个宿主单独实现插件内工具会引入宿主内部依赖，且无法覆盖没有插件机制的宿主。
@@ -58,7 +58,7 @@ DSH 的 `workspace-write` 可写根在实现中由 `writableRoots` 固定为工�
 
 1. MCP 是各宿主共同支持的外部工具协议，注册位置是宿主自身的配置，不需要 memctl 依赖宿主内部包。
 2. MCP 子进程由宿主直接派生，权限等同于宿主进程；DSH 与 Codex 实测可写 `~/memory`，Grok 需放开 `read_write`。
-3. 工具语义可以完全映射到既有 CLI：`memory_read` 对应 `read --json`，`memory_write` 对应 `write --base --stdin`，不新增写入模型、锁或事务。
+3. 工具语义可以完全映射到既有 CLI：`memory_read` 对应 `read --json`，`memory_entries` 对应 `entries --json`，`memory_write` 对应 `write --base --stdin`，不新增写入模型、锁或事务。
 4. B 仍需为每个宿主维护宿主专属实现；对 DSH 而言还需引入 peer 依赖，违背插件「零依赖、只执行固定 memctl 二进制」的既定边界。
 
 方案 D 保留为不支持 MCP 的宿主的后备，不在本方案内实现。
@@ -95,12 +95,15 @@ Agent（模型）
 
 ### 4.4 工具集
 
-只暴露两个工具，覆盖「读基线 + 受管写入」，不复制 CLI 的全部能力。
+只暴露三个工具，覆盖「定位事实 + 读基线 + 受管写入」，不复制 CLI 的全部能力。
 
 | 工具 | 用途 | 参数 | 成功返回 |
 | --- | --- | --- | --- |
 | `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent` |
+| `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content` | `transaction`、`commit`、`revision`、`sync` |
+
+`memory_entries` 是只读查询：`q` 对条目正文做大小写不敏感的子串匹配，`file` 限定单文件，`agent`/`device`/`from`/`to` 按来源与 `added` 日期收窄，`limit` 上限 200（默认 50）。它不建立索引、不做语义检索，返回结构与 `GET /api/v1/entries` 一致；Agent 据此定位文件后再调用 `memory_read`。
 
 `memory_write` 的 `base` 必须是 `memory_read` 返回的 `fileRevision`，新建文件使用 `absent`。基线过期返回 `REVISION_MISMATCH`，不覆盖他人更新。
 
@@ -111,6 +114,7 @@ Agent（模型）
 | Git 操作、任意命令执行 | 扩大执行面，且 CLI 与插件已覆盖 |
 | 同步控制 | `memory_write` 已启动后台同步；生命周期插件在各轮结束触发同步 |
 | 删除文件或批量改链 | 需要确认语义，属于 UI 与显式 CLI 能力 |
+| 语义或向量检索 | 需要索引构建与失效策略，且当前条目查询已覆盖"定位事实所在文件" |
 | 网络检索或外部抓取 | 与记忆写入无关 |
 
 ### 4.5 错误语义
@@ -166,7 +170,7 @@ Agent（模型）
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
 
-有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。
+有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（当时只有 `memory_read`、`memory_write`；`memory_entries` 是 `T089` 新增的第三个工具），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。
 
 DSH 的注册条目写在 profile 的 `cordis.patch.yml` 里，追加一条 `insert:` 记录：
 
@@ -185,7 +189,7 @@ DSH 的注册条目写在 profile 的 `cordis.patch.yml` 里，追加一条 `ins
 
 本机实测不需要重启应用：改动保存后 13 秒内，宿主重新合成条目树并派生了 `memctl mcp --agent dsh` 子进程。确认方式是看 `ps` 中该进程的父进程是否为 DSH 主进程；模型侧工具名固定为 `mcp__memctl__memory_read` 与 `mcp__memctl__memory_write`。
 
-pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这两个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
+pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read`、`memory_entries` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这几个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
 
 Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件：`approval_policy = "never"`（或 `-a never`）与 `default_tools_approval_mode` 缺省或 `auto` 组合时，宿主直接拒绝调用并返回 `MCP tool call requires approval, but approval policy is never`。实测只有 `default_tools_approval_mode = "approve"` 能放行，且该配置不覆盖沙箱：同一会话的 bash 仍受 `workspace-write` 限制。注册后未改这一项时，表现为「工具存在但每次都失败」，不要误判为 memctl 故障。
 
@@ -218,7 +222,7 @@ MCP 与生命周期插件互补，不互相替代：
 | ID | 场景 | 预期 |
 | --- | --- | --- |
 | M01 | `initialize` 正常握手、未知方法、非法 JSON 行 | 返回正确处理；非法行不终止进程；标准输出只有 JSON 行 |
-| M02 | `tools/list` | 恰好返回 `memory_read` 与 `memory_write` 及其参数模式 |
+| M02 | `tools/list` | 恰好返回 `memory_read`、`memory_entries` 与 `memory_write` 及其参数模式 |
 | M03 | `memory_read` 读取 `MEMORY.md` 与指定路径 | 返回 `filePath`、`fileRevision`、`rawContent`，与 `read --json` 一致 |
 | M04 | 路径越界、绝对路径、Git 内部路径、符号链接逃逸 | 返回 `INVALID_PATH`，不读取仓库外内容 |
 | M05 | `memory_write` 使用正确基线新建与覆盖 | 产生一次本地提交，返回 `transaction`、`commit`、`revision`、`sync` |
@@ -229,6 +233,7 @@ MCP 与生命周期插件互补，不互相替代：
 | M10 | 无 `--sid` 调用 | 正常读写，来源记为 `unknown`，不伪造会话标识 |
 | M11 | 标准错误与诊断输出 | 不包含记忆正文、完整参数或凭据 |
 | M12 | 宿主关闭连接 | 进程退出，不遗留子进程与锁 |
+| M13 | `memory_entries` 按 `q`/`file`/`agent`/`device`/`from`/`to`/`limit`/`offset` 检索 | 参数原样下发到条目查询；返回 `{revision, items, total}` 与 `GET /api/v1/entries` 一致；负 `limit` 在调用前被拒绝；契约失败以 `isError` 携带错误码而非协议错误 |
 
 ### 6.2 真实验证边界
 
@@ -281,7 +286,7 @@ Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.
 
 已实现（`T071`、`T072`）：
 
-- `memctl mcp` 子命令、两个工具、协议处理与错误映射。
+- `memctl mcp` 子命令、三个工具、协议处理与错误映射。
 - `internal/mcp` 包与对应单元、集成测试；`internal/mcp/probe.go` 提供 `M09` 的能力探测。
 - `install --status` 的 `mcp:` 块：探测当前二进制并按 5.2 输出注册动作。
 - 帮助目录的 `mcp` 条目与 `install` 的 MCP 说明，中英文一致。

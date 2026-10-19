@@ -67,7 +67,7 @@ func TestR06AgentHelpI18n(t *testing.T) {
 	}
 
 	commands := []string{
-		"help", "version", "init", "read", "write", "sync", "end", "start",
+		"help", "version", "init", "read", "entries", "write", "sync", "end", "start",
 		"context", "pull", "tag", "wrap", "resolve", "recover", "doctor",
 		"dream", "install", "dsh", "pi", "mcp", "update", "ui",
 	}

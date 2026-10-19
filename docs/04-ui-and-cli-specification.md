@@ -19,6 +19,7 @@ memctl <subcommand> [flags] [-- command...]
 | `tag` | `--agent NAME --sid ID` | 输出 `agent://<device>/<agent>/<sid>`；身份不能唯一确定时失败 |
 | `wrap` | `--agent NAME -- <cmd...>` | 运行前同步，向子进程传入会话环境，结束后尽力同步，透传退出码和信号语义 |
 | `read <path>` | `--json` | 默认输出完整原文；JSON 输出 `{filePath, fileRevision, rawContent}`，供受管编辑 |
+| `entries` | `--q TEXT --file PATH --agent NAME --device NAME --from DATE --to DATE --limit N --offset N --json` | 只读检索已解析条目：`--q` 对条目正文做大小写不敏感子串匹配，其余参数收窄范围；输出 `{revision, items, total}` 或逐行 `path:line\tfact`；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
 | `write <path>` | `--base REV --stdin --agent NAME --sid ID` | stdin 为文件原文，不是 Hook JSON；基线为修订或 `absent`，原子受管写入并本地提交 |
 | `resolve` | `--json`、`--apply FILE --conflict ID` 或 `--abort --conflict ID` | 默认查看快照；应用 JSON 文件中的 `baseRevision/resolvedFiles`，或中止当前解决过程 |
 | `recover` | `--status` 或 `--rollback` | 查看或恢复本工具未完成事务；不接管外部 Git 操作 |
@@ -29,7 +30,7 @@ memctl <subcommand> [flags] [-- command...]
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 安装；只写状态目录，不修改 pi settings；不提供 tarball 形式 |
-| `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read` 与 `memory_write`；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
+| `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read`、`memory_entries` 与 `memory_write`；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
 | `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |

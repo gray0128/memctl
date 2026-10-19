@@ -17,6 +17,9 @@ const DefaultEntryPoint = vault.EntryPointName
 type Service interface {
 	ReadFile(ctx context.Context, relPath string) (vault.FileRead, error)
 	Apply(ctx context.Context, req app.MutationRequest) (app.MutationResult, error)
+	// ListEntries backs memory_entries. It is the same read-only query the Web
+	// UI uses, so the tool cannot widen the repository boundary.
+	ListEntries(ctx context.Context, query app.EntryQuery) (app.EntryPage, error)
 }
 
 // writeBudget bounds how long a busy repository lock may be retried. A model
@@ -59,6 +62,48 @@ func (s *Server) Tools() []Tool {
 			},
 		},
 		{
+			Name:        "memory_entries",
+			Description: "List or filter memory entries without reading whole files. Matching is a case-insensitive substring over the entry fact text; filters narrow by file, agent, device and added date. Use this to find where a fact lives before calling memory_read. Read-only; it never writes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"q": map[string]any{
+						"type":        "string",
+						"description": "Case-insensitive substring to match against the entry fact text.",
+					},
+					"file": map[string]any{
+						"type":        "string",
+						"description": "Only entries of this repository-relative file.",
+					},
+					"agent": map[string]any{
+						"type":        "string",
+						"description": "Only entries whose source records this agent name.",
+					},
+					"device": map[string]any{
+						"type":        "string",
+						"description": "Only entries whose source records this device label.",
+					},
+					"from": map[string]any{
+						"type":        "string",
+						"description": "Earliest added date (YYYY-MM-DD, inclusive).",
+					},
+					"to": map[string]any{
+						"type":        "string",
+						"description": "Latest added date (YYYY-MM-DD, inclusive).",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Page size, 1-200. Defaults to 50.",
+					},
+					"offset": map[string]any{
+						"type":        "integer",
+						"description": "Number of matching entries to skip.",
+					},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "memory_write",
 			Description: "Write one file to the shared memory repository through the managed transaction. The base revision must come from memory_read; use absent to create a new file. A stale base is rejected instead of overwriting another update.",
 			InputSchema: map[string]any{
@@ -89,6 +134,18 @@ type readArgs struct {
 	Path string `json:"path"`
 }
 
+// entriesArgs is the memory_entries argument object.
+type entriesArgs struct {
+	Q      string `json:"q"`
+	File   string `json:"file"`
+	Agent  string `json:"agent"`
+	Device string `json:"device"`
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Limit  int    `json:"limit"`
+	Offset int    `json:"offset"`
+}
+
 // writeArgs is the memory_write argument object.
 type writeArgs struct {
 	Path    string `json:"path"`
@@ -103,6 +160,8 @@ func (s *Server) CallTool(ctx context.Context, name string, params json.RawMessa
 	switch name {
 	case "memory_read":
 		return s.memoryRead(ctx, params)
+	case "memory_entries":
+		return s.memoryEntries(ctx, params)
 	case "memory_write":
 		return s.memoryWrite(ctx, params)
 	default:
@@ -140,6 +199,38 @@ func (s *Server) memoryRead(ctx context.Context, params json.RawMessage) (CallTo
 		RawContent:   file.RawContent,
 	}
 	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
+	return textResult(string(encoded), false), nil
+}
+
+// memoryEntries lists one page of entries. It returns the same shape the Web UI
+// reads from GET /api/v1/entries, so an agent and a human see identical results.
+func (s *Server) memoryEntries(ctx context.Context, params json.RawMessage) (CallToolResult, *JSONRPCError) {
+	var args entriesArgs
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &args); err != nil {
+			return CallToolResult{}, &JSONRPCError{Code: codeInvalidParams, Message: "invalid arguments: " + err.Error()}
+		}
+	}
+	if args.Limit < 0 || args.Offset < 0 {
+		return textResult("INVALID_ARGUMENT: limit and offset must not be negative", true), nil
+	}
+	page, err := s.service.ListEntries(ctx, app.EntryQuery{
+		Q:      args.Q,
+		Agent:  args.Agent,
+		Device: args.Device,
+		File:   args.File,
+		From:   args.From,
+		To:     args.To,
+		Limit:  args.Limit,
+		Offset: args.Offset,
+	})
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
+	encoded, err := json.Marshal(page)
 	if err != nil {
 		return textResult(errorText(err), true), nil
 	}
@@ -210,7 +301,7 @@ func isBusy(err error) bool {
 // ToolNames returns the tool names in the order Tools reports them. It exists
 // for tests and for the install-time capability check.
 func ToolNames() []string {
-	names := []string{"memory_read", "memory_write"}
+	names := []string{"memory_entries", "memory_read", "memory_write"}
 	sort.Strings(names)
 	return names
 }

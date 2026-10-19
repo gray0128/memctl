@@ -107,6 +107,7 @@
 | T080 | 已完成 | 调研其他 Agent 记忆项目的记忆更新与过期策略，新增 [10. 记忆更新与过期](./10-memory-lifecycle.md)：三档分类、更新与删除规则、时间线边界、调研对照表与后续验收要点；不改变产品行为，未实现过滤或过期能力；[归档记录](./validation/stage-f.md#t080记忆更新与过期策略调研) |
 | T081 | 已完成 | 内嵌默认指引新增条目失效的判定规则（状态型改写、事件型追加、禁止 changelog），`skills/memctl` 同步；`R01` 断言新段落，`04`/`05`/`10` 同步；不改变命令与协议；[归档记录](./validation/stage-f.md#t081注入条目失效的判定规则) |
 | T082 | 已完成 | 对应阶段 G 的 `G-1`：基于 GitHub Actions 的 Dreaming 远端整理方案与契约修订；删除本地 runner 与 Seatbelt 沙箱契约，改用代码控制的有界多步结构化模型调用（`memctl dream --worker`）与内置四家提供商（`deepseek`、`minimax`、`openai`、`anthropic`）；新增 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) 并修订 `01`–`05`；不改变当前产品代码；[归档记录](./validation/stage-f.md#t082基于-github-actions-的-dreaming-远端整理方案与契约修订g-1) |
+| T089 | 已完成 | 新增条目检索通道：CLI `memctl entries` 与 MCP `memory_entries` 共用 `App.ListEntries`，支持关键词/文件/来源/日期筛选与分页；只读，不建索引、不做语义检索；[归档记录](./validation/stage-g.md#t089新增条目检索通道entries-与-memory_entries) |
 | T088 | 已完成 | 发布 `v0.7.3`（含 `T087` 的版本漂移拦截）并在真实仓库验收：升级后旧工作流被拦截、`--init-workflow` 刷新后运行成功；记录手工替换运行中二进制的运维陷阱；[归档记录](./validation/stage-g.md#t088发布-v073-与版本漂移真实验收) |
 | T087 | 已完成 | 工作流版本绑定：就绪检查比对工作流的 `MEMCTL_DREAM_VERSION` 与当前二进制，漂移返回 `WORKFLOW_STALE` 并拒绝生成；不改为 `latest`，补单测与文档规则；[归档记录](./validation/stage-g.md#t087工作流版本绑定与漂移拦截) |
 | T086 | 已完成 | 修复 `--worker` 在 Actions 中的仓库定位（改用 `GITHUB_WORKSPACE`）并发布 `v0.7.2`；补 CLI 回归测试；`G-4` 首个真实端到端运行完成；[归档记录](./validation/stage-g.md#t086修复-worker-在-actions-中的仓库定位并发布-v072) |

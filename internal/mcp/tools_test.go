@@ -13,12 +13,20 @@ import (
 
 // fakeService records calls and returns scripted results.
 type fakeService struct {
-	readResult  vault.FileRead
-	readErr     error
-	applyResult app.MutationResult
-	applyErrs   []error
-	reads       []string
-	writes      []app.MutationRequest
+	readResult   vault.FileRead
+	readErr      error
+	applyResult  app.MutationResult
+	applyErrs    []error
+	reads        []string
+	writes       []app.MutationRequest
+	entryPage    app.EntryPage
+	entryErr     error
+	entryQueries []app.EntryQuery
+}
+
+func (f *fakeService) ListEntries(_ context.Context, query app.EntryQuery) (app.EntryPage, error) {
+	f.entryQueries = append(f.entryQueries, query)
+	return f.entryPage, f.entryErr
 }
 
 func (f *fakeService) ReadFile(_ context.Context, relPath string) (vault.FileRead, error) {
@@ -40,15 +48,16 @@ func newTestServer(service Service) *Server {
 	return NewServer(service, Session{Agent: "dsh", SessionID: "session-1", Device: "device-1"})
 }
 
-// TestM02ToolsList covers M02: exactly the two memory tools, with schemas.
+// TestM02ToolsList covers M02: exactly the documented memory tools, with
+// schemas.
 func TestM02ToolsList(t *testing.T) {
 	server := newTestServer(&fakeService{})
 	tools := server.Tools()
-	if len(tools) != 2 {
-		t.Fatalf("want 2 tools, got %d", len(tools))
+	if len(tools) != 3 {
+		t.Fatalf("want 3 tools, got %d", len(tools))
 	}
-	names := []string{tools[0].Name, tools[1].Name}
-	if names[0] != "memory_read" || names[1] != "memory_write" {
+	names := []string{tools[0].Name, tools[1].Name, tools[2].Name}
+	if names[0] != "memory_read" || names[1] != "memory_entries" || names[2] != "memory_write" {
 		t.Fatalf("unexpected tool names %v", names)
 	}
 	for _, tool := range tools {
@@ -63,7 +72,7 @@ func TestM02ToolsList(t *testing.T) {
 			t.Errorf("%s schema type = %v", tool.Name, schema["type"])
 		}
 	}
-	if got := ToolNames(); len(got) != 2 {
+	if got := ToolNames(); len(got) != 3 {
 		t.Fatalf("ToolNames() = %v", got)
 	}
 }
@@ -256,5 +265,76 @@ func TestM05UnknownTool(t *testing.T) {
 	_, rpcErr := server.CallTool(context.Background(), "memory_delete", nil)
 	if rpcErr == nil || rpcErr.Code != codeInvalidParams {
 		t.Fatalf("unexpected protocol error %+v", rpcErr)
+	}
+}
+
+// TestM13MemoryEntries covers M13: the read-only entry query is exposed as a
+// tool so an agent behind a host sandbox can locate a fact without reading every
+// file. It must forward every filter unchanged and report contract failures as
+// tool errors instead of protocol errors.
+func TestM13MemoryEntries(t *testing.T) {
+	page := app.EntryPage{
+		Revision: "sha256:rev",
+		Total:    1,
+		Items: []app.MemoryEntryDTO{{
+			ID:         "sha256:entry",
+			FilePath:   "notes/prefs.md",
+			LineNumber: 3,
+			FactText:   "editor preference is Vim",
+			AddedDate:  "2026-10-19",
+		}},
+	}
+	service := &fakeService{entryPage: page}
+	server := newTestServer(service)
+
+	result, rpcErr := server.CallTool(context.Background(), "memory_entries", json.RawMessage(
+		`{"q":"vim","file":"notes/prefs.md","agent":"dsh","device":"mac","from":"2026-01-01","to":"2026-12-31","limit":5,"offset":2}`))
+	if rpcErr != nil {
+		t.Fatalf("unexpected protocol error: %v", rpcErr)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %+v", result)
+	}
+	want := app.EntryQuery{
+		Q: "vim", File: "notes/prefs.md", Agent: "dsh", Device: "mac",
+		From: "2026-01-01", To: "2026-12-31", Limit: 5, Offset: 2,
+	}
+	if len(service.entryQueries) != 1 || service.entryQueries[0] != want {
+		t.Fatalf("query = %+v, want %+v", service.entryQueries, want)
+	}
+
+	var decoded app.EntryPage
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &decoded); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if decoded.Total != 1 || decoded.Revision != "sha256:rev" || decoded.Items[0].FactText != "editor preference is Vim" {
+		t.Fatalf("unexpected payload %+v", decoded)
+	}
+
+	// An omitted payload means "everything" and is forwarded as zero values.
+	if _, rpcErr := server.CallTool(context.Background(), "memory_entries", nil); rpcErr != nil {
+		t.Fatalf("unexpected protocol error: %v", rpcErr)
+	}
+	if service.entryQueries[1] != (app.EntryQuery{}) {
+		t.Fatalf("bare call query = %+v, want zero query", service.entryQueries[1])
+	}
+
+	// A negative limit is rejected before the service is called.
+	before := len(service.entryQueries)
+	rejected, rpcErr := server.CallTool(context.Background(), "memory_entries", json.RawMessage(`{"limit":-1}`))
+	if rpcErr != nil || !rejected.IsError {
+		t.Fatalf("negative limit: rpcErr=%v result=%+v, want a tool error", rpcErr, rejected)
+	}
+	if len(service.entryQueries) != before {
+		t.Fatalf("negative limit reached the service")
+	}
+
+	// A contract failure is reported to the model with its code, not as a
+	// protocol error, so the agent can react.
+	failing := &fakeService{entryErr: memerr.New(memerr.Busy, "repository lock is held")}
+	if result, rpcErr := newTestServer(failing).CallTool(context.Background(), "memory_entries", nil); rpcErr != nil || !result.IsError {
+		t.Fatalf("contract failure: rpcErr=%v result=%+v", rpcErr, result)
+	} else if !strings.Contains(result.Content[0].Text, "BUSY") {
+		t.Fatalf("tool error does not carry the contract code: %q", result.Content[0].Text)
 	}
 }

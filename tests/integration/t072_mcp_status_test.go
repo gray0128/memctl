@@ -20,8 +20,10 @@ func TestM09InstallStatusReportsMCP(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status exit = %d (stderr=%q)", code, stderr)
 	}
-	if !strings.Contains(stdout, "mcp: serving memory_read, memory_write") {
-		t.Fatalf("status did not report the MCP tools:\n%s", stdout)
+	for _, tool := range []string{"memory_entries", "memory_read", "memory_write"} {
+		if !strings.Contains(stdout, "mcp: serving "+tool) && !strings.Contains(stdout, ", "+tool) {
+			t.Fatalf("status did not report the %s tool:\n%s", tool, stdout)
+		}
 	}
 	for _, want := range []string{
 		"claude-code: claude mcp add memctl --scope user -- " + harness.binPath + " mcp --agent claude-code",

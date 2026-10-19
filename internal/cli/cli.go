@@ -103,6 +103,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	case "doctor":
 		return runDoctor(rest, stdout, stderr)
 
+	case "entries":
+		return runEntries(rest, stdout, stderr)
+
 	case "dream":
 		return runDream(rest, stdout, stderr, version)
 
