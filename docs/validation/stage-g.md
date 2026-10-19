@@ -110,3 +110,13 @@
 - 验证（2026-10-19，darwin/arm64）：`go test ./internal/... ./plugins/...` 全部通过；`go vet ./internal/...` 无输出；`cd web && npm test` 96 项通过；`make build` 成功。新增 `internal/mcp/status_test.go`（3 项）、`internal/server/mcp_test.go`（3 项）、`tests/integration/t091_mcp_status_test.go`（路由契约、只读、不写宿主配置）与 `web/src/adapters.test.js` 的 MCP 用例；`t037` 路由表与 `b1` 路由冒烟补入 `/api/v1/mcp`，分片清单登记三条新测试。
 - 真实运行（隔离 `HOME` 与临时状态目录，`memctl ui --port 0`）：`GET /api/v1/mcp` 返回 `available: true`、版本 `v0.7.3-4-g335df66-dirty`、三个工具与 8 条注册动作（7 条命令 + dsh 手工步骤，均指向实际二进制绝对路径）；构建产物包含「记忆整理」「MCP 记忆工具通道」「客户端接入」文案。
 - 未验证与遗留：未做浏览器内的视觉与交互验证（本轮未要求 UI/UX 验证）；「整理」页沿用原 DreamPanel 的轮询与禁用逻辑，未改动其行为。
+
+## T092：发布 `v0.8.0`
+
+- 目标与范围：发布含 `T090`（审计视图修正）与 `T091`（视图拆分与 MCP 状态）的 `v0.8.0`；插件源码未改动，保持 `0.5.1`，不发 npm。
+- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)。
+- 发布结果：提交 `9a27293`，标签 `v0.8.0`，运行 [39245974657](https://github.com/gray0128/memctl/actions/runs/39245974657) 的 `verify`（4 个分片）、`build`、`publish` 全部成功，Release 见 [v0.8.0](https://github.com/gray0128/memctl/releases/tag/v0.8.0)。
+- 附件与校验：下载到独立目录 `/tmp/memctl-v0.8.0` 后 `SHA256SUMS` 六项全部 OK；附件为四平台候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`memctl-darwin-arm64 version` 输出 `memctl v0.8.0`，`RELEASE-INFO.txt` 的 `commit` 为 `9a27293`、宿主运行时验证仅标注 darwin/arm64。
+- 本机升级与冒烟：按记录用「下载到 `/tmp` → 校验 → `mv` 原子替换」升级 `~/.agent-memory/bin/memctl` 到 `v0.8.0`；`version` 输出 `memctl v0.8.0`，`install --status` 的 `mcp:` 块输出 `serving memory_read, memory_entries, memory_write (v0.8.0)` 与 8 条注册动作。用发布二进制在隔离 `HOME` 与临时状态目录启动 `ui --port 0`，`GET /api/v1/mcp` 返回 `executable=~/.agent-memory/bin/memctl`、`version=v0.8.0`、三个工具与 8 条注册；内嵌脚本 `/assets/index-BGLdd-0y.js` 含「记忆整理」「MCP 记忆工具通道」「客户端接入」。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；浏览器内的视觉与交互未复验（本轮未安排 UI/UX 验证）；npm 插件包未随本版发布，仍为 `0.5.1`。
+- pi.dev 目录（2026-10-19 核对）：`memctl-pi` 已发布到 npm 且带 `pi-package` 关键字与 `pi.extensions` 清单，但 `https://pi.dev/packages?name=memctl` 返回 0 条。目录只索引满足其收录条件的包（页面写明「published to npm」，同类未收录包亦可检索到），从外部无法确认是索引延迟、收录条件还有额外要求，还是需要人工提交；下一步需查 pi 的包文档或向维护者确认，不在本轮猜测提交路径。
