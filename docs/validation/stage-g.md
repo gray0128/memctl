@@ -81,3 +81,5 @@
 - 边界：`q` 只匹配已存储的条目正文，不建立索引、不做语义或向量检索；`limit` 上限 200、默认 50，与 HTTP 路由一致；只读，不写仓库、不产生提交。
 - 验证：`make test` 全量通过；新增 `TestEntriesCLIFilters`、`TestEntriesCLIUsageErrors`、`TestEntriesRejectsPageBeyondLimit`、`TestM13MemoryEntries`（MCP 层）与 `TestM13MCPEntriesFindsFactThenReads`（真实二进制端到端：`memory_entries` 定位 → `memory_read` 读取 → 确认 HEAD 与工作树未变 → CLI 与 MCP 返回同一 `total`）。`docs/09` 的 `M02` 与工具表同步为三个工具。
 - 未验证与遗留：各宿主侧只更新了文档与帮助文本，未逐个宿主重跑「模型实际调用 `memory_entries`」；宿主注册的命令没变（仍是同一个 `memctl mcp`），已有注册无需改动。
+
+- 真实仓库冒烟（2026-10-19）：`~/memory` 上执行 `entries --q 沙箱` 返回 `MEMORY.md:8` 与 `notes/dsh-memory-updates.md:4` 并给出 `--- 2 of 3 entries; continue with --offset 2`；`entries --agent dsh --limit 2` 返回 `--- 2 of 19 entries`，来源筛选生效。
