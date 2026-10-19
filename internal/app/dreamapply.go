@@ -74,10 +74,14 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 		}
 		return MutationResult{}, err
 	}
+	source := a.localSource()
 	result, err := a.Apply(ctx, MutationRequest{
 		BaseRevision:    plan.BaseRevision,
 		DreamProposalID: proposalID,
 		Operation:       "dream apply",
+		Agent:           source.Agent,
+		SessionID:       source.SessionID,
+		Device:          source.Device,
 		Changes:         dreamFileChanges(plan),
 	})
 	if err != nil {

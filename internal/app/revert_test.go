@@ -21,12 +21,23 @@ func TestRevertSingleParentCommit(t *testing.T) {
 	reverted := applyUpdate(t, service, "alpha.md", "# Alpha\n\n- v2\n")
 
 	revision := snapshotRevision(t, service)
-	result, err := service.Revert(ctx, reverted.Commit, revision, "", "", "")
+	result, err := service.Revert(ctx, reverted.Commit, revision, "dsh", "sid-1", "laptop")
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
 	if result.Commit == "" || result.Commit == reverted.Commit {
 		t.Fatalf("revert did not create a new commit: %+v", result)
+	}
+	// The revert commit keeps Git's own message and gains the same provenance
+	// trailers as a managed write, so the audit view can resolve its source.
+	message := runGit(t, repo, "log", "-1", "--format=%B", result.Commit)
+	for _, want := range []string{"This reverts commit", "Agent: dsh", "Session: sid-1", "Device: laptop"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("revert message %q is missing %q", message, want)
+		}
+	}
+	if got := runGit(t, repo, "rev-parse", "HEAD"); got != result.Commit {
+		t.Fatalf("revert result commit %s is not HEAD %s", result.Commit, got)
 	}
 	if !containsString(result.ChangedFiles, "alpha.md") {
 		t.Fatalf("changed files = %v, want alpha.md", result.ChangedFiles)

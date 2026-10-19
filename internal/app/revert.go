@@ -97,7 +97,13 @@ func (a *App) Revert(ctx context.Context, hash, baseRevision, agent, sessionID, 
 	if revertErr := git.Revert(ctx, session.repoPath, commit); revertErr != nil {
 		return a.recoverFailedRevert(ctx, session, operationID, originalHead, revertErr)
 	}
-
+	// `git revert` writes its own message. Amend it so the audit view resolves
+	// the same source trailers as every other managed commit; the reverted
+	// commit id stays in the message text. Amending rewrites the commit id, so
+	// HEAD is read afterwards.
+	if err := amendRevertMessage(ctx, session.repoPath, revertSource(agent, sessionID, device)); err != nil {
+		return MutationResult{}, err
+	}
 	head, err := git.Head(ctx, session.repoPath)
 	if err != nil {
 		return MutationResult{}, err
@@ -127,6 +133,26 @@ func (a *App) Revert(ctx context.Context, hash, baseRevision, agent, sessionID, 
 	}
 	a.persistLocalCommit(session, result)
 	return a.finishWrite(session, result), nil
+}
+
+// revertSource is the provenance of one revert. A bare library call records
+// memctl itself; a caller that resolved an identity records that instead.
+func revertSource(agent, sessionID, device string) git.Source {
+	if agent == "" {
+		agent = git.LocalAgent
+	}
+	return git.Source{Agent: agent, SessionID: sessionID, Device: device}
+}
+
+// amendRevertMessage appends the caller provenance to the revert commit Git
+// just created. A revert commit without provenance would show up in the audit
+// view as unattributed even though memctl knows who asked for it.
+func amendRevertMessage(ctx context.Context, repoPath string, source git.Source) error {
+	message, err := git.HeadMessage(ctx, repoPath)
+	if err != nil {
+		return err
+	}
+	return git.AmendMessage(ctx, repoPath, git.AppendTrailers(message, source.Trailers()...))
 }
 
 // recoverFailedRevert diagnoses a failed revert, aborts the revert memctl

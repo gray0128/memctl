@@ -112,6 +112,10 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 	}
 	service := app.New(cfg)
 	service.SetVersion(version)
+	// Every commit a Dreaming mode creates (the workflow install and an applied
+	// proposal) records the same provenance as a managed write, so the audit
+	// view never shows it as unattributed.
+	service.SetCommitSource(app.CommitSource(os.Getenv))
 	ctx := context.Background()
 
 	switch {

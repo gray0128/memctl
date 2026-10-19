@@ -80,6 +80,10 @@ type App struct {
 	// version is the running binary version, used to check the Dreaming
 	// workflow pin. See App.SetVersion.
 	version string
+	// commitSource is the provenance memctl records for the commits it performs
+	// itself: initialization, the Dreaming workflow and apply, and reverts. See
+	// App.SetCommitSource.
+	commitSource git.Source
 }
 
 // New builds the application service for the given configuration.
@@ -167,7 +171,7 @@ func (a *App) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 	if err := git.Init(ctx, repoPath); err != nil {
 		return InitResult{}, err
 	}
-	head, err := bootstrapFirstCommit(ctx, repoPath)
+	head, err := bootstrapFirstCommit(ctx, repoPath, a.localSource())
 	if err != nil {
 		return InitResult{}, err
 	}
@@ -213,7 +217,7 @@ func (a *App) initExisting(ctx context.Context, repoPath string, opts InitOption
 	}
 
 	if git.UnbornHead(ctx, repoPath) {
-		head, err := finishFirstCommit(ctx, repoPath)
+		head, err := finishFirstCommit(ctx, repoPath, a.localSource())
 		if err != nil {
 			return InitResult{}, err
 		}
@@ -286,24 +290,25 @@ func (a *App) result(repoPath, state, head string) InitResult {
 
 // bootstrapFirstCommit creates the entry file and the first commit of a new
 // repository.
-func bootstrapFirstCommit(ctx context.Context, repoPath string) (string, error) {
+func bootstrapFirstCommit(ctx context.Context, repoPath string, source git.Source) (string, error) {
 	memoryPath := filepath.Join(repoPath, vault.EntryPointName)
 	if err := os.WriteFile(memoryPath, []byte(initialMemoryContent), 0o644); err != nil {
 		return "", memerr.Wrap(memerr.IOFailed, err, "cannot create %s", memoryPath)
 	}
-	return finishFirstCommit(ctx, repoPath)
+	return finishFirstCommit(ctx, repoPath, source)
 }
 
 // finishFirstCommit commits only the entry file. A missing Git identity is
-// reported explicitly; memctl never writes global Git configuration.
-func finishFirstCommit(ctx context.Context, repoPath string) (string, error) {
+// reported explicitly; memctl never writes global Git configuration. The first
+// commit carries the same provenance trailers as every later managed commit.
+func finishFirstCommit(ctx context.Context, repoPath string, source git.Source) (string, error) {
 	if err := git.RequireIdentity(ctx, repoPath); err != nil {
 		return "", err
 	}
 	if err := git.Add(ctx, repoPath, vault.EntryPointName); err != nil {
 		return "", err
 	}
-	return git.Commit(ctx, repoPath, "Initialize memory repository")
+	return git.Commit(ctx, repoPath, git.AppendTrailers("Initialize memory repository", source.Trailers()...))
 }
 
 // ensureOutsideRepositories refuses nested repositories, which are not valid

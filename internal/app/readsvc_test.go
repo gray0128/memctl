@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/lock"
 	"github.com/gray0128/memctl/internal/memerr"
@@ -73,5 +75,50 @@ func TestConflictStateDoesNotWaitForLock(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("conflict read waited %v for the repository lock", elapsed)
+	}
+}
+
+// TestAuditResolvesRootAndWorkflowSource covers the provenance gap behind the
+// audit view's "未记录来源": every commit memctl creates records its source, so
+// only history written by something else can lack one. The repository
+// initialization commit and the managed Dreaming workflow commit must both
+// resolve.
+func TestAuditResolvesRootAndWorkflowSource(t *testing.T) {
+	isolateGit(t)
+	repo := t.TempDir()
+	service := New(config.Config{
+		RepoPath: config.Canonical(repo),
+		StateDir: filepath.Join(t.TempDir(), "state"),
+	})
+	service.SetCommitSource(git.Source{Agent: git.LocalAgent, Device: "laptop"})
+	ctx := context.Background()
+
+	if _, err := service.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := service.InitDreamWorkflow(ctx, "v0.7.0"); err != nil {
+		t.Fatalf("init workflow: %v", err)
+	}
+
+	page, err := service.Audit(ctx, AuditQuery{Limit: 2})
+	if err != nil {
+		t.Fatalf("audit: %v", err)
+	}
+	if len(page.Commits) != 2 {
+		t.Fatalf("audit returned %d commits, want 2", len(page.Commits))
+	}
+	workflow := page.Commits[0]
+	if workflow.Subject != "memctl dream: install the Dreaming workflow" {
+		t.Fatalf("newest commit = %q", workflow.Subject)
+	}
+	if workflow.Agent != git.LocalAgent || workflow.Device != "laptop" {
+		t.Fatalf("workflow commit source = %+v, want agent %q on laptop", workflow, git.LocalAgent)
+	}
+	root := page.Commits[1]
+	if root.Subject != "Initialize memory repository" {
+		t.Fatalf("second commit = %q", root.Subject)
+	}
+	if root.Agent != git.LocalAgent || root.Device != "laptop" {
+		t.Fatalf("root commit source = %+v, want agent %q on laptop", root, git.LocalAgent)
 	}
 }

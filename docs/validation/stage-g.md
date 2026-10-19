@@ -83,3 +83,19 @@
 - 未验证与遗留：各宿主侧只更新了文档与帮助文本，未逐个宿主重跑「模型实际调用 `memory_entries`」；宿主注册的命令没变（仍是同一个 `memctl mcp`），已有注册无需改动。
 
 - 真实仓库冒烟（2026-10-19）：`~/memory` 上执行 `entries --q 沙箱` 返回 `MEMORY.md:8` 与 `notes/dsh-memory-updates.md:4` 并给出 `--- 2 of 3 entries; continue with --offset 2`；`entries --agent dsh --limit 2` 返回 `--- 2 of 19 entries`，来源筛选生效。
+
+## T090：审计视图来源、分页与时间轴修正
+
+- 目标与范围：修正审计视图的三个可观察问题。截图中 `memctl dream: install the Dreaming workflow` 显示「未知来源」、长历史没有翻页入口、时间轴竖线与圆点错位且时间格式不可扫读。
+- 契约：[审计对象](../02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[审计路由](../02-domain-models-and-contracts.md#42-路由)、[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[受管写入事务](../03-workflows-and-dataflows.md#2-受管写入事务)、[Revert](../03-workflows-and-dataflows.md#53-revert)。
+- 来源（现象 1）：根因不是解析失败，而是这些提交没有写来源 trailer。`git.Commit` 直接提交的三处路径（`init` 首个提交、`dream --init-workflow`、`dream --apply` 通过受管事务）与 `git revert --no-edit` 生成的提交都不带 `Agent:`/`Session:`/`Device:`。
+  1. 新增 `git.Source` 与 `git.AppendTrailers`，作为唯一 trailer 生成实现；`commitMessage` 改为复用它，输出保持一致。
+  2. `App.SetCommitSource` 与 `app.CommitSource(getenv)` 由 CLI `init`、`dream` 与 `ui` 入口设置；`dream.Service.CommitSource` 供工作流安装提交使用。
+  3. 无调用方来源时 `localSource` 把 Agent 替换为 `memctl`，因此库级调用同样产生可归属提交；根提交与 dream 提交都记录设备。
+  4. revert 在 Git 生成提交后用 `git.AmendMessage` 追加 trailer，`This reverts commit <id>` 正文保留，返回的 hash 是重写后的值。
+  5. 前端把「未知来源」改为「未记录来源」，并给出悬停说明：审计视图不根据作者或提交内容推断来源。
+- 分页（现象 2）：审计接口是游标分页且不返回总数，`nextCursor` 为空时旧实现不渲染任何控件。改为每页 20 条、上一页/下一页加已访问页码；只有当前页有 `nextCursor` 时下一页可用，刷新或回滚后游标链重置；页码只列已访问页，因为 API 不提供总数。
+- 时间轴（现象 3）：圆点与竖线改到同一 `left-2` 列并用 `-translate-x-1/2` 居中对齐，首末卡片把连接线截到圆点中心以消除溢出线头；按本地日期分组并显示每组提交数；时间显示为本地 `YYYY-MM-DD HH:mm`、悬停给出原始 ISO；来源拆成 Agent/设备/会话三个标签；卡片内边距、行距与字号收紧。
+- 验证（2026-10-19，darwin/arm64）：`go test ./internal/git ./internal/app ./internal/dream ./internal/cli ./internal/server` 与 `go test ./tests/integration -run 'TestT027|TestC2|TestB1|TestB3'`、`web` 的 `npm test`（94 项）全部通过；`go vet ./internal/...` 无输出。新增 `TestAppendTrailers`、`TestParseLogReadsAppendedTrailers`、`TestAuditResolvesRootAndWorkflowSource`、revert 与 dream apply 的 trailer 断言，以及 `web/src/audit.test.js` 的 8 项来源/分组/分页用例。
+- 界面验证（ego-browser，真实二进制与临时记忆仓库，26 次提交）：第 1 页 20 条、下一页可用；第 2 页 6 条且「下一页」禁用、页码出现 1/2；提交展开后 Diff 与回滚面板正常；两条无 trailer 的合成提交显示「未记录来源」并带悬停说明；圆点与竖线同心、日期分组标题与计数正确。
+- 未验证与遗留：来源补齐只对之后产生的提交生效，旧版本已写入且没有 trailer 的历史提交仍显示「未记录来源」，不提供历史改写；`dream --worker` 在 Actions 中的结果提交沿用其原有格式，不进入本地审计时间轴；窄屏（<640px）下的时间轴未单独复验。

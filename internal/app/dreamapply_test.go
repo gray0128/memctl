@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,14 @@ func TestApplyDreamCommitsAndIsIdempotentCoversD04(t *testing.T) {
 	}
 	if result.Commit == "" {
 		t.Fatalf("apply returned no commit: %+v", result)
+	}
+	// The apply commit carries the Dreaming provenance trailers, so the audit
+	// view resolves it instead of reporting an unattributed commit.
+	message := runGit(t, repo, "log", "-1", "--format=%B", result.Commit)
+	for _, want := range []string{"memctl dream apply", "Memctl-Transaction:", "Agent: "} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("apply commit message %q is missing %q", message, want)
+		}
 	}
 	if got := readTestFile(t, filepath.Join(repo, "new.md")); got != "# New\n- added [source: test; added: 2026-10-19]\n" {
 		t.Fatalf("created file content = %q", got)

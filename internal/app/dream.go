@@ -5,6 +5,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/git"
 )
 
 // Dreaming is the explicit, user-triggered memory-organization workflow of
@@ -25,6 +26,7 @@ func (a *App) dreamService() *dream.Service {
 			StateDir: a.cfg.StateDir,
 		})
 		a.dreamSvc.Version = a.version
+		a.dreamSvc.CommitSource = a.commitSource
 	}
 	return a.dreamSvc
 }
@@ -34,10 +36,27 @@ func (a *App) dreamService() *dream.Service {
 func (a *App) SetDreamService(service *dream.Service) {
 	a.dreamMu.Lock()
 	a.dreamSvc = service
-	if service != nil && service.Version == "" {
-		service.Version = a.version
+	if service != nil {
+		if service.Version == "" {
+			service.Version = a.version
+		}
+		service.CommitSource = a.commitSource
 	}
 	a.dreamMu.Unlock()
+}
+
+// SetCommitSource records the provenance of the commits memctl performs itself:
+// repository initialization, the managed workflow install, an applied proposal
+// and an audit revert. The CLI and the UI server set it from the host
+// environment, so those commits appear in the audit view with a recorded source
+// instead of an unattributed placeholder.
+func (a *App) SetCommitSource(source git.Source) {
+	a.dreamMu.Lock()
+	defer a.dreamMu.Unlock()
+	a.commitSource = source
+	if a.dreamSvc != nil {
+		a.dreamSvc.CommitSource = source
+	}
 }
 
 // SetVersion records the running binary version. Callers that care about the

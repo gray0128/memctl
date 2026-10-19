@@ -169,7 +169,9 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, "init", err)
 	}
-	result, err := app.New(cfg).Init(context.Background(), app.InitOptions{
+	service := app.New(cfg)
+	service.SetCommitSource(app.CommitSource(os.Getenv))
+	result, err := service.Init(context.Background(), app.InitOptions{
 		RemoteURL:      remoteURL,
 		ConfirmPrivate: confirmPrivate,
 		Interactive:    hasTerminal(),

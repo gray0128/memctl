@@ -99,6 +99,9 @@ func runUI(args []string, stdout, stderr io.Writer, version string) int {
 
 	application := app.New(cfg)
 	application.SetVersion(version)
+	// The UI server runs no hook session, so its own commits (an applied
+	// proposal, an audit revert) record memctl plus this device.
+	application.SetCommitSource(app.CommitSource(os.Getenv))
 	srv, err := server.New(server.Options{
 		App:      application,
 		Addr:     addr,

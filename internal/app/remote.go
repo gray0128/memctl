@@ -73,7 +73,7 @@ func (a *App) initWithNewRemote(ctx context.Context, repoPath string, createdDir
 	if err := git.Init(ctx, repoPath); err != nil {
 		return InitResult{RepoPath: repoPath}, err
 	}
-	head, err := bootstrapFirstCommit(ctx, repoPath)
+	head, err := bootstrapFirstCommit(ctx, repoPath, a.localSource())
 	if err != nil {
 		return InitResult{}, err
 	}

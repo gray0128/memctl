@@ -54,6 +54,11 @@ type Service struct {
 	// different binary than the one validating its result. A mismatch is
 	// reported as a readiness failure instead of silently drifting.
 	Version string
+	// CommitSource records the caller provenance in the commits this service
+	// creates, currently the managed workflow install. The audit view reads it
+	// back from the commit trailers, so the entry point that knows the invoking
+	// device sets it.
+	CommitSource git.Source
 	// Now is the injectable clock.
 	Now func() time.Time
 	// NewProvider builds the worker's model transport. It defaults to the

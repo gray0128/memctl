@@ -76,8 +76,8 @@ func (s *Service) InitWorkflow(ctx context.Context, version string) (InitWorkflo
 	if err := git.Add(ctx, s.Source.RepoPath, WorkflowRelativePath); err != nil {
 		return InitWorkflowResult{}, err
 	}
-	commit, err := git.Commit(ctx, s.Source.RepoPath,
-		"memctl dream: install the Dreaming workflow\n\nThe workflow runs `memctl dream --worker` for a dream/req branch and publishes\nits result to dream/res. See docs/11-github-actions-dreaming.md.\n")
+	message := "memctl dream: install the Dreaming workflow\n\nThe workflow runs `memctl dream --worker` for a dream/req branch and publishes\nits result to dream/res. See docs/11-github-actions-dreaming.md."
+	commit, err := git.Commit(ctx, s.Source.RepoPath, git.AppendTrailers(message, s.commitSource().Trailers()...))
 	if err != nil {
 		return InitWorkflowResult{}, err
 	}
@@ -283,6 +283,16 @@ const (
 	dreamWorkerName  = "memctl-dream[bot]"
 	dreamWorkerEmail = "memctl-dream@users.noreply.github.com"
 )
+
+// commitSource is the provenance of a commit this process creates. Without a
+// caller-supplied source the commit is attributed to memctl itself, so the
+// audit view never has to guess an empty source.
+func (s *Service) commitSource() git.Source {
+	if s.CommitSource.Agent != "" {
+		return s.CommitSource
+	}
+	return git.Source{Agent: git.LocalAgent}
+}
 
 // resultCommitMessage renders the result commit title and metadata body.
 func resultCommitMessage(meta WorkerMeta) string {

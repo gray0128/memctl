@@ -67,6 +67,15 @@ func Commit(ctx context.Context, dir, message string) (string, error) {
 	return Head(ctx, dir)
 }
 
+// AmendMessage replaces the message of the current HEAD commit without
+// changing its tree or parents. The revert path uses it because `git revert`
+// always writes its own message, and the audit view needs the same provenance
+// trailers as a managed write.
+func AmendMessage(ctx context.Context, dir, message string) error {
+	_, err := Run(ctx, dir, "commit", "-q", "--amend", "--only", "-m", message)
+	return err
+}
+
 // CommitWithEnv creates a commit with the given extra environment. It is used
 // by the Dreaming worker, which runs on a checkout without a configured
 // identity and must not modify Git configuration. allowEmpty keeps a failed

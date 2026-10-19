@@ -70,7 +70,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 | 对象 | 字段与语义 |
 | --- | --- |
-| `AuditCommit` | `hash`, `parents`, `timestamp`, `subject`, `files`, `agent?`, `sessionId?`, `device?`, `alerts`；无法解析来源时显示未知，不推断 |
+| `AuditCommit` | `hash`, `parents`, `timestamp`, `subject`, `files`, `agent?`, `sessionId?`, `device?`, `alerts`；来源只取自提交说明末尾的 `Agent:`、`Session:`、`Device:` trailer，缺失时显示「未记录来源」，不根据作者或提交内容推断 |
 | `FileDiff` | `path`, `additions`, `deletions`, `patch`, `binary` |
 | `DiagnosticIssue` | `code`, `severity`, `filePath?`, `lineNumber?`, `message`, `suggestion`, `autoFixable` |
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
@@ -140,7 +140,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `GET /api/v1/conflict` | 无 | `ConflictState`，无冲突时 204 |
 | `POST /api/v1/conflict:resolve` | `{conflictId, baseRevision, resolvedFiles}` | 状态及可能出现的新冲突；不保证一轮完成 |
 | `POST /api/v1/conflict:abort` | `{conflictId}` | 中止本工具拥有的解决过程，返回恢复后状态 |
-| `GET /api/v1/audit` | `limit, agent, before?` | `{commits, nextCursor?}`；只返回提交元数据与文件清单，不含 Diff |
+| `GET /api/v1/audit` | `limit, agent, before?` | `{commits, nextCursor?}`；只返回提交元数据与文件清单，不含 Diff；游标分页且不返回总数，UI 只能按已访问页编号 |
 | `GET /api/v1/audit/{hash}/diff` | 无 | `{hash, files}`，`files` 为 `FileDiff[]`；只读预览该提交的文本改动，二进制文件为 `binary: true` 且 `patch` 为空 |
 | `POST /api/v1/audit/{hash}/revert` | `{baseRevision}` | `MutationResult` |
 | `GET /api/v1/doctor` | 无 | `DoctorReport` |

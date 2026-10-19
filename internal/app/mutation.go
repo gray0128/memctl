@@ -835,20 +835,12 @@ func (a *App) persistLocalCommit(session *writeSession, result MutationResult) {
 	_ = cache.SaveSync(record)
 }
 
+// commitMessage renders one managed commit: the operation title, the
+// transaction trailer recovery relies on, then the provenance trailers the
+// audit view reads. See docs/03-workflows-and-dataflows.md section 2 step 5.
 func commitMessage(operation, agent, sessionID, device, txID string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "memctl %s\n\n", operation)
-	fmt.Fprintf(&b, "%s%s\n", transactionTrailer, txID)
-	if agent != "" {
-		fmt.Fprintf(&b, "Agent: %s\n", agent)
-	}
-	if sessionID != "" {
-		fmt.Fprintf(&b, "Session: %s\n", sessionID)
-	}
-	if device != "" {
-		fmt.Fprintf(&b, "Device: %s\n", device)
-	}
-	return b.String()
+	body := "memctl " + operation + "\n\n" + transactionTrailer + txID
+	return git.AppendTrailers(body, (git.Source{Agent: agent, SessionID: sessionID, Device: device}).Trailers()...)
 }
 
 func fsMode(gitMode string) fs.FileMode {
