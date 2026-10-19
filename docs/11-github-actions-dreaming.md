@@ -231,14 +231,18 @@ jobs:
       - name: Install memctl Linux binary
         run: |
           BASE="https://github.com/gray0128/memctl/releases/download/${MEMCTL_DREAM_VERSION}"
-          curl -fsSL "${BASE}/memctl-linux-amd64" -o /tmp/memctl
-          curl -fsSL "${BASE}/SHA256SUMS" -o /tmp/SHA256SUMS
-          grep "  memctl-linux-amd64$" /tmp/SHA256SUMS | (cd /tmp && sha256sum -c -)
-          chmod +x /tmp/memctl
+          # SHA256SUMS lists the release asset name, so the download keeps that
+          # name for `sha256sum -c` to find it.
+          mkdir -p /tmp/memctl-dream
+          cd /tmp/memctl-dream
+          curl -fsSL "${BASE}/memctl-linux-amd64" -o memctl-linux-amd64
+          curl -fsSL "${BASE}/SHA256SUMS" -o SHA256SUMS
+          grep "  memctl-linux-amd64$" SHA256SUMS | sha256sum -c -
+          chmod +x memctl-linux-amd64
 
       - name: Run Dreaming worker
         run: |
-          /tmp/memctl dream --worker \
+          /tmp/memctl-dream/memctl-linux-amd64 dream --worker \
             --ref "${GITHUB_REF_NAME}" \
             --base-head "${GITHUB_SHA}"
 ```

@@ -28,3 +28,12 @@
 - 验证：`make test` 全量通过（单元包、两个插件 Node 测试、全部集成测试）；`go vet ./...` 无输出；`git diff --check` 无输出。
 - 发布结果：提交 `8bababd`，标签 `v0.7.0`；工作流运行 [39220876567](https://github.com/gray0128/memctl/actions/runs/39220876567) 的 `verify`、`build`、`publish` 全部成功，Release 于 2026-10-19T08:15:46Z 创建，附件为四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；附件下载到独立目录 `/tmp/memctl-v0.7.0` 后 `shasum -a 256 -c SHA256SUMS` 六项全部 OK，`memctl-darwin-arm64 version` 输出 `memctl v0.7.0`、`help dream` 显示五种模式；本机 `~/.agent-memory/bin/memctl` 已替换为该附件（SHA-256 与 `SHA256SUMS` 一致）。本地 `make release` 未参与发布。
 - 未验证与遗留：`G-4` 真实 GitHub Actions 与模型端点端到端仍未执行；插件源码未改动，npm 不发布新版本。
+
+## T085：修复工作流校验和步骤并发布 `v0.7.1`
+
+- 目标与范围：修复 `T083` 内嵌工作流模板中的真实缺陷——`SHA256SUMS` 记录的是发布资产名 `memctl-linux-amd64`，模板却把下载保存为 `/tmp/memctl`，导致 `sha256sum -c` 找不到文件，`v0.7.0` 的首次真实 Actions 运行在「安装 memctl Linux 二进制」步骤失败。本轮只改模板与文档，不改 worker 与传输协议。
+- 契约：[11. GitHub Actions Dreaming](../11-github-actions-dreaming.md#25-工作流文件与自部署配置)、[发布入口](../04-ui-and-cli-specification.md#61-发布入口)。
+- 现象与证据：`v0.7.0` 在 `~/memory`（`gray0128/agent-memory-repo`）安装工作流后触发运行 [39222156552](https://github.com/gray0128/agent-memory-repo/actions/runs/39222156552)，日志为 `sha256sum: memctl-linux-amd64: No such file or directory`、`FAILED open or read`，作业在 12 秒内结束；本地同步侧因缺少 `dream/res` 结果而持续等待，直到取消。
+- 修复：模板把二进制与 `SHA256SUMS` 下载到 `/tmp/memctl-dream/`，文件名与资产名一致，在同一目录执行校验后从该路径调用 `--worker`；文档 §2.5 的模板片段同步。新增 `internal/assets/assets_test.go`，断言下载名、校验命令、执行路径、版本占位符、触发分支与 `contents: write`，防止模板再次与发布资产命名脱节。
+- 验证：`go test ./internal/assets/ ./internal/dream/` 通过；`go vet ./...` 无输出；用修复后的二进制在临时仓库执行 `dream --init-workflow`，渲染出的步骤与断言一致。
+- 未验证与遗留：修复后的工作流需随补丁版本发布后才能在真实 Actions 中复验；`G-4` 的真实模型调用仍未执行（仓库尚无提供商 Secret）。
