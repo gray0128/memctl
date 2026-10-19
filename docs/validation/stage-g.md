@@ -26,5 +26,5 @@
 - 验证日期与环境：2026-10-19，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1。
 - 改动：`README.md` 与 `STATUS.md` 的当前版本改为 `v0.7.0`；`scripts/release.sh` 的 `RELEASE-INFO.txt` 说明补入内嵌 Actions 工作流模板与 Dreaming 的真实前置条件；同步 `07`/`08` 的插件 tarball 版本表述；修复 `hostVersionTimeout` 由 3 秒提升到 10 秒，避免并行编译负载下把正常宿主误判为 `cannot parse the version`（`I01` 曾因此间歇失败）。
 - 验证：`make test` 全量通过（单元包、两个插件 Node 测试、全部集成测试）；`go vet ./...` 无输出；`git diff --check` 无输出。
-- 发布流程：推送 `main` 后创建并推送 `v0.7.0` 标签，等待流水线 `verify` 与 `build` 通过、`publish` 作业创建 Release；附件下载到独立目录并按 `SHA256SUMS` 校验后升级本机二进制。本地 `make release` 不作为发布产物证据。
+- 发布结果：提交 `8bababd`，标签 `v0.7.0`；工作流运行 [39220876567](https://github.com/gray0128/memctl/actions/runs/39220876567) 的 `verify`、`build`、`publish` 全部成功，Release 于 2026-10-19T08:15:46Z 创建，附件为四个候选二进制、`memctl-dsh-0.5.1.tgz`、`memctl-pi-0.5.1.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；附件下载到独立目录 `/tmp/memctl-v0.7.0` 后 `shasum -a 256 -c SHA256SUMS` 六项全部 OK，`memctl-darwin-arm64 version` 输出 `memctl v0.7.0`、`help dream` 显示五种模式；本机 `~/.agent-memory/bin/memctl` 已替换为该附件（SHA-256 与 `SHA256SUMS` 一致）。本地 `make release` 未参与发布。
 - 未验证与遗留：`G-4` 真实 GitHub Actions 与模型端点端到端仍未执行；插件源码未改动，npm 不发布新版本。
