@@ -61,3 +61,12 @@
 - 实现：`dream.Service.Version` 由应用服务注入（CLI `dream`/`ui` 通过 `App.SetVersion`）；就绪检查读取工作流的 `MEMCTL_DREAM_VERSION`，与当前版本不一致或仍是占位符时返回新增的 `WORKFLOW_STALE`，`dream --runner` 在仓库锁内以 `UNSUPPORTED` 拒绝生成并提示 `memctl dream --init-workflow`。开发构建（`v2.0.0-dev`）没有 Release 可下载，豁免校验并保留占位符。
 - 验证：`go test ./internal/dream/ ./internal/app/ ./internal/cli/ ./internal/server/` 与 `make test` 全量通过；新增 `TestWorkflowVersionDriftBlocksGenerationCoversD01`（占位符、版本不一致、刷新后恢复、开发构建豁免）与 `TestWorkflowPinnedVersionParsing`；`cd web && npm test` 86 项通过。用 `-X main.version=v0.7.2` 构建的二进制在临时仓库实测：占位符工作流被拒绝，`--init-workflow` 后写入 `v0.7.2` 并通过就绪检查进入等待。
 - 未验证与遗留：真实环境中尚未出现一次「升级 memctl 后未刷新工作流」的实际拦截；UI 侧只通过 meta 的 `unavailable` 与原因文案呈现，未做浏览器验证（本轮未要求）。
+
+## T088：发布 `v0.7.3` 与版本漂移真实验收
+
+- 目标与范围：发布带 `WORKFLOW_STALE` 拦截的 `v0.7.3`，并在真实仓库上验证拦截与刷新流程；不改变产品行为（`T087` 已实现）。
+- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[版本绑定规则](../11-github-actions-dreaming.md#25-工作流文件与自部署配置)。
+- 发布结果：提交 `2d8d50e`，标签 `v0.7.3`，运行 [39228807441](https://github.com/gray0128/memctl/actions/runs/39228807441) 的 `verify`、`build`、`publish` 全部成功；附件下载到 `/tmp/memctl-v0.7.3` 后 6 项校验和全部 OK，`memctl-darwin-arm64 version` 输出 `memctl v0.7.3`。
+- 真实验收：本机升级到 `v0.7.3` 后，`~/memory` 的工作流仍固定 `v0.7.2`，`memctl dream --runner deepseek` 被拦截为 `UNSUPPORTED: ... pins v0.7.2 but this memctl is v0.7.3; run memctl dream --init-workflow to refresh it`；执行 `--init-workflow` 并推送后版本一致，随后运行 [39229750039](https://github.com/gray0128/agent-memory-repo/actions/runs/39229750039) 成功，提案 `dp-0774eb99…` 状态 `ready`（模型仍判定无需改动，0 处变更）。
+- 附带修复（运维侧，非产品缺陷）：直接 `cp` 覆盖正在运行的 `memctl`（`memctl ui` 进程持有该 inode）会触发 macOS SIGKILL，表现为二进制文件校验和正确但一执行就退出；改用「写临时文件 + `mv` 原子替换」后正常。`internal/update` 已采用 `os.Rename`，不受影响；手工升级应按同样方式替换。
+- 未验证与遗留：带实际文件变更的提案被 `apply` 提交仍未在真实环境验证。诊断仓库 `gray0128/memctl-dream-diag2` 已创建并配好工作流，但没有对应 Secret；删除两个诊断仓库需要 `delete_repo` scope。
