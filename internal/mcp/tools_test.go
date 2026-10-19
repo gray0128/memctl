@@ -338,3 +338,37 @@ func TestM13MemoryEntries(t *testing.T) {
 		t.Fatalf("tool error does not carry the contract code: %q", result.Content[0].Text)
 	}
 }
+
+// TestMemoryReadReportsHiddenExpired covers M03's expiry clause: the tool
+// forwards the read result unchanged, so a projected file carries its
+// hiddenExpired count in the same JSON the CLI prints.
+func TestMemoryReadReportsHiddenExpired(t *testing.T) {
+	service := &fakeService{readResult: vault.FileRead{
+		RelPath:       "MEMORY.md",
+		FileRevision:  "sha256:rev",
+		RawContent:    "# Memory\n\n- active\n- " + vault.ExpiredFactPlaceholder + " [until: 2000-01-01]\n",
+		HiddenExpired: 1,
+	}}
+
+	result, rpcErr := newTestServer(service).CallTool(context.Background(), "memory_read", nil)
+	if rpcErr != nil {
+		t.Fatalf("memory_read: %+v", rpcErr)
+	}
+	if result.IsError {
+		t.Fatalf("memory_read failed: %+v", result)
+	}
+	var payload struct {
+		FileRevision  string `json:"fileRevision"`
+		RawContent    string `json:"rawContent"`
+		HiddenExpired int    `json:"hiddenExpired"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.HiddenExpired != 1 || payload.FileRevision != "sha256:rev" {
+		t.Fatalf("payload = %+v", payload)
+	}
+	if !strings.Contains(payload.RawContent, vault.ExpiredFactPlaceholder) {
+		t.Fatalf("placeholder missing:\n%s", payload.RawContent)
+	}
+}

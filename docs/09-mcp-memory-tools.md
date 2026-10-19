@@ -99,7 +99,7 @@ Agent（模型）
 
 | 工具 | 用途 | 参数 | 成功返回 |
 | --- | --- | --- | --- |
-| `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent` |
+| `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` |
 | `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content` | `transaction`、`commit`、`revision`、`sync` |
 
@@ -224,7 +224,7 @@ MCP 与生命周期插件互补，不互相替代：
 | --- | --- | --- |
 | M01 | `initialize` 正常握手、未知方法、非法 JSON 行 | 返回正确处理；非法行不终止进程；标准输出只有 JSON 行 |
 | M02 | `tools/list` | 恰好返回 `memory_read`、`memory_entries` 与 `memory_write` 及其参数模式 |
-| M03 | `memory_read` 读取 `MEMORY.md` 与指定路径 | 返回 `filePath`、`fileRevision`、`rawContent`，与 `read --json` 一致 |
+| M03 | `memory_read` 读取 `MEMORY.md` 与指定路径 | 返回 `filePath`、`fileRevision`、`rawContent`，与 `read --json` 一致；`until` 已到期的条目以占位符出现并计入 `hiddenExpired` |
 | M04 | 路径越界、绝对路径、Git 内部路径、符号链接逃逸 | 返回 `INVALID_PATH`，不读取仓库外内容 |
 | M05 | `memory_write` 使用正确基线新建与覆盖 | 产生一次本地提交，返回 `transaction`、`commit`、`revision`、`sync` |
 | M06 | 基线过期、并发写入 | 返回 `REVISION_MISMATCH`，不覆盖他人更新，不产生提交 |
