@@ -67,6 +67,22 @@ func Commit(ctx context.Context, dir, message string) (string, error) {
 	return Head(ctx, dir)
 }
 
+// CommitWithEnv creates a commit with the given extra environment. It is used
+// by the Dreaming worker, which runs on a checkout without a configured
+// identity and must not modify Git configuration. allowEmpty keeps a failed
+// Dreaming run publishable even when it produced no file change.
+func CommitWithEnv(ctx context.Context, dir, message string, extraEnv []string, allowEmpty bool) (string, error) {
+	args := []string{"commit", "-q"}
+	if allowEmpty {
+		args = append(args, "--allow-empty")
+	}
+	args = append(args, "-m", message)
+	if _, err := runWithEnv(ctx, dir, extraEnv, args...); err != nil {
+		return "", err
+	}
+	return Head(ctx, dir)
+}
+
 // Head returns the current HEAD hash and fails when HEAD is unborn.
 func Head(ctx context.Context, dir string) (string, error) {
 	return Run(ctx, dir, "rev-parse", "HEAD")

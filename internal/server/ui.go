@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"html"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -17,8 +18,14 @@ const (
 	indexFileName       = "index.html"
 	tokenPlaceholder    = "__MEMCTL_TOKEN__"
 	readOnlyPlaceholder = "__MEMCTL_READONLY__"
-	// dreamSandboxPlaceholder carries the Dreaming generation capability. It is
-	// resolved per request because tests inject a synthetic sandbox after the
+	// dreamReasonPlaceholder is the human-readable reason shown when Dreaming is
+	// not ready (missing remote approval or missing workflow file).
+	dreamReasonPlaceholder = "__MEMCTL_DREAM_REASON__"
+	// dreamSandboxPlaceholder carries the Dreaming readiness state. It keeps its
+	// original name because the injected page and the client contract already
+	// use it; the value is now derived from the remote approval and the managed
+	// workflow file instead of a local sandbox. The value is resolved per
+	// request because tests inject a different Dreaming service after the
 	// server is built.
 	dreamSandboxPlaceholder = "__MEMCTL_DREAM_SANDBOX__"
 
@@ -68,13 +75,17 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	setUICSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	// The Dreaming capability is resolved per request, so a test or a long-lived
-	// server always reflects the current sandbox detection.
+	// The Dreaming readiness is resolved per request, so a test or a long-lived
+	// server always reflects the current remote approval and workflow state.
 	dreamValue := []byte("unavailable")
-	if s.app.DreamSandboxAvailable() {
+	dreamReason := ""
+	if code, reason := s.app.DreamBackendStatus(r.Context()); code == "" {
 		dreamValue = []byte("available")
+	} else {
+		dreamReason = reason
 	}
 	page := bytes.ReplaceAll(s.indexHTML, []byte(dreamSandboxPlaceholder), dreamValue)
+	page = bytes.ReplaceAll(page, []byte(dreamReasonPlaceholder), []byte(html.EscapeString(dreamReason)))
 	_, _ = w.Write(page)
 }
 

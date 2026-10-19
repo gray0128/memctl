@@ -1,7 +1,8 @@
-// Package assets embeds the default instructions and, from stage C, the
-// supported adapter templates so a copied binary stays self-contained. See
-// docs/01-architecture-and-modules.md section 5 and
-// docs/04-ui-and-cli-specification.md section 6.
+// Package assets embeds the default instructions, the supported adapter
+// templates and the Dreaming workflow template so a copied binary stays
+// self-contained. See docs/01-architecture-and-modules.md section 5,
+// docs/04-ui-and-cli-specification.md section 6 and
+// docs/11-github-actions-dreaming.md section 2.5.
 //
 // The default instructions adapt 脚本化实现参考/INSTRUCTIONS.md from the
 // project reference directory to the managed read/write and version-baseline
@@ -30,3 +31,9 @@ var Adapters embed.FS
 func AdapterFile(name string) ([]byte, error) {
 	return fs.ReadFile(Adapters, "adapters/"+name)
 }
+
+// DreamWorkflow is the GitHub Actions workflow of the Dreaming transport. It is
+// written into a memory repository by `memctl dream --init-workflow`.
+//
+//go:embed dream/memctl-dream.yml
+var DreamWorkflow []byte

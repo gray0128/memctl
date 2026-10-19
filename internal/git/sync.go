@@ -115,6 +115,93 @@ func Fetch(ctx context.Context, dir string, opts Options, remote string) error {
 	return err
 }
 
+// FetchRef fetches exactly one remote ref into one local ref. The Dreaming
+// result transport uses it so a fetch never rewrites the tracking refs of the
+// branches the user is working on. updateRef names a fully qualified local ref.
+func FetchRef(ctx context.Context, dir string, opts Options, remote, remoteRef, updateRef string) error {
+	_, _, err := runGit(ctx, dir, opts, "fetch", "--no-tags", remote, remoteRef+":"+updateRef)
+	return err
+}
+
+// PushRef publishes one local object as a remote branch without touching the
+// local branch or its upstream. src is a commit hash or any revision.
+func PushRef(ctx context.Context, dir string, opts Options, remote, src, remoteRef string) error {
+	_, _, err := runGit(ctx, dir, opts, "push", "--no-verify", remote, src+":"+remoteRef)
+	return err
+}
+
+// DeleteRemoteRef deletes one remote branch. The caller treats a missing ref as
+// success, so cleanup after a consumed proposal is idempotent.
+func DeleteRemoteRef(ctx context.Context, dir string, opts Options, remote, remoteRef string) error {
+	_, _, err := runGit(ctx, dir, opts, "push", "--no-verify", "--delete", remote, remoteRef)
+	return err
+}
+
+// UpdateRef points one local ref at a revision, or deletes it when rev is
+// empty. It is the cleanup counterpart of FetchRef.
+func UpdateRef(ctx context.Context, dir, ref, rev string) error {
+	if rev == "" {
+		_, err := Run(ctx, dir, "update-ref", "-d", ref)
+		return err
+	}
+	_, err := Run(ctx, dir, "update-ref", ref, rev)
+	return err
+}
+
+// SourceFiles reads the regular non-`.git` files of one commit, as a commit
+// object rather than as a checked-out tree. The Dreaming worker materializes
+// them in a dependency-free temporary checkout so it never runs a branch
+// checkout of untrusted history in the user's repository.
+func SourceFiles(ctx context.Context, dir, commit string) (map[string][]byte, error) {
+	out, _, err := runGitRaw(ctx, dir, Options{}, "ls-tree", "-r", "-z", "--full-tree", commit)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string][]byte{}
+	for _, record := range strings.Split(out, "\x00") {
+		if record == "" {
+			continue
+		}
+		meta, path, ok := strings.Cut(record, "\t")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(meta)
+		if len(fields) != 3 {
+			continue
+		}
+		mode, kind, blob := fields[0], fields[1], fields[2]
+		// Only regular blobs of the working tree are memory content. A
+		// submodule commit and a symbolic link are refused by the caller's
+		// range checks instead of being resolved here.
+		if kind != "blob" || (mode != "100644" && mode != "100755") {
+			continue
+		}
+		content, _, err := runGitRaw(ctx, dir, Options{}, "cat-file", "blob", blob)
+		if err != nil {
+			return nil, err
+		}
+		files[path] = []byte(content)
+	}
+	return files, nil
+}
+
+// CommitMessageOf returns the full message of one commit.
+func CommitMessageOf(ctx context.Context, dir, commit string) (string, error) {
+	return Run(ctx, dir, "log", "-1", "--format=%B", commit)
+}
+
+// RevParseOrEmpty resolves a revision and reports an empty string when it does
+// not exist, so "the ref is not there yet" is distinguishable from a repository
+// failure.
+func RevParseOrEmpty(ctx context.Context, dir, rev string) (string, error) {
+	out, _, err := runGit(ctx, dir, Options{NonInteractive: true}, "rev-parse", "--verify", "-q", rev)
+	if err != nil {
+		return "", nil
+	}
+	return out, nil
+}
+
 // UpstreamRef returns the tracking ref of the current branch ("origin/main")
 // and whether one is configured.
 func UpstreamRef(ctx context.Context, dir string) (string, bool, error) {

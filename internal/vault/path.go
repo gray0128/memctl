@@ -61,8 +61,14 @@ func validateSegment(segment string) error {
 	case ".", "..":
 		return memerr.New(memerr.InvalidPath, "path must not contain %q segments", segment)
 	}
-	if strings.EqualFold(segment, ".git") {
-		return memerr.New(memerr.InvalidPath, "path must not reference Git internals")
+	// `.github` is excluded for the same reason as `.git`: a workflow file in a
+	// memory repository runs with that repository's own credentials on the
+	// remote, so ordinary reads, writes, MCP calls and UI edits must never
+	// reach it. Only `memctl dream --init-workflow` writes the managed workflow,
+	// and it does so through the application service instead of this boundary.
+	// See docs/11-github-actions-dreaming.md section 3.2.
+	if strings.EqualFold(segment, ".git") || strings.EqualFold(segment, ".github") {
+		return memerr.New(memerr.InvalidPath, "path must not reference Git internals or Dreaming workflow files")
 	}
 	if strings.ContainsRune(segment, ':') {
 		return memerr.New(memerr.InvalidPath, "path must not contain alternative data stream syntax")

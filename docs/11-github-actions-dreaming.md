@@ -1,6 +1,6 @@
 # 11. 基于 GitHub Actions 的 Dreaming 远端整理方案
 
-> 状态：方案与契约已定（2026-10-19，`T082`），待实现。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`G-1`–`G-3` 已实现（2026-10-19，`T082`、`T083`），`G-4` 真实 GitHub Actions 与模型端点端到端尚待验证。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
@@ -185,7 +185,7 @@ worker 内置以下 4 个模型提供商，全部使用 Go 标准库 `net/http` 
 
 ### 2.5 工作流文件与自部署配置
 
-记忆仓库中的工作流路径固定为 `.github/workflows/memctl-dream.yml`。`memctl` 二进制在 `internal/assets` 内嵌该模板，可通过 `memctl dream --init-workflow` 写入记忆仓库并提交。
+记忆仓库中的工作流路径固定为 `.github/workflows/memctl-dream.yml`。`memctl` 二进制在 `internal/assets` 内嵌该模板，可通过 `memctl dream --init-workflow` 写入记忆仓库并提交；模板中的版本占位符会被替换为执行安装的 `memctl` 版本，使工作流下载与当前二进制一致的 Linux 发布产物（开发构建不替换，保留占位符以便发现）。
 
 工作流模板核心结构如下：
 
@@ -211,7 +211,7 @@ jobs:
     env:
       GITHUB_REF_NAME: ${{ github.ref_name }}
       GITHUB_SHA: ${{ github.sha }}
-      MEMCTL_DREAM_VERSION: v0.7.0
+      MEMCTL_DREAM_VERSION: <安装工作流时的 memctl 版本>
       MEMCTL_DREAM_MODEL: ${{ vars.MEMCTL_DREAM_MODEL }}
       MEMCTL_DREAM_BASE_URL: ${{ vars.MEMCTL_DREAM_BASE_URL }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

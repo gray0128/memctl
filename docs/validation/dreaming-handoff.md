@@ -1,6 +1,6 @@
 # Dreaming 交接文档
 
-> 状态：`D-1`、`D-2` 本地沙箱实现已通过合成验收，真实本地 CLI runner 因隔离环境凭据问题未跑通；**`T082` 已选定架构演进方案（见 [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)）**，废弃本地 CLI runner 与 macOS Seatbelt 沙箱，改为依托记忆仓库的 GitHub Actions 运行 `memctl dream --worker`（由代码控制的有界多步结构化模型调用，内置 `deepseek`、`minimax`、`openai`、`anthropic` 四个提供商）。本文档保留 `D-1`/`D-2` 本地实现现状、代码位置与实测记录，作为阶段 G（`G-2`–`G-4`）代码迁移的对照基线。记录日期 2026-10-19，macOS arm64，Go 1.27.1，`memctl v0.6.0`。
+> 状态：本文档是历史基线。`D-1`、`D-2` 的本地沙箱实现已通过合成验收，真实本地 CLI runner 因隔离环境凭据问题未跑通；`T082` 选定架构演进方案并由 `T083` 完成代码迁移（见 [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)），本地 CLI runner 与 macOS Seatbelt 沙箱已从代码中删除，整理改为依托记忆仓库的 GitHub Actions 运行 `memctl dream --worker`。本文件保留当时的问题记录与实测证据，供追溯 `G-2` 的取舍依据；当前实现状态以 [阶段 G 归档](./stage-g.md) 为准。记录日期 2026-10-19，macOS arm64，Go 1.27.1，`memctl v0.6.0`。
 
 ## 1. 一页结论
 

@@ -105,7 +105,11 @@ func (r *Root) ListManaged() ([]string, error) {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if strings.EqualFold(name, ".git") {
+			// `.github` holds the Dreaming workflow, which is executed with the
+			// remote repository's credentials. It is not managed memory: it is
+			// never listed, hashed into a revision or diagnosed as content.
+			// See docs/11-github-actions-dreaming.md section 3.2.
+			if strings.EqualFold(name, ".git") || strings.EqualFold(name, ".github") {
 				continue
 			}
 			// A crash can leave a hidden atomic-write temporary file or a

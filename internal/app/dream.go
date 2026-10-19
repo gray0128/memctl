@@ -28,8 +28,8 @@ func (a *App) dreamService() *dream.Service {
 	return a.dreamSvc
 }
 
-// SetDreamService replaces the Dreaming service. Tests use it to inject a
-// synthetic runner and a controlled sandbox; production code leaves it unset.
+// SetDreamService replaces the Dreaming service. Tests use it to point the
+// service at a controlled Git remote; production code leaves it unset.
 func (a *App) SetDreamService(service *dream.Service) {
 	a.dreamMu.Lock()
 	a.dreamSvc = service
@@ -61,10 +61,28 @@ func (a *App) DreamProposal(ctx context.Context, proposalID string) (dream.Propo
 // ApplyDream applies one reviewed proposal through the managed write
 // transaction. See app.ApplyDream in dreamapply.go.
 
-// DreamSandboxAvailable reports whether a verified runner isolation backend is
-// available on this host. The local UI uses it to disable generation before a
-// request is attempted; generation itself still re-checks it.
-func (a *App) DreamSandboxAvailable() bool {
+// DreamBackendStatus reports whether Dreaming can start on this repository:
+// the memory repository needs a confirmed private remote and the managed
+// GitHub Actions workflow. The UI disables generation before a request is made;
+// generation itself re-checks every condition under the repository lock. See
+// docs/11-github-actions-dreaming.md section 2.1.
+func (a *App) DreamBackendStatus(ctx context.Context) (string, string) {
+	return a.dreamService().BackendStatus(ctx)
+}
+
+// DreamBackendReady reports whether generation is available, for the UI probe.
+func (a *App) DreamBackendReady(ctx context.Context) bool {
 	service := a.dreamService()
-	return service.Sandbox != nil && service.Sandbox.Available()
+	return service.BackendReady(ctx)
+}
+
+// InitDreamWorkflow writes and commits the managed Dreaming workflow. version is
+// substituted as the release the workflow downloads.
+func (a *App) InitDreamWorkflow(ctx context.Context, version string) (dream.InitWorkflowResult, error) {
+	return a.dreamService().InitWorkflow(ctx, version)
+}
+
+// DreamWorker runs the GitHub Actions worker against the checked-out baseline.
+func (a *App) DreamWorker(ctx context.Context, requestRef, baseHead string) (dream.WorkerRunResult, error) {
+	return a.dreamService().Worker(ctx, requestRef, baseHead)
 }

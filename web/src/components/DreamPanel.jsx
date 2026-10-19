@@ -6,7 +6,7 @@ import {
   canGenerate,
   changeSummary,
   isTerminalProposal,
-  previewFailureDisablesSandbox,
+  previewFailureDisablesBackend,
   proposalStatusLabel,
   summarizeProposal,
 } from '../dreams.js'
@@ -35,7 +35,7 @@ export function DreamPanel({ api, refreshKey }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
-  const [sandboxUnavailable, setSandboxUnavailable] = useState(false)
+  const [backendUnavailable, setBackendUnavailable] = useState(false)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -71,10 +71,10 @@ export function DreamPanel({ api, refreshKey }) {
       const started = await api.dreamPreview(runner, '')
       setProposalId(started.proposalId)
     } catch (requestError) {
-      if (previewFailureDisablesSandbox(requestError.code, api.dreamSandbox)) {
-        setSandboxUnavailable(true)
+      if (previewFailureDisablesBackend(requestError.code, api.dreamSandbox)) {
+        setBackendUnavailable(true)
         setMessage({ tone: 'warn', text: `生成已禁用：${requestError.message}` })
-      } else if (requestError.code === 'UNSUPPORTED') {
+      } else if (requestError.code === 'UNSUPPORTED' || requestError.code === 'REMOTE_NOT_APPROVED') {
         setMessage({ tone: 'warn', text: requestError.message })
       } else {
         setMessage({ tone: 'error', text: requestError.message })
@@ -114,8 +114,8 @@ export function DreamPanel({ api, refreshKey }) {
     setReload((current) => current + 1)
   }
 
-  const sandboxAvailable = api.dreamSandbox && !sandboxUnavailable
-  const generationEnabled = canGenerate(api.readOnly, sandboxAvailable)
+  const backendReady = api.dreamSandbox && !backendUnavailable
+  const generationEnabled = canGenerate(api.readOnly, backendReady)
 
   return (
     <section className="space-y-4 rounded-2xl border border-indigo-200/80 bg-white p-5 shadow-2xs dark:border-indigo-900/60 dark:bg-slate-900">
@@ -132,23 +132,23 @@ export function DreamPanel({ api, refreshKey }) {
             <span className="text-[11px] text-slate-500 dark:text-slate-400">
               {api.readOnly
                 ? '只读模式：生成与确认已禁用'
-                : sandboxAvailable
-                  ? '隔离沙箱运行 · 确认前绝不触碰主库'
-                  : '未探测到隔离沙箱，生成能力安全保护已关闭'}
+                : backendReady
+                  ? 'GitHub Actions 远端整理 · 确认前绝不触碰主库'
+                  : readyHint(api.dreamReason)}
             </span>
           </div>
         </div>
       </div>
 
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        选择 Runner 并发起整理，系统将导出脱敏记忆文本至模型端点生成结构优化建议；必须经操作者人工审查后方可应用。
+        选择模型提供商并发起整理：受管记忆文本将在仓库的 GitHub Actions 中发送给该提供商的 API，整理结果回传到本地并重新校验；必须经操作者人工审查后方可应用。
       </p>
 
       {/* Control Strip */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
           <select
-            aria-label="runner"
+            aria-label="provider"
             value={runner}
             onChange={(event) => setRunner(event.target.value)}
             disabled={busy || api.readOnly}
@@ -156,7 +156,7 @@ export function DreamPanel({ api, refreshKey }) {
           >
             {RUNNERS.map((item) => (
               <option key={item.id} value={item.id}>
-                Runner: {item.label}
+                提供商: {item.label}
               </option>
             ))}
           </select>
@@ -166,7 +166,7 @@ export function DreamPanel({ api, refreshKey }) {
             disabled={busy || !generationEnabled}
             className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? '正在调度…' : '发起整理提案'}
+            {busy ? '等待 Actions 结果…' : '发起整理提案'}
           </button>
         </div>
 

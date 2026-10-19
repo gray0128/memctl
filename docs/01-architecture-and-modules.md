@@ -157,13 +157,13 @@ memctl/
     syncer/       # 同步、spawn_unix.go、spawn_windows.go
     vault/        # 格式解析、图谱、变更计划
     doctor/
-    dream/
+    dream/        # 远端分支编排、三阶段 worker、模型提供商适配
     adapters/
     server/
     watcher/
     mcp/          # stdio MCP server 与能力探测
     update/       # 自更新下载、校验与替换
-    assets/       # embed.go、INSTRUCTIONS.md、adapter 模板
+    assets/       # embed.go、INSTRUCTIONS.md、adapter 模板、Actions 工作流模板
   web/
     embed.go      # 前端内嵌入口
     src/          # 前端源码及组件测试

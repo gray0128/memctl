@@ -25,7 +25,11 @@ var protectedBaseNames = map[string]bool{
 // are matched at any depth so a nested Git or host configuration file is
 // rejected too.
 var protectedDirNames = map[string]bool{
-	".git":    true,
+	".git": true,
+	// `.github` holds the Dreaming workflow, which the local side must never
+	// rewrite through a proposal: the Actions job runs with the repository's own
+	// credentials. Only `dream --init-workflow` writes it.
+	".github": true,
 	".ssh":    true,
 	".gnupg":  true,
 	".aws":    true,
@@ -35,7 +39,7 @@ var protectedDirNames = map[string]bool{
 }
 
 // protectedPath reports whether a root-relative path is Git or host
-// configuration that must not be exported to a runner or proposed as a change.
+// configuration that must not be exported to the worker or proposed as a change.
 // Comparisons are case-folded because a case-insensitive filesystem resolves
 // `.GIT` and `.git` to the same directory.
 func protectedPath(rel string) bool {

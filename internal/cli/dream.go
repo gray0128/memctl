@@ -4,47 +4,78 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/gray0128/memctl/internal/app"
+	"github.com/gray0128/memctl/internal/dream"
 )
 
-// runDream implements `dream --runner claude|codex`, `dream --show ID` and
-// `dream --apply ID --patch-hash HASH`. Generation and viewing are mutually
-// exclusive with applying. Generating never writes the main repository;
-// applying commits one already-reviewed proposal through the managed
-// transaction. See docs/03-workflows-and-dataflows.md section 6.
-func runDream(args []string, stdout, stderr io.Writer) int {
+// runDream implements the five mutually exclusive modes of
+// docs/04-ui-and-cli-specification.md section 1: generate (--runner), show,
+// apply, install the Actions workflow (--init-workflow) and the internal Actions
+// entry point (--worker). Generating never writes the main repository; applying
+// commits one already-reviewed proposal through the managed transaction. See
+// docs/11-github-actions-dreaming.md sections 2.1 and 2.5.
+func runDream(args []string, stdout, stderr io.Writer, version string) int {
 	runner := ""
 	show := ""
 	apply := ""
 	patchHash := ""
+	initWorkflow := false
+	worker := false
+	workerRef := ""
+	baseHead := ""
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
+		next := func(flag string) (string, bool) {
+			if index+1 >= len(args) {
+				usageError(stderr, "dream", flag+" requires a value")
+				return "", false
+			}
+			index++
+			return args[index], true
+		}
 		switch {
 		case arg == "--runner":
-			if index+1 >= len(args) {
-				return usageError(stderr, "dream", "--runner requires a runner name")
+			value, ok := next("--runner")
+			if !ok {
+				return ExitUsageError
 			}
-			index++
-			runner = args[index]
+			runner = value
 		case arg == "--show":
-			if index+1 >= len(args) {
-				return usageError(stderr, "dream", "--show requires a proposal id")
+			value, ok := next("--show")
+			if !ok {
+				return ExitUsageError
 			}
-			index++
-			show = args[index]
+			show = value
 		case arg == "--apply":
-			if index+1 >= len(args) {
-				return usageError(stderr, "dream", "--apply requires a proposal id")
+			value, ok := next("--apply")
+			if !ok {
+				return ExitUsageError
 			}
-			index++
-			apply = args[index]
+			apply = value
 		case arg == "--patch-hash":
-			if index+1 >= len(args) {
-				return usageError(stderr, "dream", "--patch-hash requires a hash")
+			value, ok := next("--patch-hash")
+			if !ok {
+				return ExitUsageError
 			}
-			index++
-			patchHash = args[index]
+			patchHash = value
+		case arg == "--init-workflow":
+			initWorkflow = true
+		case arg == "--worker":
+			worker = true
+		case arg == "--ref":
+			value, ok := next("--ref")
+			if !ok {
+				return ExitUsageError
+			}
+			workerRef = value
+		case arg == "--base-head":
+			value, ok := next("--base-head")
+			if !ok {
+				return ExitUsageError
+			}
+			baseHead = value
 		default:
 			return usageError(stderr, "dream", fmt.Sprintf("unknown argument %q", arg))
 		}
@@ -56,11 +87,20 @@ func runDream(args []string, stdout, stderr io.Writer) int {
 			modes++
 		}
 	}
+	if initWorkflow {
+		modes++
+	}
+	if worker {
+		modes++
+	}
 	if modes != 1 {
-		return usageError(stderr, "dream", "exactly one of --runner, --show or --apply is required")
+		return usageError(stderr, "dream", "exactly one of --runner, --show, --apply, --init-workflow or --worker is required")
 	}
 	if patchHash != "" && apply == "" {
 		return usageError(stderr, "dream", "--patch-hash requires --apply")
+	}
+	if (workerRef != "" || baseHead != "") && !worker {
+		return usageError(stderr, "dream", "--ref and --base-head are only valid with --worker")
 	}
 
 	cfg, err := loadConfig()
@@ -71,6 +111,29 @@ func runDream(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 
 	switch {
+	case worker:
+		// The worker runs inside GitHub Actions, where the workflow passes the
+		// request branch and the baseline commit.
+		if workerRef == "" {
+			workerRef = os.Getenv("GITHUB_REF_NAME")
+		}
+		result, err := service.DreamWorker(ctx, workerRequestRef(workerRef), baseHead)
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if err := encodeJSON(stdout, result); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
+	case initWorkflow:
+		result, err := service.InitDreamWorkflow(ctx, version)
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if err := encodeJSON(stdout, result); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
 	case apply != "":
 		if patchHash == "" {
 			return usageError(stderr, "dream", "--apply requires --patch-hash HASH")
@@ -93,6 +156,10 @@ func runDream(args []string, stdout, stderr io.Writer) int {
 		}
 		return ExitOK
 	default:
+		if !dream.KnownProvider(runner) {
+			return usageError(stderr, "dream", fmt.Sprintf(
+				"unknown model provider %q; supported providers are %s", runner, dream.ProviderIDsList()))
+		}
 		proposal, err := service.DreamPreview(ctx, runner, "")
 		if err != nil {
 			// A persisted failed proposal is still reported on stdout so the
@@ -110,4 +177,12 @@ func runDream(args []string, stdout, stderr io.Writer) int {
 		}
 		return ExitOK
 	}
+}
+
+// workerRequestRef normalizes the branch name the workflow was triggered by.
+func workerRequestRef(value string) string {
+	if value == "" || len(value) >= len("refs/") && value[:5] == "refs/" {
+		return value
+	}
+	return "refs/heads/" + value
 }

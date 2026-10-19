@@ -1,8 +1,8 @@
 # memctl
 
-`memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理。
+`memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理（在记忆仓库的 GitHub Actions 中运行）。
 
-当前版本 `v0.6.0`（2026-10-18 发布，新增 `memctl mcp` 记忆工具通道与 `install --status` 的 MCP 探测，并缩短 CI 耗时），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布，`memctl-pi` 与 `memctl-dsh` 的 npm 包已发布 `0.5.1`，插件版本独立于二进制发布，`v0.6.0` Release 仍附带 `0.5.1` 的插件 tarball（插件源码自 `v0.5.1` 起未改动），pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，AI runner 仅用于整理生成。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.6.0`（2026-10-18 发布，新增 `memctl mcp` 记忆工具通道与 `install --status` 的 MCP 探测，并缩短 CI 耗时），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布，`memctl-pi` 与 `memctl-dsh` 的 npm 包已发布 `0.5.1`，插件版本独立于二进制发布，`v0.6.0` Release 仍附带 `0.5.1` 的插件 tarball（插件源码自 `v0.5.1` 起未改动），pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，Dreaming 整理使用记忆仓库远端 GitHub Actions 中的模型提供商，本地不读取模型凭据。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -100,7 +100,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.1`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
-| 整理提案 | `dream --runner`、`dream --show`、`dream --apply` | 隔离生成带固定 Diff 的提案，人工确认后按受管事务应用；应用不重新调用模型 |
+| 整理提案 | `dream --init-workflow`、`dream --runner`、`dream --show`、`dream --apply` | 推送 `dream/req` 触发 GitHub Actions 结构化整理，拉取并校验结果树生成带固定 Diff 的提案；人工确认后按受管事务应用，应用不重新调用模型 |
 
 命令、参数、退出码与输出格式的权威定义见 [CLI 命令](./docs/04-ui-and-cli-specification.md#1-cli-命令)，HTTP 路由与错误码见 [REST 契约](./docs/02-domain-models-and-contracts.md#4-rest-契约)。以下行为细节同样以契约为准：
 
@@ -120,7 +120,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 
 - darwin/arm64：全量测试、发布二进制冒烟与浏览器验证均在本机执行。
 - macOS amd64、Linux amd64、Windows amd64：仅交叉编译通过，文件锁、路径语义、进程生命周期与 runner 隔离未验证。
-- Dreaming：仅 macOS Seatbelt 为已验证隔离后端，Linux 与 Windows 返回 `UNSUPPORTED`；真实 runner 与模型端点未验证。
+- Dreaming：统一在记忆仓库所在 GitHub 远端的 Actions 运行器中执行，本地不再依赖平台沙箱；真实 GitHub Actions 与模型端点端到端尚未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.1`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验；真实 DSH 会话中的注入、每轮同步、受管写入提交、恢复、锁忙与断网降级已在 `v0.4.0` 验证；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。

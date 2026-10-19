@@ -22,9 +22,13 @@ export const CHANGE_ACTION_LABELS = {
   delete: '删除',
 }
 
+// The four built-in model providers of the GitHub Actions worker. The label is
+// the provider name; the id is the `--runner` value the API accepts.
 export const RUNNERS = [
-  { id: 'claude', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'minimax', label: 'MiniMax' },
+  { id: 'openai', label: 'OpenAI' },
+  { id: 'anthropic', label: 'Anthropic' },
 ]
 
 export function proposalStatusLabel(status) {
@@ -40,18 +44,26 @@ export function isTerminalProposal(status) {
   return status === 'ready' || status === 'applied' || status === 'stale' || status === 'failed'
 }
 
-// canGenerate disables generation in read-only mode and without a verified
-// isolation backend, both of which the server would reject.
-export function canGenerate(readOnly, sandboxAvailable) {
-  return Boolean(!readOnly && sandboxAvailable)
+// readyHint explains why generation is disabled and names the one action the
+// operator can take. The server reports the machine-readable cause.
+export function readyHint(reason) {
+  if (!reason) return '未配置 Actions 远端或工作流，生成能力已禁用'
+  return `生成已禁用：${reason}`
 }
 
-// previewFailureDisablesSandbox reports whether a preview rejection should
-// latch generation off for the session. Only a missing sandbox means the
-// capability is unavailable; a missing runner or another UNSUPPORTED cause
-// must not make the panel claim the sandbox is gone.
-export function previewFailureDisablesSandbox(errorCode, sandboxAvailable) {
-  return errorCode === 'UNSUPPORTED' && !sandboxAvailable
+// canGenerate disables generation in read-only mode and when the repository is
+// not ready for the GitHub Actions backend (missing confirmed remote or missing
+// workflow file), both of which the server would reject.
+export function canGenerate(readOnly, backendReady) {
+  return Boolean(!readOnly && backendReady)
+}
+
+// previewFailureDisablesBackend reports whether a preview rejection should latch
+// generation off for the session. Only a missing backend prerequisite means the
+// capability is unavailable; a provider failure or another UNSUPPORTED cause
+// must not make the panel claim the repository is not ready.
+export function previewFailureDisablesBackend(errorCode, backendReady) {
+  return (errorCode === 'UNSUPPORTED' || errorCode === 'REMOTE_NOT_APPROVED') && !backendReady
 }
 
 // canApply reports whether a proposal is ready to confirm. A stale, failed or

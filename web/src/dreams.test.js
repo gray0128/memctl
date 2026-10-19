@@ -6,8 +6,9 @@ import {
   changeActionLabel,
   changeSummary,
   isTerminalProposal,
-  previewFailureDisablesSandbox,
+  previewFailureDisablesBackend,
   proposalStatusLabel,
+  RUNNERS,
   summarizeProposal,
 } from './dreams.js'
 
@@ -40,19 +41,24 @@ describe('dream helpers', () => {
     expect(isTerminalProposal('failed')).toBe(true)
   })
 
-  it('disables generation without a sandbox or in read-only mode', () => {
+  it('disables generation without a ready backend or in read-only mode', () => {
     expect(canGenerate(false, true)).toBe(true)
     expect(canGenerate(false, false)).toBe(false)
     expect(canGenerate(true, true)).toBe(false)
   })
 
-  it('only latches generation off when the sandbox is the missing capability', () => {
-    expect(previewFailureDisablesSandbox('UNSUPPORTED', false)).toBe(true)
-    // A missing runner is also UNSUPPORTED, but the sandbox is available, so
-    // the capability state must not change.
-    expect(previewFailureDisablesSandbox('UNSUPPORTED', true)).toBe(false)
-    expect(previewFailureDisablesSandbox('BUSY', true)).toBe(false)
-    expect(previewFailureDisablesSandbox('', true)).toBe(false)
+  it('only latches generation off when a backend prerequisite is missing', () => {
+    expect(previewFailureDisablesBackend('UNSUPPORTED', false)).toBe(true)
+    expect(previewFailureDisablesBackend('REMOTE_NOT_APPROVED', false)).toBe(true)
+    // A provider failure is also UNSUPPORTED, but the backend is ready, so the
+    // capability state must not change.
+    expect(previewFailureDisablesBackend('UNSUPPORTED', true)).toBe(false)
+    expect(previewFailureDisablesBackend('BUSY', true)).toBe(false)
+    expect(previewFailureDisablesBackend('', true)).toBe(false)
+  })
+
+  it('lists exactly the four built-in providers', () => {
+    expect(RUNNERS.map((item) => item.id)).toEqual(['deepseek', 'minimax', 'openai', 'anthropic'])
   })
 
   it('only allows applying a ready proposal with a patch hash', () => {

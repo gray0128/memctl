@@ -8,23 +8,20 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
 
-// workFile is one regular text file found in the runner's working directory.
+// workFile is one regular text file of the worker result tree.
 type workFile struct {
 	content []byte
 	fsMode  fs.FileMode
 }
 
-// buildChanges compares the exported working tree against the fixed baseline
+// buildChanges compares the worker result tree against the fixed baseline
 // and returns the ordered change list plus the bounded unified diff. Every
 // out-of-scope path, non-text file, Git configuration change and over-limit
 // result is rejected instead of being propagated into a proposal. See
@@ -60,7 +57,7 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 		new, _ := work[rel]
 
 		// A managed apply preserves the baseline mode and creates files as
-		// 100644, so a runner mode change cannot be committed. Normalize it away
+		// 100644, so a worker mode change cannot be committed. Normalize it away
 		// and warn instead of producing a ready proposal that apply would reject.
 		plannedMode := "100644"
 		if hasOld {
@@ -79,6 +76,10 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 			}
 		}
 
+		if hasOld && !hasNew && rel == vault.EntryPointName {
+			return nil, "", nil, memerr.New(memerr.Unsupported,
+				"the proposal deletes %s; the entry file must always exist", vault.EntryPointName)
+		}
 		change := Change{Path: rel}
 		switch {
 		case hasOld && !hasNew:
@@ -115,7 +116,7 @@ func buildChanges(base *baseline, work map[string]workFile) ([]Change, string, [
 	}
 
 	if len(changes) == 0 {
-		return changes, "", append(modeWarnings, "the runner made no changes"), nil
+		return changes, "", append(modeWarnings, "the worker made no changes"), nil
 	}
 
 	var diff strings.Builder
@@ -160,95 +161,6 @@ func linkWarnings(work map[string]workFile, changes []Change) []string {
 	}
 	sort.Strings(warnings)
 	return warnings
-}
-
-// scanWorkTree walks the exported working tree and returns every regular text
-// file. Symbolic links, special files, out-of-scope paths and binary or
-// oversized content fail the whole proposal.
-func scanWorkTree(workDir string) (map[string]workFile, error) {
-	root := repoDir(workDir)
-	files := make(map[string]workFile)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return memerr.Wrap(memerr.IOFailed, walkErr, "cannot walk the exported tree")
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return memerr.Wrap(memerr.IOFailed, err, "cannot resolve %s", path)
-		}
-		if rel == "." {
-			return nil
-		}
-		slash := filepath.ToSlash(rel)
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return memerr.New(memerr.Unsupported,
-				"the proposal contains a symbolic link at %q; links are not supported memory", slash)
-		}
-		if protectedPath(slash) {
-			return memerr.New(memerr.Unsupported,
-				"the proposal modifies Git or host configuration at %q", slash)
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return memerr.New(memerr.Unsupported,
-				"the proposal contains a non-regular file at %q", slash)
-		}
-		if _, err := vault.ValidateRelPath(slash); err != nil {
-			return err
-		}
-		content, mode, err := readWorkFile(path)
-		if err != nil {
-			return err
-		}
-		files[slash] = workFile{content: content, fsMode: mode}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return files, nil
-}
-
-// readWorkFile reads one bounded UTF-8 regular file. It rechecks the type
-// before reading so a file swapped for a symlink or a special file between the
-// directory walk and the open is rejected instead of followed.
-func readWorkFile(path string) ([]byte, fs.FileMode, error) {
-	linkInfo, err := os.Lstat(path)
-	if err != nil {
-		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot inspect %s", path)
-	}
-	if !linkInfo.Mode().IsRegular() {
-		return nil, 0, memerr.New(memerr.Unsupported,
-			"the proposal contains a non-regular file at %q", path)
-	}
-	handle, err := os.Open(path)
-	if err != nil {
-		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot open %s", path)
-	}
-	defer handle.Close()
-	info, err := handle.Stat()
-	if err != nil {
-		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot inspect %s", path)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, 0, memerr.New(memerr.Unsupported,
-			"the proposal contains a non-regular file at %q", path)
-	}
-	content, err := io.ReadAll(io.LimitReader(handle, vault.MaxTextFileBytes+1))
-	if err != nil {
-		return nil, 0, memerr.Wrap(memerr.IOFailed, err, "cannot read %s", path)
-	}
-	if len(content) > vault.MaxTextFileBytes {
-		return nil, 0, memerr.New(memerr.LimitExceeded,
-			"the proposal file %q exceeds the %d byte text limit", path, vault.MaxTextFileBytes)
-	}
-	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
-		return nil, 0, memerr.New(memerr.Unsupported,
-			"the proposal contains binary content at %q", path)
-	}
-	return content, info.Mode().Perm(), nil
 }
 
 // patchHash binds the ordered change list and every planned revision. Applying

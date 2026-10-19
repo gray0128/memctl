@@ -13,74 +13,163 @@ import (
 	"github.com/gray0128/memctl/internal/vault"
 )
 
-// This file verifies the stage D-1 Dreaming pipeline without a kernel sandbox:
-// the export, the runner invocation, the change validation and the persistence
-// are exercised through an injected pass-through sandbox and a synthetic
-// runner. The real Seatbelt isolation is covered by the platform test and by
-// tests/integration/d1_dream_test.go.
+// This file verifies the GitHub Actions Dreaming transport of
+// docs/11-github-actions-dreaming.md without a real GitHub remote: a local bare
+// repository stands in for origin, and a stub worker answers the request branch
+// exactly like the Actions job does. No model endpoint and no credentials are
+// touched.
 
-// passthrough runs the runner directly. It exists only for pipeline tests that
-// are not about isolation; production code always uses platformSandbox.
-type passthrough struct{}
-
-func (passthrough) Name() string    { return "passthrough" }
-func (passthrough) Available() bool { return true }
-func (passthrough) Wrap(_, execPath string, args []string) (string, []string, error) {
-	return execPath, args, nil
+// gitEnv is the hermetic environment of the stub Git operations.
+func gitEnv(t *testing.T) []string {
+	t.Helper()
+	return append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		"GIT_CONFIG_GLOBAL="+filepath.Join(t.TempDir(), "gitconfig"),
+		"GIT_CONFIG_SYSTEM="+filepath.Join(t.TempDir(), "system-gitconfig"),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ALLOW_PROTOCOL=file",
+	)
 }
 
-// initRepo creates a one-commit memory repository and returns its root path.
-func initRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", args...)
-		command.Dir = dir
-		command.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
-			"GIT_CONFIG_NOSYSTEM=1",
-		)
-		if out, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-b", "main")
-	if err := os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte("# Memory\n\n## Index\n- [[topic]]\n"), 0o644); err != nil {
-		t.Fatalf("write MEMORY.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "topic.md"), []byte("# Topic\n- fact one\n"), 0o644); err != nil {
-		t.Fatalf("write topic.md: %v", err)
-	}
-	run("add", "MEMORY.md", "topic.md")
-	run("commit", "-m", "init")
-	return dir
+// gitCommandIn runs one Git command and returns its combined output, so a
+// caller can branch on an expected failure.
+func gitCommandIn(dir string, env []string, args ...string) (string, error) {
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	command.Env = env
+	out, err := command.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
-// newTestService builds a service with a pass-through sandbox and one synthetic
-// runner script.
-func newTestService(t *testing.T, repoPath, stateDir string, scriptBody string) (*Service, string) {
+// gitRun runs one Git command and fails the test on error.
+func gitRun(t *testing.T, env []string, dir string, args ...string) string {
 	t.Helper()
-	runnerPath := filepath.Join(t.TempDir(), "runner.sh")
-	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\n"+scriptBody), 0o755); err != nil {
-		t.Fatalf("write runner: %v", err)
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	command.Env = env
+	out, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+	return strings.TrimSpace(string(out))
+}
+
+// initRepo creates a one-commit memory repository with a bare origin, a
+// confirmed private remote and the managed workflow file. It returns the
+// repository path and the bare remote path.
+func initRepo(t *testing.T) (string, string) {
+	t.Helper()
+	env := gitEnv(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "origin.git")
+	gitRun(t, env, root, "init", "-q", "--bare", "-b", "main", bare)
+
+	repo := filepath.Join(root, "memory")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	gitRun(t, env, repo, "init", "-q", "-b", "main")
+	writeFile(t, filepath.Join(repo, "MEMORY.md"), "# Memory\n\n## Index\n- [[topic]]\n")
+	writeFile(t, filepath.Join(repo, "topic.md"), "# Topic\n- fact one [source: test; added: 2026-01-01]\n")
+	gitRun(t, env, repo, "add", "--", "MEMORY.md", "topic.md")
+	gitRun(t, env, repo, "commit", "-q", "-m", "init")
+	gitRun(t, env, repo, "remote", "add", "origin", bare)
+	gitRun(t, env, repo, "push", "-q", "-u", "origin", "main")
+	return repo, bare
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create dir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// newTestService builds a service bound to one repository. The workflow check
+// is enabled unless a test installs the workflow itself.
+func newTestService(t *testing.T, repoPath, stateDir string) *Service {
+	t.Helper()
 	service := NewService(Source{
 		RepoPath: repoPath,
 		RepoID:   config.RepoID(repoPath),
 		StateDir: stateDir,
 	})
-	service.Sandbox = passthrough{}
 	service.Timeout = 20 * time.Second
-	service.Runners = map[string]Runner{
-		"test": {Name: "test", Binary: runnerPath, BuildArgs: func(string) []string { return nil }},
+	service.PollInterval = 20 * time.Millisecond
+	return service
+}
+
+// fakeProvider answers each worker call with the queued response.
+type fakeProvider struct {
+	responses []string
+	calls     int
+	err       error
+	requests  []CompletionRequest
+}
+
+func (p *fakeProvider) ID() string    { return ProviderDeepSeek }
+func (p *fakeProvider) Model() string { return "fake-model" }
+
+func (p *fakeProvider) Complete(_ context.Context, req CompletionRequest) (string, error) {
+	p.calls++
+	p.requests = append(p.requests, req)
+	if p.err != nil {
+		return "", p.err
 	}
-	return service, runnerPath
+	if len(p.responses) == 0 {
+		return `{"operations":[],"warnings":[]}`, nil
+	}
+	response := p.responses[0]
+	if len(p.responses) > 1 {
+		p.responses = p.responses[1:]
+	}
+	return response, nil
+}
+
+// newStubWorker builds a worker service over a clone of the bare remote. It
+// runs one `--worker` invocation and returns its published result.
+func newStubWorker(t *testing.T, bare, stateDir string, provider Provider) (*Service, string) {
+	t.Helper()
+	env := gitEnv(t)
+	clone := filepath.Join(t.TempDir(), "worker")
+	gitRun(t, env, filepath.Dir(clone), "clone", "-q", bare, clone)
+	service := NewService(Source{RepoPath: clone, RepoID: config.RepoID(clone), StateDir: stateDir})
+	service.NewProvider = func(string) (Provider, error) { return provider, nil }
+	return service, clone
+}
+
+// installWorkflow writes the managed workflow file into the repository.
+func installWorkflow(t *testing.T, service *Service) {
+	t.Helper()
+	result, err := service.InitWorkflow(context.Background(), "")
+	if err != nil {
+		t.Fatalf("InitWorkflow: %v", err)
+	}
+	if result.State != InitWorkflowWritten {
+		t.Fatalf("InitWorkflow state = %q, want written", result.State)
+	}
+	env := gitEnv(t)
+	gitRun(t, env, service.Source.RepoPath, "push", "-q", "origin", "main")
+}
+
+// approveRemote writes the remote approval record the preconditions require.
+func approveRemote(t *testing.T, repoPath string) {
+	t.Helper()
+	env := gitEnv(t)
+	url := gitRun(t, env, repoPath, "remote", "get-url", "origin")
+	gitDir := gitRun(t, env, repoPath, "rev-parse", "--absolute-git-dir")
+	if err := saveApprovalForTest(gitDir, []string{url}); err != nil {
+		t.Fatalf("save approval: %v", err)
+	}
 }
 
 func TestProtectedPath(t *testing.T) {
-	protected := []string{".git/config", ".GIT/config", ".gitconfig", "sub/.gitmodules", ".ssh/id_rsa", "id_rsa", "keys/server.pem", "sub/.claude/settings.json"}
+	protected := []string{".git/config", ".GIT/config", ".gitconfig", "sub/.gitmodules", ".ssh/id_rsa", "id_rsa", "keys/server.pem", "sub/.claude/settings.json", ".github/workflows/memctl-dream.yml", "sub/.GitHub/x.yml"}
 	for _, rel := range protected {
 		if !protectedPath(rel) {
 			t.Errorf("protectedPath(%q) = false, want true", rel)
@@ -112,291 +201,297 @@ func TestUnifiedDiffShape(t *testing.T) {
 	}
 }
 
-func TestServiceRejectsMissingSandbox(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-	service.Sandbox = Unavailable{}
+// TestPreviewRefusesUnreadyBackendCoversD01 covers the D01 precondition cases:
+// no remote, an unconfirmed remote, a missing workflow file and an unknown
+// provider all refuse generation before any branch is pushed.
+func TestPreviewRefusesUnreadyBackendCoversD01(t *testing.T) {
+	t.Run("unknown provider", func(t *testing.T) {
+		repo, _ := initRepo(t)
+		service := newTestService(t, repo, t.TempDir())
+		_, err := service.Preview(context.Background(), PreviewRequest{Runner: "claude"})
+		if !contractCode(err, "UNSUPPORTED") {
+			t.Fatalf("unknown provider: err=%v, want UNSUPPORTED", err)
+		}
+	})
 
-	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
-	if !contractCode(err, "UNSUPPORTED") {
-		t.Fatalf("missing sandbox: err=%v, want UNSUPPORTED", err)
+	t.Run("no remote", func(t *testing.T) {
+		repo, _ := initRepo(t)
+		gitRun(t, gitEnv(t), repo, "remote", "remove", "origin")
+		service := newTestService(t, repo, t.TempDir())
+		_, err := service.Preview(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+		if !contractCode(err, "UNSUPPORTED") {
+			t.Fatalf("no remote: err=%v, want UNSUPPORTED", err)
+		}
+	})
+
+	t.Run("unapproved remote", func(t *testing.T) {
+		repo, _ := initRepo(t)
+		service := newTestService(t, repo, t.TempDir())
+		_, err := service.Preview(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+		if !contractCode(err, "REMOTE_NOT_APPROVED") {
+			t.Fatalf("unapproved remote: err=%v, want REMOTE_NOT_APPROVED", err)
+		}
+	})
+
+	t.Run("missing workflow", func(t *testing.T) {
+		repo, _ := initRepo(t)
+		approveRemote(t, repo)
+		service := newTestService(t, repo, t.TempDir())
+		_, err := service.Preview(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+		if !contractCode(err, "UNSUPPORTED") || !strings.Contains(err.Error(), "init-workflow") {
+			t.Fatalf("missing workflow: err=%v, want an UNSUPPORTED init-workflow hint", err)
+		}
+	})
+
+	t.Run("no producer branch was pushed", func(t *testing.T) {
+		repo, bare := initRepo(t)
+		approveRemote(t, repo)
+		service := newTestService(t, repo, t.TempDir())
+		_, _ = service.Preview(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+		listing := gitRun(t, gitEnv(t), repo, "ls-remote", "--heads", bare)
+		if strings.Contains(listing, "dream/") {
+			t.Fatalf("a rejected preview pushed a branch: %s", listing)
+		}
+	})
+}
+
+// TestPreviewPublishesRequestBranch verifies step 1-2 of the transport: the
+// request ref points at the fixed baseline commit and the proposal stays
+// generating while the worker has not answered.
+func TestPreviewPublishesRequestBranch(t *testing.T) {
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
+	head := gitRun(t, gitEnv(t), repo, "rev-parse", "HEAD")
+
+	started, err := service.Begin(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if started.Status != StatusGenerating || started.BaseHead != head {
+		t.Fatalf("started = %+v, want generating on %s", started, head)
+	}
+	listing := gitRun(t, gitEnv(t), repo, "ls-remote", bare, "refs/heads/dream/req/*")
+	want := RequestRef(started.ProposalID, ProviderDeepSeek)
+	if !strings.Contains(listing, want) || !strings.Contains(listing, head) {
+		t.Fatalf("request branch listing = %q, want %s -> %s", listing, want, head)
+	}
+
+	// No result yet: the proposal stays generating and the wait times out.
+	service.Timeout = 200 * time.Millisecond
+	proposal, err := service.Run(context.Background(), started.ProposalID)
+	if !contractCode(err, "TIMEOUT") {
+		t.Fatalf("Run: err=%v, want TIMEOUT", err)
+	}
+	if proposal.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", proposal.Status)
+	}
+	// Cleanup dropped both temporary refs.
+	listing = gitRun(t, gitEnv(t), repo, "ls-remote", bare, "refs/heads/dream/*")
+	if strings.TrimSpace(listing) != "" {
+		t.Fatalf("temporary refs remained after a failed run: %s", listing)
 	}
 }
 
-func TestServiceRejectsMissingRunner(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-	service.Runners["claude"] = Runner{Name: "claude", Binary: "memctl-no-such-runner-xyz", BuildArgs: func(string) []string { return nil }}
-
-	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "claude"})
-	if !contractCode(err, "UNSUPPORTED") {
-		t.Fatalf("missing runner: err=%v, want UNSUPPORTED", err)
-	}
-}
-
-func TestServiceRefusesDirtyRepository(t *testing.T) {
-	repo := initRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "untracked.md"), []byte("# Untracked\n"), 0o644); err != nil {
-		t.Fatalf("write untracked: %v", err)
-	}
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-
-	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
-	if !contractCode(err, "EXTERNAL_CHANGES") {
-		t.Fatalf("dirty repository: err=%v, want EXTERNAL_CHANGES", err)
-	}
-}
-
-func TestServiceRefusesStaleBaseRevision(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-
-	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "test", BaseRevision: "sha256:stale"})
-	if !contractCode(err, "REVISION_MISMATCH") {
-		t.Fatalf("stale base: err=%v, want REVISION_MISMATCH", err)
-	}
-}
-
-func TestServiceGenerationPipeline(t *testing.T) {
-	repo := initRepo(t)
+// TestPreviewAppliesWorkerResult covers the happy path: the worker publishes a
+// result tree with a nested JSON block, the local side recomputes the diff and
+// stores an applyable proposal, then deletes both temporary branches.
+func TestPreviewAppliesWorkerResult(t *testing.T) {
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
 	stateDir := t.TempDir()
-	// Isolate the temporary work directory so a concurrently running test
-	// binary cannot leave a matching directory in the shared system temp root.
-	t.Setenv("TMPDIR", t.TempDir())
-	before, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("read MEMORY.md: %v", err)
-	}
-	service, _ := newTestService(t, repo, stateDir, `cat > MEMORY.md <<'EOF'
-# Memory
 
-## Index
-- [[topic]]
-- [[new]]
-EOF
-printf '# New\n- added\n' > new.md
-`)
-
-	proposal, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
+	started, err := service.Begin(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
 	if err != nil {
-		t.Fatalf("Preview: %v", err)
+		t.Fatalf("Begin: %v", err)
 	}
-	if proposal.Status != StatusReady {
-		t.Fatalf("status = %q, want ready (error=%q)", proposal.Status, proposal.Error)
+	runWorker(t, bare, repo, started.ProposalID, WorkerMeta{
+		Status:   WorkerStatusReady,
+		Warnings: []string{"review the merged topic"},
+	}, map[string]string{
+		"MEMORY.md": "# Memory\n\n## Index\n- [[topic]]\n- [[extra]]\n",
+		"extra.md":  "# Extra\n- added [source: test; added: 2026-10-19]\n",
+	})
+
+	proposal, err := service.Run(context.Background(), started.ProposalID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
-	if proposal.PatchHash == "" || !strings.HasPrefix(proposal.PatchHash, "sha256:") {
-		t.Fatalf("patchHash = %q, want a sha256 hash", proposal.PatchHash)
+	if proposal.Status != StatusReady || proposal.PatchHash == "" {
+		t.Fatalf("proposal = %+v, want ready with a patch hash", proposal)
 	}
 	if len(proposal.Changes) != 2 {
-		t.Fatalf("changes = %+v, want 2 entries (one create, one update)", proposal.Changes)
+		t.Fatalf("changes = %+v, want two", proposal.Changes)
 	}
-	actions := map[string]string{}
-	for _, change := range proposal.Changes {
-		actions[change.Path] = change.Action
+	if len(proposal.Warnings) == 0 {
+		t.Fatalf("warnings = %v, want the worker warning", proposal.Warnings)
 	}
-	if actions["MEMORY.md"] != ChangeUpdate || actions["new.md"] != ChangeCreate {
-		t.Fatalf("unexpected actions: %+v", actions)
-	}
-	if proposal.Diff == "" {
-		t.Fatalf("expected a non-empty diff")
-	}
-
-	// The main repository must be byte-identical: generation never writes it.
-	after, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("re-read MEMORY.md: %v", err)
-	}
-	if string(after) != string(before) {
-		t.Fatalf("the main repository was modified:\n%s", after)
-	}
-
-	// The proposal is persisted and queryable, and the temporary environment
-	// has been removed.
 	loaded, err := service.Load(context.Background(), proposal.ProposalID)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	if err != nil || loaded.PatchHash != proposal.PatchHash {
+		t.Fatalf("persisted proposal = %+v (err=%v)", loaded, err)
 	}
-	if loaded.Status != StatusReady || loaded.PatchHash != proposal.PatchHash {
-		t.Fatalf("persisted proposal = %+v, want the ready proposal", loaded)
+	if _, err := service.PrepareApply(context.Background(), proposal.ProposalID, proposal.PatchHash); err != nil {
+		t.Fatalf("PrepareApply: %v", err)
 	}
-	workDir := service.pending[proposal.ProposalID]
-	if workDir != nil {
-		t.Fatalf("pending run was not cleared")
+	if listing := gitRun(t, gitEnv(t), repo, "ls-remote", bare, "refs/heads/dream/*"); strings.TrimSpace(listing) != "" {
+		t.Fatalf("temporary refs remained: %s", listing)
 	}
-	if matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "memctl-dream-*")); len(matches) != 0 {
-		t.Fatalf("temporary Dreaming directories remain: %v", matches)
+	if local := gitRun(t, gitEnv(t), repo, "for-each-ref", "--format=%(refname)", "refs/memctl/dream/"); strings.TrimSpace(local) != "" {
+		t.Fatalf("fetched local ref remained: %s", local)
 	}
+	_ = stateDir
 }
 
-func TestServiceRejectsOutOfScopeProposal(t *testing.T) {
-	cases := map[string]string{
-		"binary":       "printf '\\000\\001binary' > blob.bin\n",
-		"git-config":   "printf 'x' > .gitconfig\n",
-		"git-internal": "mkdir -p .git && printf 'x' > .git/config\n",
-		"symlink":      "ln -s /etc/passwd escape\n",
-		"host-hook":    "mkdir -p .claude && printf '{}' > .claude/settings.json\n",
+// TestPreviewRejectsProtectedResultCoversD03 covers the D03 range checks: a
+// result that touches `.github`, deletes MEMORY.md, escapes the root or carries
+// a second parent is refused and the proposal fails.
+func TestPreviewRejectsProtectedResultCoversD03(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(t *testing.T, dir string)
+		want   string
+	}{
+		{
+			name: "workflow change",
+			mutate: func(t *testing.T, dir string) {
+				writeFile(t, filepath.Join(dir, WorkflowRelativePath), "name: evil\n")
+			},
+			want: "UNSUPPORTED",
+		},
+		{
+			name: "entry deletion",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.Remove(filepath.Join(dir, "MEMORY.md")); err != nil {
+					t.Fatalf("remove MEMORY.md: %v", err)
+				}
+			},
+			want: "UNSUPPORTED",
+		},
+		{
+			name: "merge parent",
+			mutate: func(t *testing.T, dir string) {
+				env := gitEnv(t)
+				gitRun(t, env, dir, "checkout", "-q", "-b", "other")
+				writeFile(t, filepath.Join(dir, "extra.md"), "# Extra\n")
+				gitRun(t, env, dir, "add", "--", "extra.md")
+				gitRun(t, env, dir, "commit", "-q", "-m", "other")
+				gitRun(t, env, dir, "checkout", "-q", "main")
+				gitRun(t, env, dir, "merge", "-q", "--no-ff", "-m", "merge", "other")
+			},
+			want: "UNSUPPORTED",
+		},
 	}
-	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			repo := initRepo(t)
-			service, _ := newTestService(t, repo, t.TempDir(), body)
-			proposal, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
-			if err == nil {
-				t.Fatalf("out-of-scope proposal was accepted: %+v", proposal)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, bare := initRepo(t)
+			approveRemote(t, repo)
+			service := newTestService(t, repo, t.TempDir())
+			installWorkflow(t, service)
+
+			started, err := service.Begin(context.Background(), PreviewRequest{Runner: ProviderDeepSeek})
+			if err != nil {
+				t.Fatalf("Begin: %v", err)
 			}
-			if proposal.Status != StatusFailed {
-				t.Fatalf("status = %q, want failed (err=%v)", proposal.Status, err)
+			// The stub worker publishes whatever the test's mutation produced.
+			// The result commit keeps its tree and parents; only its message is
+			// rewritten to carry the run metadata.
+			publishCustomResult(t, bare, started.ProposalID, WorkerMeta{Status: WorkerStatusReady}, tc.mutate)
+
+			proposal, err := service.Run(context.Background(), started.ProposalID)
+			if !contractCode(err, tc.want) {
+				t.Fatalf("err = %v, want %s", err, tc.want)
 			}
-			// The main repository is untouched.
-			if _, statErr := os.Stat(filepath.Join(repo, "blob.bin")); !os.IsNotExist(statErr) {
-				t.Fatalf("out-of-scope content leaked into the main repository")
+			if proposal.Status != StatusFailed || proposal.Error == "" {
+				t.Fatalf("proposal = %+v, want a failed record with a reason", proposal)
 			}
 		})
 	}
 }
 
-func TestServiceReconcilesOrphanedGeneration(t *testing.T) {
-	repo := initRepo(t)
-	stateDir := t.TempDir()
-	service, _ := newTestService(t, repo, stateDir, "sleep 30\n")
+// TestPreviewReportsWorkerFailure covers protocol invariant 3: a failed worker
+// result is turned into a failed proposal with the worker's reason instead of a
+// timeout.
+func TestPreviewReportsWorkerFailure(t *testing.T) {
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
 
-	started, err := service.Begin(context.Background(), PreviewRequest{Runner: "test"})
+	started, err := service.Begin(context.Background(), PreviewRequest{Runner: ProviderMiniMax})
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if started.Status != StatusGenerating {
-		t.Fatalf("status = %q, want generating", started.Status)
-	}
+	runWorker(t, bare, repo, started.ProposalID, WorkerMeta{
+		Status: WorkerStatusFailed,
+		Error:  "minimax returned HTTP 401: invalid api key",
+	}, nil)
 
-	// A different process instance does not own the in-memory run, so it must
-	// reconcile the orphaned record to failed instead of pretending it can
-	// continue.
-	other := NewService(Source{RepoPath: repo, RepoID: config.RepoID(repo), StateDir: stateDir})
-	other.Sandbox = passthrough{}
-	other.Runners = service.Runners
-	proposal, err := other.Load(context.Background(), started.ProposalID)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	proposal, err := service.Run(context.Background(), started.ProposalID)
+	if !contractCode(err, "UNSUPPORTED") || !strings.Contains(proposal.Error, "HTTP 401") {
+		t.Fatalf("proposal = %+v (err=%v), want the worker reason", proposal, err)
 	}
-	if proposal.Status != StatusFailed || proposal.Error == "" {
-		t.Fatalf("orphaned generation = %+v, want failed with an error", proposal)
+	if proposal.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", proposal.Status)
 	}
 }
 
-// contractCode reports whether err carries the given contract code without
-// importing memerr into every assertion.
+// TestInitWorkflowIsIdempotentCoversD04 covers the D04 init-workflow case: the
+// first run writes and commits, the second run reports unchanged and creates no
+// empty commit.
+func TestInitWorkflowIsIdempotentCoversD04(t *testing.T) {
+	repo, _ := initRepo(t)
+	service := newTestService(t, repo, t.TempDir())
+
+	first, err := service.InitWorkflow(context.Background(), "")
+	if err != nil {
+		t.Fatalf("InitWorkflow: %v", err)
+	}
+	if first.State != InitWorkflowWritten || first.Commit == "" {
+		t.Fatalf("first run = %+v, want written with a commit", first)
+	}
+	if info, err := os.Lstat(filepath.Join(repo, WorkflowRelativePath)); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("workflow file is missing: %v", err)
+	}
+
+	second, err := service.InitWorkflow(context.Background(), "")
+	if err != nil {
+		t.Fatalf("second InitWorkflow: %v", err)
+	}
+	if second.State != InitWorkflowUnchanged || second.Commit != "" {
+		t.Fatalf("second run = %+v, want unchanged", second)
+	}
+}
+
+// TestEntryPointIsProtectedFromManagedWrites verifies that the `.github`
+// boundary holds for ordinary reads and writes, not just for proposals.
+func TestEntryPointIsProtectedFromManagedWrites(t *testing.T) {
+	repo, _ := initRepo(t)
+	root, err := vault.OpenRoot(repo)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	defer root.Close()
+	if _, err := root.ReadFile(WorkflowRelativePath); !contractCode(err, "INVALID_PATH") {
+		t.Fatalf("reading a workflow path: err=%v, want INVALID_PATH", err)
+	}
+	paths, err := root.ListManaged()
+	if err != nil {
+		t.Fatalf("ListManaged: %v", err)
+	}
+	for _, path := range paths {
+		if strings.HasPrefix(strings.ToLower(path), ".github/") {
+			t.Fatalf("ListManaged returned %q", path)
+		}
+	}
+}
+
+// contractCode reports whether err carries the given contract code.
 func contractCode(err error, code string) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), code+":") || strings.Contains(err.Error(), code)
-}
-
-// TestExportPreservesModeDespiteUmask covers the export module of docs/03
-// section 6 step 1: a restrictive process umask must not change the exported
-// mode, or every untouched file would look like a mode change and a no-op run
-// would produce a phantom proposal.
-func TestExportPreservesModeDespiteUmask(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-
-	previous := setUmask(0o077)
-	defer setUmask(previous)
-
-	proposal, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
-	if err != nil {
-		t.Fatalf("Preview: %v", err)
-	}
-	if len(proposal.Changes) != 0 {
-		t.Fatalf("a no-op runner produced phantom changes under umask 077: %+v", proposal.Changes)
-	}
-}
-
-// TestModeChangeIsNormalizedWithWarning covers docs/03 section 6 step 4: a mode
-// change the managed write cannot reproduce is normalized to the baseline mode
-// with a warning, so the resulting proposal stays applyable instead of being
-// rejected later by apply.
-func TestModeChangeIsNormalizedWithWarning(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(),
-		"printf '# Topic\\n- fact one\\n- more\\n' > topic.md\nchmod +x topic.md\n")
-	ctx := context.Background()
-
-	proposal, err := service.Preview(ctx, PreviewRequest{Runner: "test"})
-	if err != nil {
-		t.Fatalf("Preview: %v", err)
-	}
-	if proposal.Status != StatusReady || len(proposal.Changes) != 1 {
-		t.Fatalf("proposal = %+v, want one ready update", proposal)
-	}
-	change := proposal.Changes[0]
-	if change.Action != ChangeUpdate || change.Path != "topic.md" {
-		t.Fatalf("change = %+v, want an update of topic.md", change)
-	}
-	want := vault.FileRevision("100644", []byte("# Topic\n- fact one\n- more\n"))
-	if change.PlannedRevision != want {
-		t.Fatalf("planned revision = %q, want the baseline mode revision %q", change.PlannedRevision, want)
-	}
-	modeWarning := false
-	for _, warning := range proposal.Warnings {
-		if strings.Contains(warning, "file mode") {
-			modeWarning = true
-		}
-	}
-	if !modeWarning {
-		t.Fatalf("warnings = %v, want a mode-change warning", proposal.Warnings)
-	}
-	if _, err := service.PrepareApply(ctx, proposal.ProposalID, proposal.PatchHash); err != nil {
-		t.Fatalf("a normalized proposal is not applyable: %v", err)
-	}
-}
-
-// TestServiceRequiresEntryPoint verifies that Dreaming refuses a repository
-// without the root entry file instead of exporting an unrelated worktree. See
-// docs/01-architecture-and-modules.md section 3.1.
-func TestServiceRequiresEntryPoint(t *testing.T) {
-	repo := initRepo(t)
-	if err := os.Remove(filepath.Join(repo, "MEMORY.md")); err != nil {
-		t.Fatalf("remove MEMORY.md: %v", err)
-	}
-	service, _ := newTestService(t, repo, t.TempDir(), "exit 0\n")
-	_, err := service.Preview(context.Background(), PreviewRequest{Runner: "test"})
-	if !contractCode(err, "NO_REPO") {
-		t.Fatalf("err = %v, want NO_REPO", err)
-	}
-}
-
-// TestForeignLoadKeepsLiveWorkDir verifies that querying a proposal from
-// another service instance marks a can-not-continue generation failed without
-// destroying the live run's working directory.
-func TestForeignLoadKeepsLiveWorkDir(t *testing.T) {
-	repo := initRepo(t)
-	stateDir := t.TempDir()
-	service, _ := newTestService(t, repo, stateDir, "sleep 30\n")
-	started, err := service.Begin(context.Background(), PreviewRequest{Runner: "test"})
-	if err != nil {
-		t.Fatalf("Begin: %v", err)
-	}
-
-	service.mu.Lock()
-	workDir := service.pending[started.ProposalID].record.WorkDir
-	service.mu.Unlock()
-	if _, err := os.Stat(workDir); err != nil {
-		t.Fatalf("live work directory is missing: %v", err)
-	}
-
-	other := NewService(Source{RepoPath: repo, RepoID: config.RepoID(repo), StateDir: stateDir})
-	other.Sandbox = passthrough{}
-	other.Runners = service.Runners
-	proposal, err := other.Load(context.Background(), started.ProposalID)
-	if err != nil {
-		t.Fatalf("foreign Load: %v", err)
-	}
-	if proposal.Status != StatusFailed {
-		t.Fatalf("foreign Load status = %q, want failed", proposal.Status)
-	}
-	if _, err := os.Stat(workDir); err != nil {
-		t.Fatalf("a foreign Load removed the live work directory: %v", err)
-	}
-	_ = os.RemoveAll(workDir)
+	return strings.Contains(err.Error(), code)
 }

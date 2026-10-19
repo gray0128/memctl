@@ -1,27 +1,28 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/state"
 )
 
-// This file verifies stage D-1 (T035) from docs/05-validation-and-delivery.md:
-// D01 (a missing sandbox does not run, and an out-of-scope runner is blocked),
-// D02 (a dirty repository refuses generation), D03 (out-of-scope proposals are
-// rejected without touching the main repository) and the runner part of R02.
-// Every run uses a temporary HOME and memory repository, a synthetic runner and
-// the real platform sandbox; no network or real credential source is touched.
+// This file verifies the GitHub Actions Dreaming transport of
+// docs/11-github-actions-dreaming.md from the CLI and HTTP surfaces: D01 (an
+// unready backend refuses generation without pushing a branch), D02 (a dirty
+// repository refuses generation), D03 (an out-of-range result is rejected and
+// fails the proposal) and D04 (`--init-workflow` is idempotent). A local bare
+// repository stands in for GitHub, so no network or credential source is used.
 
 // dreamProposalJSON is the CLI/HTTP proposal shape this file inspects.
 type dreamProposalJSON struct {
@@ -32,267 +33,285 @@ type dreamProposalJSON struct {
 	Warnings      []string `json:"warnings"`
 	Error         string   `json:"error"`
 	AppliedCommit string   `json:"appliedCommit"`
+	Runner        string   `json:"runner"`
 	Changes       []struct {
 		Path   string `json:"path"`
 		Action string `json:"action"`
 	} `json:"changes"`
 }
 
-// requireDarwinSandbox skips the isolation cases on a platform without a
-// verified isolation backend. The missing-sandbox degradation itself is covered
-// by internal/dream unit tests.
-func requireDarwinSandbox(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS != "darwin" {
-		t.Skip("the Seatbelt isolation backend is only verified on macOS")
-	}
+// dreamFixture is one prepared memory repository with a bare origin, the
+// confirmed remote approval and the installed workflow.
+type dreamFixture struct {
+	bin   string
+	home  string
+	repo  string
+	bare  string
+	state string
+	env   []string
 }
 
-// dreamRepo initializes a repository and returns the binary, home, repo and
-// environment. A stub `claude` script is placed first on PATH.
-func dreamRepo(t *testing.T, body string) (bin, home, repo string, env []string, stubs string) {
+// newDreamFixture initializes a memory repository connected to a local bare
+// remote, approves the remote and installs the Actions workflow.
+func newDreamFixture(t *testing.T) *dreamFixture {
 	t.Helper()
-	bin = buildMemctlBinary(t)
-	home = t.TempDir()
-	repo = filepath.Join(home, "memory")
-	env = a2Env(home, repo, true)
-	if result := runMemctl(t, bin, home, env, "init"); result.code != 0 {
-		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
-	}
-	stubs = filepath.Join(home, "stubs")
-	if err := os.MkdirAll(stubs, 0o755); err != nil {
-		t.Fatalf("create stub dir: %v", err)
-	}
-	writeStub(t, stubs, "claude", body)
-	env = envWith(env, "PATH="+stubs+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return bin, home, repo, env, stubs
-}
-
-// TestD1DreamMissingRunnerCoversR02 verifies that an unavailable runner is a
-// targeted error and never a fallback to another runner or an unsandboxed run.
-func TestD1DreamMissingRunnerCoversR02(t *testing.T) {
 	bin := buildMemctlBinary(t)
 	home := t.TempDir()
 	repo := filepath.Join(home, "memory")
+	bare := newBareRemote(t, home, "origin.git")
 	env := a2Env(home, repo, true)
-	if result := runMemctl(t, bin, home, env, "init"); result.code != 0 {
-		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
+	env = envWith(env, "GIT_ALLOW_PROTOCOL=file")
+	if result := runMemctl(t, bin, home, env, "init", bare, "--confirm-private"); result.code != 0 {
+		t.Fatalf("init remote: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
 	}
-	// A PATH with no runner at all: the command must fail before touching Git.
-	missingEnv := envWith(env, "PATH=/nonexistent")
-	result := runMemctl(t, bin, home, missingEnv, "dream", "--runner", "claude")
-	if result.code != 1 {
-		t.Fatalf("missing runner: code=%d stdout=%q stderr=%q, want 1", result.code, result.stdout, result.stderr)
+	fixture := &dreamFixture{
+		bin:   bin,
+		home:  home,
+		repo:  repo,
+		bare:  bare,
+		state: filepath.Join(home, ".agent-memory"),
+		env:   env,
 	}
-	if !strings.Contains(result.stderr, "UNSUPPORTED") || !strings.Contains(result.stderr, "not installed") {
-		t.Fatalf("missing runner error is not targeted: %q", result.stderr)
+	if result := runMemctl(t, bin, home, env, "dream", "--init-workflow"); result.code != 0 {
+		t.Fatalf("init workflow: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
 	}
+	if result := runMemctl(t, bin, home, env, "sync", "--wait"); result.code != 0 {
+		t.Fatalf("sync workflow: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
+	}
+	return fixture
+}
+
+// write commits one file into the fixture repository through a plain Git
+// commit, leaving the worktree clean for generation.
+func (f *dreamFixture) write(t *testing.T, path, content string) {
+	t.Helper()
+	target := filepath.Join(f.repo, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	gitOutput(t, f.env, f.repo, "add", "--", path)
+	gitOutput(t, f.env, f.repo, "commit", "-q", "-m", "seed "+path)
+}
+
+// configRepoID is config.RepoID for tests that build a service by hand.
+func configRepoID(repoPath string) string { return config.RepoID(repoPath) }
+
+// installDreamService attaches a Dreaming service to an HTTP fixture so the
+// preview route can be driven with an injected provider and a short wait.
+func installDreamService(t *testing.T, fixture *b1Fixture, provider dream.Provider) *dream.Service {
+	t.Helper()
+	service := dream.NewService(dream.Source{
+		RepoPath: config.Canonical(fixture.repo),
+		RepoID:   config.RepoID(fixture.repo),
+		StateDir: filepath.Join(fixture.home, ".agent-memory"),
+	})
+	service.NewProvider = func(string) (dream.Provider, error) { return provider, nil }
+	service.Timeout = 20 * time.Second
+	service.PollInterval = 50 * time.Millisecond
+	fixture.app.SetDreamService(service)
+	return service
+}
+
+// stubProvider is a deterministic model provider for HTTP-level tests.
+type stubProvider struct{ response string }
+
+func (p stubProvider) ID() string    { return dream.ProviderDeepSeek }
+func (p stubProvider) Model() string { return "stub-model" }
+
+func (p stubProvider) Complete(context.Context, dream.CompletionRequest) (string, error) {
+	return p.response, nil
+}
+
+// TestD1DreamUnreadyBackendCoversD01 verifies that every missing prerequisite is
+// a targeted error and that no request branch is pushed.
+func TestD1DreamUnreadyBackendCoversD01(t *testing.T) {
+	t.Run("unknown provider", func(t *testing.T) {
+		fixture := newDreamFixture(t)
+		result := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--runner", "claude")
+		if result.code != 2 {
+			t.Fatalf("unknown provider: code=%d stdout=%q stderr=%q, want 2", result.code, result.stdout, result.stderr)
+		}
+		if !strings.Contains(result.stderr, "deepseek") {
+			t.Fatalf("unknown provider error does not list the built-in providers: %q", result.stderr)
+		}
+	})
+
+	t.Run("missing workflow", func(t *testing.T) {
+		fixture := newDreamFixture(t)
+		workflow := filepath.Join(fixture.repo, dream.WorkflowRelativePath)
+		if err := os.Remove(workflow); err != nil {
+			t.Fatalf("remove workflow: %v", err)
+		}
+		gitOutput(t, fixture.env, fixture.repo, "add", "-A")
+		gitOutput(t, fixture.env, fixture.repo, "commit", "-q", "-m", "drop workflow")
+		result := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--runner", "deepseek")
+		if result.code != 1 || !strings.Contains(result.stderr, "UNSUPPORTED") || !strings.Contains(result.stderr, "--init-workflow") {
+			t.Fatalf("missing workflow: code=%d stderr=%q", result.code, result.stderr)
+		}
+	})
+
+	t.Run("unapproved remote", func(t *testing.T) {
+		fixture := newDreamFixture(t)
+		gitDir := gitOutput(t, fixture.env, fixture.repo, "rev-parse", "--absolute-git-dir")
+		store := state.OpenStore(gitDir)
+		if err := store.SaveApproval(state.Approval{URLs: []string{"file:///unrelated"}, ConfirmedAt: state.Now()}); err != nil {
+			t.Fatalf("rewrite approval: %v", err)
+		}
+		result := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--runner", "deepseek")
+		if result.code != 1 || !strings.Contains(result.stderr, "REMOTE_NOT_APPROVED") {
+			t.Fatalf("unapproved remote: code=%d stderr=%q", result.code, result.stderr)
+		}
+	})
+
+	t.Run("no remote", func(t *testing.T) {
+		fixture := newDreamFixture(t)
+		gitOutput(t, fixture.env, fixture.repo, "remote", "remove", "origin")
+		result := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--runner", "deepseek")
+		if result.code != 1 || !strings.Contains(result.stderr, "UNSUPPORTED") {
+			t.Fatalf("no remote: code=%d stderr=%q", result.code, result.stderr)
+		}
+		if listing := gitOutput(t, fixture.env, fixture.repo, "ls-remote", "--heads", fixture.bare); strings.Contains(listing, "dream/") {
+			t.Fatalf("a rejected preview pushed a branch: %s", listing)
+		}
+	})
 }
 
 // TestD1DreamDirtyRepositoryRefusesCoversD02 verifies that an uncommitted
-// change stops generation before any isolated directory or proposal exists.
+// change stops generation before a proposal exists.
 func TestD1DreamDirtyRepositoryRefusesCoversD02(t *testing.T) {
-	requireDarwinSandbox(t)
-	bin, home, repo, env, _ := dreamRepo(t, "exit 0\n")
-	if err := os.WriteFile(filepath.Join(repo, "untracked.md"), []byte("# untracked\n"), 0o644); err != nil {
+	fixture := newDreamFixture(t)
+	if err := os.WriteFile(filepath.Join(fixture.repo, "untracked.md"), []byte("# untracked\n"), 0o644); err != nil {
 		t.Fatalf("write untracked file: %v", err)
 	}
-	result := runMemctl(t, bin, home, env, "dream", "--runner", "claude")
+	result := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--runner", "deepseek")
 	if result.code != 1 {
 		t.Fatalf("dirty repository: code=%d stdout=%q stderr=%q, want 1", result.code, result.stdout, result.stderr)
 	}
 	if !strings.Contains(result.stderr, "EXTERNAL_CHANGES") {
 		t.Fatalf("dirty repository error is not targeted: %q", result.stderr)
 	}
-	if matches, _ := filepath.Glob(filepath.Join(home, ".agent-memory", "repos", "*", "proposals", "*.json")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(fixture.state, "repos", "*", "proposals", "*.json")); len(matches) != 0 {
 		t.Fatalf("a proposal was persisted for a dirty repository: %v", matches)
 	}
-}
-
-// TestD1DreamIsolationCoversD01 verifies that the real sandbox lets the runner
-// edit the exported tree while blocking writes to the main repository and the
-// user configuration.
-func TestD1DreamIsolationCoversD01(t *testing.T) {
-	requireDarwinSandbox(t)
-	stub := fmt.Sprintf(`cat > MEMORY.md <<'EOF'
-# Memory
-
-## Index
-- [[topic]]
-- [[added]]
-EOF
-printf '# Added\n- new fact\n' > added.md
-printf 'evil' > %[1]q 2>/dev/null || true
-printf 'evil' >> %[2]q 2>/dev/null || true
-ln -f "$(dirname %[1]q)/MEMORY.md" ./alias 2>/dev/null && printf 'tampered' >> ./alias 2>/dev/null; true
-`, filepath.Join("REPO_PLACEHOLDER", "evil.txt"), "HOME_PLACEHOLDER/.claude/settings.json")
-	bin := buildMemctlBinary(t)
-	home := t.TempDir()
-	repo := filepath.Join(home, "memory")
-	stub = strings.ReplaceAll(stub, "REPO_PLACEHOLDER", repo)
-	stub = strings.ReplaceAll(stub, "HOME_PLACEHOLDER", home)
-	env := a2Env(home, repo, true)
-	if result := runMemctl(t, bin, home, env, "init"); result.code != 0 {
-		t.Fatalf("init: code=%d stderr=%q", result.code, result.stderr)
-	}
-	stubs := filepath.Join(home, "stubs")
-	if err := os.MkdirAll(stubs, 0o755); err != nil {
-		t.Fatalf("create stub dir: %v", err)
-	}
-	writeStub(t, stubs, "claude", stub)
-	env = envWith(env, "PATH="+stubs+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	// Seed the content the proposal is computed against.
-	a4WriteFile(t, bin, home, repo, env, "MEMORY.md", "# Memory\n\n## Index\n- [[topic]]\n")
-	a4WriteFile(t, bin, home, repo, env, "topic.md", "# Topic\n- fact one\n")
-	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
-		t.Fatalf("create host config dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte("original\n"), 0o644); err != nil {
-		t.Fatalf("seed host config: %v", err)
-	}
-	before, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("read MEMORY.md: %v", err)
-	}
-
-	result := runMemctl(t, bin, home, env, "dream", "--runner", "claude")
-	if result.code != 0 {
-		t.Fatalf("dream: code=%d stdout=%q stderr=%q", result.code, result.stdout, result.stderr)
-	}
-	var proposal dreamProposalJSON
-	if err := json.Unmarshal([]byte(result.stdout), &proposal); err != nil {
-		t.Fatalf("decode proposal: %v\n%s", err, result.stdout)
-	}
-	if proposal.Status != "ready" {
-		t.Fatalf("proposal status = %q (error=%q), want ready", proposal.Status, proposal.Error)
-	}
-	if proposal.PatchHash == "" || len(proposal.Changes) != 2 {
-		t.Fatalf("unexpected proposal: %+v", proposal)
-	}
-	actions := map[string]string{}
-	for _, change := range proposal.Changes {
-		actions[change.Path] = change.Action
-	}
-	if actions["MEMORY.md"] != "update" || actions["added.md"] != "create" {
-		t.Fatalf("unexpected change set: %+v", actions)
-	}
-
-	// The main repository and the user configuration are byte-identical.
-	after, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("re-read MEMORY.md: %v", err)
-	}
-	if string(after) != string(before) {
-		t.Fatalf("the runner modified the main repository")
-	}
-	if _, err := os.Stat(filepath.Join(repo, "evil.txt")); !os.IsNotExist(err) {
-		t.Fatalf("the runner wrote outside the exported tree (stat err=%v)", err)
-	}
-	hostConfig, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
-	if err != nil {
-		t.Fatalf("re-read host config: %v", err)
-	}
-	if string(hostConfig) != "original\n" {
-		t.Fatalf("the runner modified the user configuration: %q", hostConfig)
-	}
-
-	// `dream --show` returns the persisted proposal with the same patch hash.
-	shown := runMemctl(t, bin, home, env, "dream", "--show", proposal.ProposalID)
-	if shown.code != 0 {
-		t.Fatalf("dream --show: code=%d stderr=%q", shown.code, shown.stderr)
-	}
-	var loaded dreamProposalJSON
-	if err := json.Unmarshal([]byte(shown.stdout), &loaded); err != nil {
-		t.Fatalf("decode shown proposal: %v\n%s", err, shown.stdout)
-	}
-	if loaded.PatchHash != proposal.PatchHash || loaded.Status != "ready" {
-		t.Fatalf("shown proposal = %+v, want the ready proposal", loaded)
+	if listing := gitOutput(t, fixture.env, fixture.repo, "ls-remote", "--heads", fixture.bare); strings.Contains(listing, "dream/") {
+		t.Fatalf("a rejected preview pushed a branch: %s", listing)
 	}
 }
 
-// TestD1DreamOutOfScopeRejectedCoversD03 verifies that a symbolic link created
-// by the runner fails the range check and is never applied.
-func TestD1DreamOutOfScopeRejectedCoversD03(t *testing.T) {
-	requireDarwinSandbox(t)
-	bin, home, repo, env, _ := dreamRepo(t, "ln -s /etc/passwd escape\n")
-	before, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("read MEMORY.md: %v", err)
+// TestD1DreamPreviewRejectsOutOfRangeCoversD03 verifies that a result which
+// touches the workflow file is rejected and the proposal fails instead of
+// producing a ready proposal.
+func TestD1DreamPreviewRejectsOutOfRangeCoversD03(t *testing.T) {
+	fixture := newB1Fixture(t, false)
+	bare := prepareHTTPDreamFixture(t, fixture)
+	installDreamService(t, fixture, stubProvider{})
+
+	proposalID := startDreamProposal(t, fixture)
+	base := gitOutput(t, os.Environ(), fixture.repo, "rev-parse", "HEAD")
+	answerRequestBranch(t, bare, proposalID, base, `.github/workflows/memctl-dream.yml "name: evil\n"`)
+	proposal := waitForReadyProposal(t, fixture, proposalID, 30*time.Second)
+	if proposal.Status != "failed" {
+		t.Fatalf("proposal = %+v, want failed", proposal)
 	}
-	result := runMemctl(t, bin, home, env, "dream", "--runner", "claude")
-	if result.code != 1 {
-		t.Fatalf("out-of-scope proposal: code=%d stdout=%q stderr=%q, want 1", result.code, result.stdout, result.stderr)
+	if !strings.Contains(proposal.Error, "UNSUPPORTED") && !strings.Contains(proposal.Error, "protected") {
+		t.Fatalf("proposal error is not the range rejection: %q", proposal.Error)
 	}
-	var proposal dreamProposalJSON
-	if err := json.Unmarshal([]byte(result.stdout), &proposal); err != nil {
-		t.Fatalf("decode failed proposal: %v\n%s", err, result.stdout)
+	workflow := mustReadFile(t, filepath.Join(fixture.repo, dream.WorkflowRelativePath))
+	if strings.Contains(workflow, "name: evil") {
+		t.Fatalf("the workflow file was modified")
 	}
-	if proposal.Status != "failed" || !strings.Contains(proposal.Error, "UNSUPPORTED") {
-		t.Fatalf("out-of-scope proposal = %+v, want failed UNSUPPORTED", proposal)
+}
+
+// answerRequestBranch publishes the result branch a preview is waiting for, the
+// way the Actions job does: a throwaway clone checked out at the request
+// baseline, one commit with the run metadata, pushed to dream/res.
+func answerRequestBranch(t *testing.T, bare, proposalID, base string, files ...string) {
+	t.Helper()
+	clone := filepath.Join(t.TempDir(), "worker")
+	if out, err := gitCommandAt(filepath.Dir(clone), "clone", "-q", bare, clone); err != nil {
+		t.Fatalf("clone worker: %v\n%s", err, out)
 	}
-	after, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("re-read MEMORY.md: %v", err)
+	if out, err := gitCommandAt(clone, "fetch", "-q", "origin"); err != nil {
+		t.Fatalf("fetch worker: %v\n%s", err, out)
 	}
-	if string(after) != string(before) {
-		t.Fatalf("the main repository was modified by a rejected proposal")
+	if out, err := gitCommandAt(clone, "checkout", "-q", base); err != nil {
+		t.Fatalf("checkout baseline: %v\n%s", err, out)
 	}
-	if _, err := os.Lstat(filepath.Join(repo, "escape")); !os.IsNotExist(err) {
-		t.Fatalf("the rejected symlink leaked into the main repository")
+	for _, entry := range files {
+		path, content, ok := strings.Cut(entry, " ")
+		if !ok {
+			t.Fatalf("invalid answer entry %q", entry)
+		}
+		dir := filepath.Dir(filepath.Join(clone, filepath.FromSlash(path)))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("create %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(clone, filepath.FromSlash(path)), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
 	}
+	if out, err := gitCommandAt(clone, "add", "-A"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	meta := fmt.Sprintf(`{"schemaVersion":1,"proposalId":%q,"baseHead":%q,"provider":"deepseek","model":"stub","status":"ready","steps":1,"warnings":[],"error":""}`, proposalID, base)
+	message := "dream(" + proposalID + "): ready\n\n" + meta + "\n"
+	if out, err := gitCommandAt(clone, "commit", "-q", "-m", message); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+	head := gitOutput(t, os.Environ(), clone, "rev-parse", "HEAD")
+	if out, err := gitCommandAt(clone, "push", "-q", "origin", head+":refs/heads/dream/res/"+proposalID); err != nil {
+		t.Fatalf("push result: %v\n%s", err, out)
+	}
+}
+
+// prepareHTTPDreamFixture connects an existing HTTP fixture to a local bare
+// remote, records the approval through the same init path the CLI uses and
+// installs the workflow. It returns the bare remote path.
+func prepareHTTPDreamFixture(t *testing.T, fixture *b1Fixture) string {
+	t.Helper()
+	// The transport uses Git's file protocol against the local bare remote, so
+	// the in-process Git children need the same allowance the CLI tests set.
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file:ssh")
+	bare := newBareRemote(t, fixture.home, "origin.git")
+	if out, err := gitCommandAt(fixture.repo, "remote", "add", "origin", bare); err != nil {
+		t.Fatalf("add remote: %v\n%s", err, out)
+	}
+	if _, err := fixture.app.Init(context.Background(), app.InitOptions{RemoteURL: bare, ConfirmPrivate: true}); err != nil {
+		t.Fatalf("confirm remote: %v", err)
+	}
+	if _, err := fixture.app.InitDreamWorkflow(context.Background(), "v0.7.0"); err != nil {
+		t.Fatalf("install workflow: %v", err)
+	}
+	if out, err := gitCommandAt(fixture.repo, "push", "-q", "origin", "main"); err != nil {
+		t.Fatalf("push workflow: %v\n%s", err, out)
+	}
+	return bare
 }
 
 // TestD1DreamHTTPPreviewCoversD01AndEvent verifies the asynchronous HTTP route:
-// a 202 carrying the proposal id, a later GET that returns the ready proposal
-// and one dream.updated event on the SSE bus.
+// a 202 carrying the proposal id, a later GET that returns the ready proposal and
+// one dream.updated event on the SSE bus.
 func TestD1DreamHTTPPreviewCoversD01AndEvent(t *testing.T) {
-	requireDarwinSandbox(t)
 	fixture := newB1Fixture(t, false)
 	fixture.write(t, "topic.md", "# Topic\n- fact\n")
-
-	stub := filepath.Join(fixture.home, "stubs")
-	if err := os.MkdirAll(stub, 0o755); err != nil {
-		t.Fatalf("create stub dir: %v", err)
-	}
-	writeStub(t, stub, "claude", "printf '# Topic\\n- organized\\n' > topic.md\n")
-	service := dream.NewService(dream.Source{
-		RepoPath: config.Canonical(fixture.repo),
-		RepoID:   config.RepoID(fixture.repo),
-		StateDir: filepath.Join(fixture.home, ".agent-memory"),
-	})
-	service.Runners = map[string]dream.Runner{
-		"claude": {Name: "claude", Binary: filepath.Join(stub, "claude"), BuildArgs: func(string) []string { return nil }},
-	}
-	service.Timeout = 20 * time.Second
-	fixture.app.SetDreamService(service)
+	bare := prepareHTTPDreamFixture(t, fixture)
+	installDreamService(t, fixture, stubProvider{})
 
 	subscription := fixture.server.Events().Subscribe()
 	defer subscription.Close()
 
-	body := `{"runner":"claude"}`
-	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18420/api/v1/dream:preview", strings.NewReader(body))
-	request.Host = "127.0.0.1:18420"
-	request.Header.Set("X-Memctl-Token", b1Token)
-	recorder := httptest.NewRecorder()
-	fixture.server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusAccepted {
-		t.Fatalf("preview status = %d, want 202: %s", recorder.Code, recorder.Body.String())
-	}
-	var started struct {
-		ProposalID string `json:"proposalId"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil || started.ProposalID == "" {
-		t.Fatalf("decode 202 response: %v (%s)", err, recorder.Body.String())
-	}
-
-	// Wait for the terminal dream.updated event, then read the proposal.
-	deadline := time.After(20 * time.Second)
+	proposalID := startDreamProposal(t, fixture)
+	base := gitOutput(t, os.Environ(), fixture.repo, "rev-parse", "HEAD")
+	answerRequestBranch(t, bare, proposalID, base, `topic.md "# Topic\n- organized [source: test; added: 2026-10-19]\n"`)
+	deadline := time.After(30 * time.Second)
 	eventSeen := false
 	for !eventSeen {
 		select {
 		case hint := <-subscription.Hints():
-			if hint.Reason == "dream.updated" && hint.ProposalID == started.ProposalID && hint.Status == "ready" {
+			if hint.Reason == "dream.updated" && hint.ProposalID == proposalID && hint.Status == "ready" {
 				eventSeen = true
 			}
 		case <-deadline:
@@ -300,14 +319,17 @@ func TestD1DreamHTTPPreviewCoversD01AndEvent(t *testing.T) {
 		}
 	}
 
-	shown := fixture.get(t, "/api/v1/dream/"+started.ProposalID)
+	shown := fixture.get(t, "/api/v1/dream/"+proposalID)
 	var proposal dreamProposalJSON
 	fixture.decode(t, shown, &proposal)
 	if proposal.Status != "ready" || proposal.PatchHash == "" {
 		t.Fatalf("proposal = %+v, want ready with a patch hash", proposal)
 	}
-	if _, ok := proposalChange(proposal, "topic.md"); !ok {
-		t.Fatalf("proposal did not include the runner's change: %+v", proposal.Changes)
+	if proposal.Runner != dream.ProviderDeepSeek {
+		t.Fatalf("proposal runner = %q, want %q", proposal.Runner, dream.ProviderDeepSeek)
+	}
+	if action, ok := proposalChange(proposal, "topic.md"); !ok || action != "update" {
+		t.Fatalf("proposal did not include the worker change: %+v", proposal.Changes)
 	}
 }
 
@@ -319,4 +341,40 @@ func proposalChange(proposal dreamProposalJSON, path string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// gitCommandAt runs one Git command in dir with the current environment.
+func gitCommandAt(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// TestD1InitWorkflowIsIdempotentCoversD04 covers the D04 install case through the
+// CLI: the first run writes and commits, the second reports unchanged.
+func TestD1InitWorkflowIsIdempotentCoversD04(t *testing.T) {
+	fixture := newDreamFixture(t)
+	first := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--init-workflow")
+	if first.code != 0 {
+		t.Fatalf("first init: code=%d stderr=%q", first.code, first.stderr)
+	}
+	var result struct {
+		Path  string `json:"path"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal([]byte(first.stdout), &result); err != nil {
+		t.Fatalf("decode init result: %v (%s)", err, first.stdout)
+	}
+	if result.State != "unchanged" || result.Path != dream.WorkflowRelativePath {
+		t.Fatalf("second install on a current file = %+v, want unchanged", result)
+	}
+	before := gitOutput(t, fixture.env, fixture.repo, "rev-list", "--count", "HEAD")
+	again := runMemctl(t, fixture.bin, fixture.home, fixture.env, "dream", "--init-workflow")
+	if again.code != 0 {
+		t.Fatalf("second init: code=%d stderr=%q", again.code, again.stderr)
+	}
+	if after := gitOutput(t, fixture.env, fixture.repo, "rev-list", "--count", "HEAD"); after != before {
+		t.Fatalf("a no-op --init-workflow created a commit: %s -> %s", before, after)
+	}
 }

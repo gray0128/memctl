@@ -25,21 +25,43 @@ type pendingRun struct {
 	baseline *baseline
 }
 
-// Service runs the isolated Dreaming pipeline against one repository and one
-// state root. It is safe for concurrent use.
+// Service runs the Dreaming pipeline against one repository and one state root.
+// It is safe for concurrent use.
+//
+// The local side never calls a model: it fixes the baseline, publishes the
+// request branch, waits for the GitHub Actions worker result and revalidates
+// that result as untrusted input. See
+// docs/11-github-actions-dreaming.md section 2.1.
 type Service struct {
-	Source         Source
-	Runners        map[string]Runner
-	Sandbox        Sandbox
-	Timeout        time.Duration
-	MaxOutputBytes int
-	Now            func() time.Time
+	Source Source
+	// Interactive lets the credential prompts of Git and SSH reach the
+	// terminal. The CLI sets it; background callers leave it off.
+	Interactive bool
+	// Timeout bounds the wait for one worker result.
+	Timeout time.Duration
+	// PollInterval is the result poll interval.
+	PollInterval time.Duration
+	// KeepRemoteRefs leaves the request and result branches on the remote. It
+	// exists for transport tests; production always cleans them up.
+	KeepRemoteRefs bool
+	// WorkflowFile is the managed workflow path inside the repository.
+	WorkflowFile string
+	// SkipWorkflowRequirement disables the workflow-file precondition. Tests of
+	// the transport use it because they never run the actual workflow.
+	SkipWorkflowRequirement bool
+	// Now is the injectable clock.
+	Now func() time.Time
+	// NewProvider builds the worker's model transport. It defaults to the
+	// environment-driven provider registry and is replaced in tests so a
+	// deterministic run never reaches a model endpoint. The argument is the
+	// provider named by the request branch, which the worker uses when no
+	// override is configured.
+	NewProvider func(providerID string) (Provider, error)
 
-	store       *Store
-	instanceID  string
-	keepWorkDir bool
-	mu          sync.Mutex
-	pending     map[string]*pendingRun
+	store      *Store
+	instanceID string
+	mu         sync.Mutex
+	pending    map[string]*pendingRun
 	// statusMu serializes the read-modify-write of one proposal status so two
 	// in-process applies cannot lose a terminal transition. It is never taken
 	// while holding mu.
@@ -53,15 +75,12 @@ func NewService(source Source) *Service {
 		instanceID = "inst-" + hex.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
 	}
 	return &Service{
-		Source:         source,
-		Runners:        defaultRunners(),
-		Sandbox:        platformSandbox(),
-		Timeout:        DefaultTimeout,
-		MaxOutputBytes: MaxRunnerOutput,
-		Now:            time.Now,
-		store:          OpenStore(source.StateDir, source.RepoID),
-		instanceID:     instanceID,
-		pending:        make(map[string]*pendingRun),
+		Source:     source,
+		Timeout:    DefaultTimeout,
+		Now:        time.Now,
+		store:      OpenStore(source.StateDir, source.RepoID),
+		instanceID: instanceID,
+		pending:    make(map[string]*pendingRun),
 	}
 }
 
@@ -76,27 +95,19 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (Proposal, er
 	return s.Run(ctx, started.ProposalID)
 }
 
-// Begin validates the preconditions, exports the supported memory files into an
-// independent temporary directory and persists a generating proposal. It
-// releases the repository lock before returning; the caller must call Run with
-// the returned proposal id. Persisting before running lets an HTTP caller
-// return the proposal id immediately and poll GET /api/v1/dream/{id}.
+// Begin validates the preconditions, fixes the baseline, pushes the request
+// branch and persists a generating proposal. The worker result is awaited by
+// Run.
 func (s *Service) Begin(ctx context.Context, req PreviewRequest) (Proposal, error) {
-	if _, _, err := s.resolveRunner(req.Runner); err != nil {
-		return Proposal{}, err
+	if !KnownProvider(req.Runner) {
+		return Proposal{}, unknownProvider(req.Runner)
 	}
-	if s.Sandbox == nil || !s.Sandbox.Available() {
-		return Proposal{}, sandboxUnavailable()
-	}
-	s.sweepWorkDirs()
-
-	workDir, base, head, revision, err := s.fixBaseline(ctx, req.BaseRevision)
+	base, head, revision, err := s.fixBaseline(ctx, req.BaseRevision)
 	if err != nil {
 		return Proposal{}, err
 	}
 	id, err := newID("dp")
 	if err != nil {
-		os.RemoveAll(workDir)
 		return Proposal{}, err
 	}
 	value := record{
@@ -110,22 +121,30 @@ func (s *Service) Begin(ctx context.Context, req PreviewRequest) (Proposal, erro
 			Warnings:     append([]string{}, base.warnings...),
 			CreatedAt:    s.now(),
 		},
-		WorkDir:    workDir,
 		InstanceID: s.instanceID,
 	}
 	if err := s.store.Save(value); err != nil {
-		os.RemoveAll(workDir)
 		return Proposal{}, err
 	}
+	if err := s.pushRequest(ctx, id, req.Runner, head); err != nil {
+		value.Status = StatusFailed
+		value.Error = errorMessage(err)
+		if saveErr := s.store.Save(value); saveErr != nil {
+			return value.Proposal, saveErr
+		}
+		s.cleanupRefs(ctx, id, req.Runner)
+		return value.Proposal, err
+	}
+
 	s.mu.Lock()
 	s.pending[id] = &pendingRun{record: value, baseline: base}
 	s.mu.Unlock()
 	return value.Proposal, nil
 }
 
-// Run executes the runner for a previously started proposal, validates the
-// change set and persists the terminal ready or failed record. It is the only
-// step that runs the runner, and it never touches the main repository.
+// Run waits for the worker result, validates the untrusted result tree against
+// the fixed baseline and persists the terminal ready or failed record. It never
+// touches the main repository.
 func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) {
 	s.mu.Lock()
 	pending := s.pending[proposalID]
@@ -136,22 +155,31 @@ func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) 
 		return s.Load(ctx, proposalID)
 	}
 
-	definition, execPath, err := s.resolveRunner(pending.record.Runner)
+	runCtx, cancel := context.WithTimeout(ctx, s.timeout())
+	defer cancel()
+	result, err := s.pollLoop(runCtx, proposalID)
 	if err != nil {
-		return s.fail(pending, err)
+		proposal, failErr := s.fail(ctx, pending, err)
+		s.cleanupRefs(context.Background(), proposalID, pending.record.Runner)
+		return proposal, failErr
 	}
-	out, runErr := s.runRunner(ctx, pending.record.WorkDir, execPath, definition.BuildArgs(prompt))
-	if runErr != nil {
-		return s.fail(pending, runErr)
+	// The request and result branches are consumed as soon as the result is
+	// fetched, whatever its status.
+	s.cleanupRefs(context.Background(), proposalID, pending.record.Runner)
+
+	if result.Meta.Status != WorkerStatusReady {
+		cause := memerr.New(memerr.Unsupported,
+			"the GitHub Actions worker reported failure: %s", workerErrorText(result.Meta))
+		return s.fail(ctx, pending, cause)
+	}
+	if result.Meta.ProposalID != proposalID || result.Meta.BaseHead != pending.record.BaseHead {
+		return s.fail(ctx, pending, memerr.New(memerr.Unsupported,
+			"the Dreaming result belongs to another proposal or baseline"))
 	}
 
-	work, err := scanWorkTree(pending.record.WorkDir)
+	changes, diff, warnings, err := buildChanges(pending.baseline, result.Files)
 	if err != nil {
-		return s.fail(pending, err)
-	}
-	changes, diff, warnings, err := buildChanges(pending.baseline, work)
-	if err != nil {
-		return s.fail(pending, err)
+		return s.fail(ctx, pending, err)
 	}
 
 	value := pending.record
@@ -159,11 +187,9 @@ func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) 
 	value.Changes = changes
 	value.Diff = diff
 	value.PatchHash = patchHash(changes)
-	value.Planned = plannedFiles(pending.baseline, work, changes)
+	value.Planned = plannedFiles(pending.baseline, result.Files, changes)
+	value.Warnings = append(value.Warnings, result.Meta.Warnings...)
 	value.Warnings = append(value.Warnings, warnings...)
-	if out.truncated {
-		value.Warnings = append(value.Warnings, "the runner output was truncated at the configured byte limit")
-	}
 	if err := s.complete(value); err != nil {
 		return value.Proposal, err
 	}
@@ -178,9 +204,7 @@ func (s *Service) Load(ctx context.Context, proposalID string) (Proposal, error)
 	return value.Proposal, err
 }
 
-// loadRecord is the record-level read behind Load. It reconciles a generating
-// record that no longer has an in-process run to failed, so an interrupted
-// generation is never presented as one that can continue.
+// loadRecord is the record-level read behind Load.
 func (s *Service) loadRecord(_ context.Context, proposalID string) (record, error) {
 	value, err := s.store.Load(proposalID)
 	if err != nil {
@@ -201,10 +225,6 @@ func (s *Service) loadRecord(_ context.Context, proposalID string) (record, erro
 	if fresh, err := s.store.Load(proposalID); err == nil && fresh.Status != StatusGenerating {
 		return fresh, nil
 	}
-	// The work directory of a generation that is still owned by another live
-	// process must not be removed here: marking the record failed is enough,
-	// because the owning process overwrites it with its terminal status. An
-	// abandoned directory is reclaimed by sweepWorkDirs instead.
 	value.Status = StatusFailed
 	value.Error = "generation was interrupted before it completed"
 	if err := s.store.Save(value); err != nil {
@@ -213,9 +233,8 @@ func (s *Service) loadRecord(_ context.Context, proposalID string) (record, erro
 	return value, nil
 }
 
-// fail persists a failed proposal and removes its temporary execution
-// environment.
-func (s *Service) fail(pending *pendingRun, cause error) (Proposal, error) {
+// fail persists a failed proposal.
+func (s *Service) fail(_ context.Context, pending *pendingRun, cause error) (Proposal, error) {
 	value := pending.record
 	value.Status = StatusFailed
 	value.Error = errorMessage(cause)
@@ -225,53 +244,119 @@ func (s *Service) fail(pending *pendingRun, cause error) (Proposal, error) {
 	return value.Proposal, cause
 }
 
-// complete persists a terminal record, drops the in-memory run and removes the
-// temporary execution environment. The pending removal and the terminal write
-// are serialized with loadRecord's reconciliation so a concurrent query never
-// clobbers a finished generation with failed.
+// complete persists a terminal record and drops the in-memory run.
 func (s *Service) complete(value record) error {
 	s.mu.Lock()
 	delete(s.pending, value.ProposalID)
 	err := s.store.Save(value)
 	s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	s.removeWorkDir(value.WorkDir)
-	return nil
+	return err
 }
 
-func (s *Service) removeWorkDir(workDir string) {
-	if workDir == "" || s.keepWorkDir {
-		return
-	}
-	_ = os.RemoveAll(workDir)
+// BackendReady reports whether Dreaming can start on this repository right now:
+// the repository must be a memory repository with a confirmed private remote
+// and the managed workflow file. The UI shows this before a request is made;
+// Begin re-checks every condition.
+func (s *Service) BackendReady(ctx context.Context) bool {
+	_, status := s.backendStatus(ctx)
+	return status == ""
 }
 
-// sweepWorkDirs reclaims abandoned Dreaming work directories left by a killed
-// process. Only directories older than twice the isolation budget are removed,
-// because a live run cannot outlive one budget, so a work directory of a live
-// run is never touched.
-func (s *Service) sweepWorkDirs() {
-	budget := s.Timeout
-	if budget <= 0 {
-		budget = DefaultTimeout
+// BackendStatus returns the stable readiness code and the human-readable reason
+// why generation is unavailable. An empty code means Dreaming is ready.
+func (s *Service) BackendStatus(ctx context.Context) (string, string) {
+	return s.backendStatus(ctx)
+}
+
+// BackendReadyCodes are the stable codes reported by BackendStatus.
+const (
+	BackendNotReadyNoRepo        = "NO_REPO"
+	BackendNotReadyNoRemote      = "NO_REMOTE"
+	BackendNotReadyUnapproved    = "REMOTE_NOT_APPROVED"
+	BackendNotReadyNoWorkflow    = "WORKFLOW_MISSING"
+	BackendNotReadyInspectFailed = "INSPECT_FAILED"
+)
+
+// backendStatus is the single readiness implementation.
+func (s *Service) backendStatus(ctx context.Context) (string, string) {
+	if err := git.Available(); err != nil {
+		return BackendNotReadyInspectFailed, "Git is not available"
 	}
-	cutoff := s.timeNow().Add(-2 * budget)
-	entries, err := os.ReadDir(os.TempDir())
+	if _, err := os.Lstat(filepath.Join(s.Source.RepoPath, vault.EntryPointName)); err != nil {
+		return BackendNotReadyNoRepo, s.Source.RepoPath + " is not a memory repository"
+	}
+	remote, ok, err := git.DefaultRemote(ctx, s.Source.RepoPath)
 	if err != nil {
-		return
+		return BackendNotReadyInspectFailed, "cannot inspect the configured remotes"
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "memctl-dream-") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil || !info.ModTime().Before(cutoff) {
-			continue
-		}
-		s.removeWorkDir(filepath.Join(os.TempDir(), entry.Name()))
+	if !ok {
+		return BackendNotReadyNoRemote,
+			"the repository has no remote; Dreaming runs on GitHub Actions, so configure a private GitHub remote"
 	}
+	urls, err := git.RemoteURLs(ctx, s.Source.RepoPath, remote)
+	if err != nil {
+		return BackendNotReadyInspectFailed, "cannot read the remote URLs"
+	}
+	gitDir, err := git.GitDir(ctx, s.Source.RepoPath)
+	if err != nil {
+		return BackendNotReadyInspectFailed, "cannot resolve the Git directory"
+	}
+	approval, ok, err := state.OpenStore(gitDir).LoadApproval()
+	if err != nil {
+		return BackendNotReadyInspectFailed, "cannot read the remote approval record"
+	}
+	if !ok || !sameURLSet(approval.URLs, urls) {
+		return BackendNotReadyUnapproved,
+			"the remote is not confirmed as private and owned by you; run `memctl init <url> --confirm-private`"
+	}
+	if !s.SkipWorkflowRequirement {
+		workflow := s.workflowPath()
+		info, err := os.Lstat(filepath.Join(s.Source.RepoPath, filepath.FromSlash(workflow)))
+		if err != nil || !info.Mode().IsRegular() {
+			return BackendNotReadyNoWorkflow,
+				"the repository has no " + workflow + "; run `memctl dream --init-workflow`"
+		}
+	}
+	return "", ""
+}
+
+func (s *Service) workflowPath() string {
+	if s.WorkflowFile != "" {
+		return s.WorkflowFile
+	}
+	return WorkflowRelativePath
+}
+
+func sameURLSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, value := range got {
+		seen[value] = true
+	}
+	for _, value := range want {
+		if !seen[value] {
+			return false
+		}
+	}
+	return true
+}
+
+// providerForWorker resolves the worker provider through the injection point.
+func (s *Service) providerForWorker(providerID string) (Provider, error) {
+	if s.NewProvider != nil {
+		return s.NewProvider(providerID)
+	}
+	return providerFromEnv(os.Getenv, providerID, nil)
+}
+
+// timeout is the effective worker wait budget.
+func (s *Service) timeout() time.Duration {
+	if s.Timeout > 0 {
+		return s.Timeout
+	}
+	return DefaultTimeout
 }
 
 func (s *Service) timeNow() time.Time {
@@ -282,110 +367,114 @@ func (s *Service) timeNow() time.Time {
 }
 
 func (s *Service) now() string {
-	if s.Now != nil {
-		return s.Now().UTC().Format(time.RFC3339)
-	}
-	return time.Now().UTC().Format(time.RFC3339)
+	return s.timeNow().UTC().Format(time.RFC3339)
 }
 
 // fixBaseline acquires the repository lock, refuses a dirty or protected
-// repository, fixes the baseline and exports the supported files. The lock is
-// released before the runner starts. See
-// docs/03-workflows-and-dataflows.md section 6 step 1.
-func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (workDir string, base *baseline, head, revision string, err error) {
+// repository, checks the Dreaming preconditions and exports the supported files
+// into an in-memory baseline. See docs/03-workflows-and-dataflows.md section 6
+// step 1 and docs/11-github-actions-dreaming.md section 2.1 step 1.
+func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (base *baseline, head, revision string, err error) {
 	if err := git.Available(); err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	gitDir, err := git.GitDir(ctx, s.Source.RepoPath)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	held, err := lock.Acquire(ctx, gitDir)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	defer held.Release()
 	ctx = git.WithInheritedFile(ctx, held.File())
 
+	if code, reason := s.backendStatus(ctx); code != "" {
+		if code == BackendNotReadyUnapproved {
+			return nil, "", "", memerr.New(memerr.RemoteNotApproved, "%s", reason)
+		}
+		if code == BackendNotReadyNoRemote || code == BackendNotReadyNoWorkflow {
+			return nil, "", "", memerr.New(memerr.Unsupported, "%s", reason)
+		}
+		return nil, "", "", memerr.New(memerr.NoRepo, "%s", reason)
+	}
+
 	store := state.OpenStore(gitDir)
 	if conflict, ok, err := store.LoadConflict(); err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	} else if ok {
-		return "", nil, "", "", memerr.New(memerr.OperationActive,
+		return nil, "", "", memerr.New(memerr.OperationActive,
 			"conflict %s is awaiting resolution; resolve it before generating a proposal", conflict.ConflictID)
 	}
 	if _, err := os.Lstat(filepath.Join(s.Source.RepoPath, vault.EntryPointName)); err != nil {
-		return "", nil, "", "", memerr.New(memerr.NoRepo,
+		return nil, "", "", memerr.New(memerr.NoRepo,
 			"%s has no %s; run memctl init", s.Source.RepoPath, vault.EntryPointName)
 	}
 	if pending, err := store.Pending(); err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	} else if len(pending) > 0 {
-		return "", nil, "", "", memerr.New(memerr.RecoveryRequired,
+		return nil, "", "", memerr.New(memerr.RecoveryRequired,
 			"transaction %s is unfinished; run `memctl recover --status` before generating a proposal", pending[0].ID)
 	}
 	repoState, err := git.Inspect(ctx, s.Source.RepoPath)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	switch {
 	case repoState.IndexLocked:
-		return "", nil, "", "", memerr.New(memerr.Busy, "another Git process is writing the index (.git/index.lock exists)")
+		return nil, "", "", memerr.New(memerr.Busy, "another Git process is writing the index (.git/index.lock exists)")
 	case repoState.Active():
-		return "", nil, "", "", memerr.New(memerr.OperationActive,
+		return nil, "", "", memerr.New(memerr.OperationActive,
 			"a Git operation or unmerged index is active; Dreaming requires a clean repository")
 	}
 	status, err := git.StatusPorcelain(ctx, s.Source.RepoPath)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	if status != "" {
-		return "", nil, "", "", memerr.New(memerr.ExternalChanges,
+		return nil, "", "", memerr.New(memerr.ExternalChanges,
 			"the repository has staged, unstaged or untracked changes; commit or capture them before generating a proposal")
 	}
 
 	root, err := vault.OpenRoot(s.Source.RepoPath)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	defer root.Close()
 	if head, err = git.Head(ctx, s.Source.RepoPath); err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	revision, err = vault.RepoRevision(root, s.Source.RepoPath, head)
 	if err != nil {
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	if expectedRevision != "" && expectedRevision != revision {
-		return "", nil, "", "", memerr.New(memerr.RevisionMismatch,
+		return nil, "", "", memerr.New(memerr.RevisionMismatch,
 			"the repository revision changed since it was read; reread the snapshot before generating a proposal")
 	}
-
-	workDir, err = os.MkdirTemp("", "memctl-dream-")
+	base, err = exportBaseline(root)
 	if err != nil {
-		return "", nil, "", "", memerr.Wrap(memerr.IOFailed, err, "cannot create the isolated Dreaming work directory")
-	}
-	base, err = exportBaseline(root, workDir)
-	if err != nil {
-		os.RemoveAll(workDir)
-		return "", nil, "", "", err
+		return nil, "", "", err
 	}
 	base.head = head
-	return workDir, base, head, revision, nil
+	return base, head, revision, nil
 }
 
-// sandboxUnavailable is the shared missing-sandbox error.
-func sandboxUnavailable() error {
+// unknownProvider is the shared unknown-provider rejection.
+func unknownProvider(name string) error {
+	if name == "" {
+		return memerr.New(memerr.InvalidArgument, "a model provider is required")
+	}
 	return memerr.New(memerr.Unsupported,
-		"no verified runner isolation backend is available on this platform; Dreaming generation is disabled")
+		"provider %q is not built in; supported providers are %s", name, strings.Join(ProviderIDs, ", "))
 }
 
-// errorMessage bounds one persisted failure description.
+// errorMessage bounds one persisted failure description and strips credentials.
 func errorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	message := err.Error()
+	message := sanitizeProviderDetail(err.Error())
 	const max = 2048
 	if len(message) > max {
 		message = message[:max] + "..."
@@ -393,10 +482,17 @@ func errorMessage(err error) string {
 	return message
 }
 
-// plannedFiles captures the exact apply input of every create or update change:
-// the runner's bytes, the planned Git mode and the fixed baseline mode. Delete
-// changes need no content. See docs/03-workflows-and-dataflows.md section 6
-// step 5.
+// workerErrorText renders the worker's failure reason for a local proposal.
+func workerErrorText(meta WorkerMeta) string {
+	if strings.TrimSpace(meta.Error) == "" {
+		return "the workflow did not report a reason; check the Actions run"
+	}
+	return meta.Error
+}
+
+// plannedFiles captures the exact apply input of every create or update change.
+// Delete changes need no content. See docs/03-workflows-and-dataflows.md
+// section 6 step 5.
 func plannedFiles(base *baseline, work map[string]workFile, changes []Change) map[string]plannedFile {
 	planned := make(map[string]plannedFile, len(changes))
 	for _, change := range changes {
@@ -422,9 +518,7 @@ func plannedFiles(base *baseline, work map[string]workFile, changes []Change) ma
 	return planned
 }
 
-// newID returns a random identifier with the given prefix. A proposal id
-// matches the store's path-safe pattern; the instance id is only compared in
-// memory and on disk.
+// newID returns a random identifier with the given prefix.
 func newID(prefix string) (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {

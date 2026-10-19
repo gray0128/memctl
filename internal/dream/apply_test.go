@@ -10,25 +10,26 @@ import (
 // refused, a moved baseline marks the proposal stale and a mode change is
 // rejected instead of committing a different revision.
 
-const applyRunnerBody = `cat > MEMORY.md <<'EOF'
-# Memory
-
-## Index
-- [[topic]]
-- [[new]]
-EOF
-printf '# New\n- added\n' > new.md
-`
-
 func TestPrepareApplyBuildsOrderedPlan(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), applyRunnerBody)
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.Preview(ctx, PreviewRequest{Runner: "test"})
+	started, err := service.Begin(ctx, PreviewRequest{Runner: ProviderDeepSeek})
 	if err != nil {
-		t.Fatalf("Preview: %v", err)
+		t.Fatalf("Begin: %v", err)
 	}
+	runWorker(t, bare, repo, started.ProposalID, WorkerMeta{Status: WorkerStatusReady}, map[string]string{
+		"MEMORY.md": "# Memory\n\n## Index\n- [[topic]]\n- [[new]]\n",
+		"new.md":    "# New\n- added\n",
+	})
+	proposal, err := service.Run(ctx, started.ProposalID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
 	plan, err := service.PrepareApply(ctx, proposal.ProposalID, proposal.PatchHash)
 	if err != nil {
 		t.Fatalf("PrepareApply: %v", err)
@@ -60,13 +61,23 @@ func TestPrepareApplyBuildsOrderedPlan(t *testing.T) {
 }
 
 func TestPrepareApplyRejectsStaleAndModeChange(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), applyRunnerBody)
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.Preview(ctx, PreviewRequest{Runner: "test"})
+	started, err := service.Begin(ctx, PreviewRequest{Runner: ProviderDeepSeek})
 	if err != nil {
-		t.Fatalf("Preview: %v", err)
+		t.Fatalf("Begin: %v", err)
+	}
+	runWorker(t, bare, repo, started.ProposalID, WorkerMeta{Status: WorkerStatusReady}, map[string]string{
+		"MEMORY.md": "# Memory\n\n## Index\n- [[topic]]\n- [[new]]\n",
+		"new.md":    "# New\n- added\n",
+	})
+	proposal, err := service.Run(ctx, started.ProposalID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 
 	// A mode change cannot be reproduced by the managed write, so it is
@@ -98,13 +109,22 @@ func TestPrepareApplyRejectsStaleAndModeChange(t *testing.T) {
 }
 
 func TestMarkAppliedIsTerminal(t *testing.T) {
-	repo := initRepo(t)
-	service, _ := newTestService(t, repo, t.TempDir(), applyRunnerBody)
+	repo, bare := initRepo(t)
+	approveRemote(t, repo)
+	service := newTestService(t, repo, t.TempDir())
+	installWorkflow(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.Preview(ctx, PreviewRequest{Runner: "test"})
+	started, err := service.Begin(ctx, PreviewRequest{Runner: ProviderDeepSeek})
 	if err != nil {
-		t.Fatalf("Preview: %v", err)
+		t.Fatalf("Begin: %v", err)
+	}
+	runWorker(t, bare, repo, started.ProposalID, WorkerMeta{Status: WorkerStatusReady}, map[string]string{
+		"extra.md": "# Extra\n- added\n",
+	})
+	proposal, err := service.Run(ctx, started.ProposalID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if err := service.MarkApplying(ctx, proposal.ProposalID); err != nil {
 		t.Fatalf("MarkApplying: %v", err)

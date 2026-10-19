@@ -1,0 +1,63 @@
+# memctl-dream: runs one Dreaming (memory organization) step for a memory
+# repository. memctl pushes a fixed baseline to refs/heads/dream/req/<proposalId>/<provider>;
+# this workflow runs the worker and pushes the result tree to
+# refs/heads/dream/res/<proposalId>. The local `memctl` then fetches that branch,
+# validates it and only commits after the operator confirms.
+#
+# See docs/11-github-actions-dreaming.md sections 2.2 and 2.5.
+#
+# Required repository secrets (add the one for the provider you use):
+#   DEEPSEEK_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
+# Optional repository variables: MEMCTL_DREAM_MODEL, MEMCTL_DREAM_BASE_URL.
+
+name: memctl-dream
+
+on:
+  push:
+    branches:
+      - 'dream/req/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: memctl-dream-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  dream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      GITHUB_REF_NAME: ${{ github.ref_name }}
+      GITHUB_SHA: ${{ github.sha }}
+      MEMCTL_DREAM_VERSION: __MEMCTL_DREAM_VERSION__
+      MEMCTL_DREAM_MODEL: ${{ vars.MEMCTL_DREAM_MODEL }}
+      MEMCTL_DREAM_BASE_URL: ${{ vars.MEMCTL_DREAM_BASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Delete request branch
+        run: |
+          git push origin --delete "${GITHUB_REF_NAME}" || true
+
+      - name: Install memctl Linux binary
+        run: |
+          BASE="https://github.com/gray0128/memctl/releases/download/${MEMCTL_DREAM_VERSION}"
+          curl -fsSL "${BASE}/memctl-linux-amd64" -o /tmp/memctl
+          curl -fsSL "${BASE}/SHA256SUMS" -o /tmp/SHA256SUMS
+          grep "  memctl-linux-amd64$" /tmp/SHA256SUMS | (cd /tmp && sha256sum -c -)
+          chmod +x /tmp/memctl
+
+      - name: Run Dreaming worker
+        run: |
+          /tmp/memctl dream --worker \
+            --ref "${GITHUB_REF_NAME}" \
+            --base-head "${GITHUB_SHA}"

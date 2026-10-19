@@ -20,57 +20,100 @@ import (
 // uses a pass-through sandbox and a synthetic runner, so no kernel sandbox is
 // required.
 
-// appSandbox runs the runner directly. Production always uses platformSandbox;
-// this type exists only for pipeline tests that are not about isolation.
-type appSandbox struct{}
+// appStubProvider answers every worker call with the same structured step.
+type appStubProvider struct{ response string }
 
-func (appSandbox) Name() string    { return "test" }
-func (appSandbox) Available() bool { return true }
-func (appSandbox) Wrap(_, execPath string, args []string) (string, []string, error) {
-	return execPath, args, nil
+func (p appStubProvider) ID() string    { return dream.ProviderDeepSeek }
+func (p appStubProvider) Model() string { return "stub-model" }
+
+func (p appStubProvider) Complete(context.Context, dream.CompletionRequest) (string, error) {
+	return p.response, nil
 }
 
-// withDreamRunner wires a Dreaming service with one synthetic runner into the
-// application service.
-func withDreamRunner(t *testing.T, service *App, body string) {
+// withDreamBackend gives the application service a Dreaming backend that can
+// start: a bare origin, a confirmed private remote, the managed workflow and an
+// injected provider. Generation then publishes a request branch and the worker
+// answers it through the same repository, exactly as the Actions job would.
+func withDreamBackend(t *testing.T, service *App) {
 	t.Helper()
-	runnerPath := filepath.Join(t.TempDir(), "runner.sh")
-	writeTestFile(t, runnerPath, "#!/bin/sh\n"+body, 0o755)
+	repo := service.cfg.RepoPath
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, filepath.Dir(bare), "init", "-q", "--bare", "-b", "main", bare)
+	runGit(t, repo, "remote", "add", "origin", bare)
+	runGit(t, repo, "push", "-q", "-u", "origin", "main")
+	// The application service records the approval through the same init path
+	// the CLI uses, so the fixture cannot drift from the real precondition.
+	if _, err := service.Init(context.Background(), InitOptions{RemoteURL: bare, ConfirmPrivate: true, Interactive: false}); err != nil {
+		t.Fatalf("confirm remote: %v", err)
+	}
+	if _, err := service.InitDreamWorkflow(context.Background(), "v0.7.0"); err != nil {
+		t.Fatalf("install workflow: %v", err)
+	}
+	runGit(t, repo, "push", "-q", "origin", "main")
+}
+
+// previewWithStubWorker generates one proposal end to end: the application
+// service publishes the request branch and a separate service over the same
+// repository answers it with the deterministic provider, exactly as the Actions
+// job does for a real run.
+func previewWithStubWorker(t *testing.T, service *App) dream.Proposal {
+	t.Helper()
+	ctx := context.Background()
+	started, err := service.DreamBegin(ctx, dream.ProviderDeepSeek, "")
+	if err != nil {
+		t.Fatalf("DreamBegin: %v", err)
+	}
+	// GitHub Actions checks out a throwaway clone. The worker must not run in the
+	// user's work tree, or its result would change the repository between
+	// generation and apply.
+	repositoryPath := service.cfg.RepoPath
+	remoteURL := runGit(t, repositoryPath, "remote", "get-url", "origin")
+	workerDir := filepath.Join(t.TempDir(), "worker")
+	runGit(t, filepath.Dir(workerDir), "clone", "-q", remoteURL, workerDir)
+	workerSvc := dream.NewService(dream.Source{
+		RepoPath: config.Canonical(workerDir),
+		RepoID:   config.RepoID(workerDir),
+		StateDir: filepath.Join(t.TempDir(), "worker-state"),
+	})
+	workerSvc.NewProvider = func(string) (dream.Provider, error) {
+		return appStubProvider{response: dreamOrganizerBody}, nil
+	}
+	if _, err := workerSvc.Worker(ctx, dream.RequestRef(started.ProposalID, dream.ProviderDeepSeek), started.BaseHead); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	proposal, err := service.DreamRun(ctx, started.ProposalID)
+	if err != nil {
+		t.Fatalf("DreamRun: %v", err)
+	}
+	return proposal
+}
+
+// withDreamProvider injects the deterministic worker provider.
+func withDreamProvider(t *testing.T, service *App, response string) {
+	t.Helper()
 	dreamSvc := dream.NewService(dream.Source{
 		RepoPath: config.Canonical(service.cfg.RepoPath),
 		RepoID:   config.RepoID(service.cfg.RepoPath),
 		StateDir: service.cfg.StateDir,
 	})
-	dreamSvc.Sandbox = appSandbox{}
 	dreamSvc.Timeout = 20 * time.Second
-	dreamSvc.Runners = map[string]dream.Runner{
-		"test": {Name: "test", Binary: runnerPath, BuildArgs: func(string) []string { return nil }},
-	}
+	dreamSvc.PollInterval = 20 * time.Millisecond
+	dreamSvc.NewProvider = func(string) (dream.Provider, error) { return appStubProvider{response: response}, nil }
 	service.SetDreamService(dreamSvc)
 }
 
-const dreamRunnerBody = `cat > MEMORY.md <<'EOF'
-# Memory
-
-## Index
-- [[topic]]
-- [[new]]
-EOF
-printf '# New\n- added\n' > new.md
-`
+// dreamOrganizerBody is the deterministic worker response of the app tests.
+const dreamOrganizerBody = `{"operations":[{"action":"update","path":"MEMORY.md","content":"# Memory\n\n## Index\n- [[topic]]\n- [[new]]\n","rationale":"index"},{"action":"create","path":"new.md","content":"# New\n- added [source: test; added: 2026-10-19]\n","rationale":"split"}],"warnings":[]}`
 
 // TestApplyDreamCommitsAndIsIdempotentCoversD04 covers the successful apply and
 // the repeated apply of D04: the second call returns the same commit and does
 // not create a second commit.
 func TestApplyDreamCommitsAndIsIdempotentCoversD04(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 	if proposal.Status != dream.StatusReady || proposal.PatchHash == "" {
 		t.Fatalf("proposal = %+v, want ready with a patch hash", proposal)
 	}
@@ -82,7 +125,7 @@ func TestApplyDreamCommitsAndIsIdempotentCoversD04(t *testing.T) {
 	if result.Commit == "" {
 		t.Fatalf("apply returned no commit: %+v", result)
 	}
-	if got := readTestFile(t, filepath.Join(repo, "new.md")); got != "# New\n- added\n" {
+	if got := readTestFile(t, filepath.Join(repo, "new.md")); got != "# New\n- added [source: test; added: 2026-10-19]\n" {
 		t.Fatalf("created file content = %q", got)
 	}
 	if got := readTestFile(t, filepath.Join(repo, "MEMORY.md")); got == testInitialMemory {
@@ -117,13 +160,10 @@ func TestApplyDreamCommitsAndIsIdempotentCoversD04(t *testing.T) {
 // proposal stale and leaves every proposed path untouched.
 func TestApplyDreamRefusesStaleBaselineCoversD02(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 	// Move the repository with an unrelated managed commit.
 	if _, err := service.Apply(ctx, MutationRequest{
 		BaseRevision: proposal.BaseRevision,
@@ -139,8 +179,8 @@ func TestApplyDreamRefusesStaleBaselineCoversD02(t *testing.T) {
 
 	before := readTestFile(t, filepath.Join(repo, "MEMORY.md"))
 	commits := commitCount(t, repo)
-	_, err = service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
-	requireContractCode(t, err, memerr.ProposalStale)
+	_, applyErr := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	requireContractCode(t, applyErr, memerr.ProposalStale)
 
 	if got := readTestFile(t, filepath.Join(repo, "MEMORY.md")); got != before {
 		t.Fatalf("a stale apply modified MEMORY.md")
@@ -165,13 +205,10 @@ func TestApplyDreamRefusesStaleBaselineCoversD02(t *testing.T) {
 // written must not commit the proposal twice.
 func TestApplyDreamRecoversInterruptedApplyCoversD04(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 
 	service.testFault = func(stage string) error {
 		if stage == "after-commit" {
@@ -210,13 +247,10 @@ func TestApplyDreamRecoversInterruptedApplyCoversD04(t *testing.T) {
 // never overwritten, and the retry stops for manual recovery.
 func TestApplyDreamRefusesToOverwriteManualEdit(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 
 	service.testFault = func(stage string) error {
 		if stage == "after-write:0" {
@@ -234,8 +268,8 @@ func TestApplyDreamRefusesToOverwriteManualEdit(t *testing.T) {
 	writeTestFile(t, filepath.Join(repo, "MEMORY.md"), handEdit, 0o644)
 	commits := commitCount(t, repo)
 
-	_, err = service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
-	requireContractCode(t, err, memerr.RecoveryRequired)
+	_, applyErr := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	requireContractCode(t, applyErr, memerr.RecoveryRequired)
 	if got := readTestFile(t, filepath.Join(repo, "MEMORY.md")); got != handEdit {
 		t.Fatalf("the manual edit was overwritten: %q", got)
 	}
@@ -248,16 +282,13 @@ func TestApplyDreamRefusesToOverwriteManualEdit(t *testing.T) {
 // applied under the exact patch hash it was reviewed with.
 func TestApplyDreamRejectsPatchHashMismatch(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 	commits := commitCount(t, repo)
-	_, err = service.ApplyDream(ctx, proposal.ProposalID, "sha256:not-the-hash")
-	requireContractCode(t, err, memerr.InvalidArgument)
+	_, applyErr := service.ApplyDream(ctx, proposal.ProposalID, "sha256:not-the-hash")
+	requireContractCode(t, applyErr, memerr.InvalidArgument)
 	if got := commitCount(t, repo); got != commits {
 		t.Fatalf("a rejected apply created a commit: %s -> %s", commits, got)
 	}
@@ -275,20 +306,17 @@ func TestApplyDreamRejectsPatchHashMismatch(t *testing.T) {
 // stay applyable instead of being turned into a terminal stale record.
 func TestApplyDreamRefusesDirtyTreeWithoutStaling(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 	// An untracked file makes the worktree dirty without moving the revision
 	// digest a clean checkout would report.
 	writeTestFile(t, filepath.Join(repo, "untracked.md"), "# untracked\n", 0o644)
 
 	commits := commitCount(t, repo)
-	_, err = service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
-	requireContractCode(t, err, memerr.ExternalChanges)
+	_, applyErr := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	requireContractCode(t, applyErr, memerr.ExternalChanges)
 	if got := commitCount(t, repo); got != commits {
 		t.Fatalf("a dirty-tree rejection created a commit: %s -> %s", commits, got)
 	}
@@ -307,13 +335,10 @@ func TestApplyDreamRefusesDirtyTreeWithoutStaling(t *testing.T) {
 // the only proof and leaving the proposal stale.
 func TestRecoverRollbackRecordsAppliedDream(t *testing.T) {
 	service, repo := newTestService(t)
-	withDreamRunner(t, service, dreamRunnerBody)
+	withDreamBackend(t, service)
 	ctx := context.Background()
 
-	proposal, err := service.DreamPreview(ctx, "test", "")
-	if err != nil {
-		t.Fatalf("DreamPreview: %v", err)
-	}
+	proposal := previewWithStubWorker(t, service)
 
 	service.testFault = func(stage string) error {
 		if stage == "after-commit" {

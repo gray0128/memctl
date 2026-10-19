@@ -16,11 +16,10 @@ import (
 // the proposals directory.
 var proposalIDPattern = regexp.MustCompile(`^dp-[0-9a-f]{32}$`)
 
-// record is the on-disk shape of one proposal. WorkDir and InstanceID are
-// memctl-internal bookkeeping and are never returned to a client.
+// record is the on-disk shape of one proposal. InstanceID is memctl-internal
+// bookkeeping and is never returned to a client.
 type record struct {
 	Proposal
-	WorkDir    string `json:"workDir,omitempty"`
 	InstanceID string `json:"instanceId,omitempty"`
 	// Planned holds the exact apply input of every create or update change. It
 	// is internal to the apply workflow and never returned to a client.

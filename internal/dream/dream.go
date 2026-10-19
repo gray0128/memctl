@@ -1,10 +1,10 @@
-// Package dream implements the isolated Dreaming pipeline: it fixes a clean
-// repository baseline, exports the supported memory files into an independent
-// temporary directory, runs a detected runner inside a platform sandbox,
-// validates the resulting change set against the fixed baseline and persists a
-// reviewable proposal. It never modifies the main repository. See
-// docs/03-workflows-and-dataflows.md section 6 and
-// docs/02-domain-models-and-contracts.md section 2.3.
+// Package dream implements the Dreaming pipeline: it fixes a clean repository
+// baseline, publishes it as the GitHub Actions request branch, validates the
+// untrusted result tree the worker publishes against that baseline and persists
+// a reviewable proposal. The local side never calls a model and never modifies
+// the main repository. See docs/03-workflows-and-dataflows.md section 6,
+// docs/02-domain-models-and-contracts.md section 2.3 and
+// docs/11-github-actions-dreaming.md.
 package dream
 
 import "time"
@@ -36,9 +36,8 @@ const (
 	MaxChanges = 100
 	// MaxChangeBytes bounds the total planned content of one proposal.
 	MaxChangeBytes = 8 << 20
-	// MaxRunnerOutput bounds the runner stdout and stderr that memctl keeps.
-	MaxRunnerOutput = 4 << 20
-	// DefaultTimeout bounds one isolated runner execution.
+	// DefaultTimeout bounds the wait for one GitHub Actions worker result. It is
+	// longer than the workflow timeout so a slow Actions queue still completes.
 	DefaultTimeout = 10 * time.Minute
 	// MaxPatchBytes bounds the human-readable unified diff stored with a
 	// proposal. A larger diff is replaced by a truncation notice; the ordered
@@ -88,14 +87,14 @@ type Source struct {
 
 // PreviewRequest is one generation request. BaseRevision is optional at the
 // library level and, when non-empty, is checked against the fixed baseline like
-// every other managed precondition. Runner names a registered runner.
+// every other managed precondition. Runner names a built-in model provider.
 type PreviewRequest struct {
 	Runner       string
 	BaseRevision string
 }
 
 // plannedFile is the internal apply input of one create or update change: the
-// exact bytes the runner produced and the Git mode they were read with. It is
+// exact bytes the worker produced and the Git mode they were read with. It is
 // persisted with the proposal record but deliberately not part of the
 // DreamProposal API shape. See
 // docs/03-workflows-and-dataflows.md section 6 steps 5-6.
