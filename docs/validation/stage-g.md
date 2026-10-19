@@ -45,4 +45,10 @@
 - 证据：诊断仓库 `gray0128/memctl-dream-diag` 的运行 [39224706290](https://github.com/gray0128/memctl-dream-diag/actions/runs/39224706290) 中，同一作业内 `command -v git`、`/usr/bin/git`、`git --version` 全部正常，只有 worker 步骤报该错误；`~/memory` 版本 [39224378495](https://github.com/gray0128/agent-memory-repo/actions/runs/39224378495) 表现相同。以 `GITHUB_WORKSPACE=/tmp/diagmem` 在本地复现同一环境后，修复前失败、修复后推进到推送结果分支。
 - 修复：`--worker` 先解析工作仓库——显式 `AGENT_MEMORY_DIR` 优先，否则使用 `GITHUB_WORKSPACE`，两者都缺失或目录不存在时返回 `INVALID_ARGUMENT`/`NO_REPO`，不再静默回退到默认路径；新增 `internal/cli/dream_worker_test.go` 覆盖三种分支。
 - 验证：`go test ./internal/cli/ ./internal/dream/ ./internal/assets/` 通过；`go vet ./...` 无输出；本地以 Actions 环境变量组合执行 `/tmp/memctl-fix2 dream --worker`，错误从「Git 可执行文件缺失」变为「无法推送结果分支」（本地裸仓库无推送凭据），确认仓库定位已修复。
-- 未验证与遗留：修复后的完整链路需在 `v0.7.2` 发布后用真实 Actions 与真实 DeepSeek 端点复验；`G-4` 的真实模型调用尚未成功执行过一次。
+- 复验结果（`G-4`，2026-10-19）：`v0.7.2` 发布后，`~/memory`（`gray0128/agent-memory-repo`）完成首次真实端到端运行：
+  1. 工作流更新到 `MEMCTL_DREAM_VERSION: v0.7.2` 并推送。
+  2. `memctl dream --runner deepseek` 推送 `dream/req/dp-9047541efb4805869af58535518426a8/deepseek`；运行 [39226384745](https://github.com/gray0128/agent-memory-repo/actions/runs/39226384745) 成功：删除请求分支 → 校验并安装 `memctl-linux-amd64` → `--worker` 以 `deepseek-chat` 执行 1 步 → 推送结果提交 `476969a`。
+  3. 本地拉取结果、重算 Diff 与 `patchHash`，提案 `dp-9047541efb4805869af58535518426a8` 状态 `ready`，`changes` 为 0，`warnings` 为 4 条（入口索引行缺元数据、`notes/memctl-todo-audit.md` 的历史状态条目按事件型保留、无到期条目、worker 未产生改动）。
+  4. 空提案执行 `--apply` 返回 `INVALID_ARGUMENT: proposal ... has no changes to apply`，主库未产生提交（`HEAD` 仍为 `9bfbf0e`）。
+  5. 本地无残留 `refs/memctl/dream/*`，远端无残留 `dream/req/*` 与 `dream/res/*`。
+- 未验证与遗留：`G-4` 只验证了「运行成功但模型无改动」的路径，尚未验证一次带实际文件变更的提案被 `apply` 提交；诊断仓库 `gray0128/memctl-dream-diag` 需要 `delete_repo` scope 才能删除（`gh auth refresh -h github.com -s delete_repo`）。
