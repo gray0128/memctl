@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/gray0128/memctl/internal/app"
+	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/memerr"
 )
 
 // runDream implements the five mutually exclusive modes of
@@ -112,11 +115,18 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 
 	switch {
 	case worker:
-		// The worker runs inside GitHub Actions, where the workflow passes the
-		// request branch and the baseline commit.
+		// The worker runs inside GitHub Actions against the checked-out job
+		// workspace, not the user's memory repository. Without pinning the
+		// repository, the service resolves the default ~/memory, fails to find
+		// it and reports a misleading Git error.
 		if workerRef == "" {
 			workerRef = os.Getenv("GITHUB_REF_NAME")
 		}
+		workspace, workspaceErr := workerRepository(os.Getenv, cfg)
+		if workspaceErr != nil {
+			return fail(stderr, "dream", workspaceErr)
+		}
+		service = app.New(workspace)
 		result, err := service.DreamWorker(ctx, workerRequestRef(workerRef), baseHead)
 		if err != nil {
 			return fail(stderr, "dream", err)
@@ -177,6 +187,28 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 		}
 		return ExitOK
 	}
+}
+
+// workerRepository resolves the repository the Actions worker must operate on.
+// The worker is pointed at the checked-out workspace via GITHUB_WORKSPACE, and
+// an explicit AGENT_MEMORY_DIR still wins. Falling back to the configured
+// default would make the worker read the runner's empty home directory.
+func workerRepository(getenv func(string) string, cfg config.Config) (config.Config, error) {
+	if strings.TrimSpace(getenv("AGENT_MEMORY_DIR")) != "" {
+		return cfg, nil
+	}
+	workspace := strings.TrimSpace(getenv("GITHUB_WORKSPACE"))
+	if workspace == "" {
+		return config.Config{}, memerr.New(memerr.InvalidArgument,
+			"the worker needs a checked-out repository; set GITHUB_WORKSPACE or AGENT_MEMORY_DIR")
+	}
+	info, err := os.Stat(workspace)
+	if err != nil || !info.IsDir() {
+		return config.Config{}, memerr.New(memerr.NoRepo,
+			"the worker workspace %s is not a directory", workspace)
+	}
+	cfg.RepoPath = config.Canonical(workspace)
+	return cfg, nil
 }
 
 // workerRequestRef normalizes the branch name the workflow was triggered by.

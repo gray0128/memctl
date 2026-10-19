@@ -37,3 +37,12 @@
 - 修复：模板把二进制与 `SHA256SUMS` 下载到 `/tmp/memctl-dream/`，文件名与资产名一致，在同一目录执行校验后从该路径调用 `--worker`；文档 §2.5 的模板片段同步。新增 `internal/assets/assets_test.go`，断言下载名、校验命令、执行路径、版本占位符、触发分支与 `contents: write`，防止模板再次与发布资产命名脱节。
 - 验证：`go test ./internal/assets/ ./internal/dream/` 通过；`go vet ./...` 无输出；用修复后的二进制在临时仓库执行 `dream --init-workflow`，渲染出的步骤与断言一致。
 - 未验证与遗留：修复后的工作流需随补丁版本发布后才能在真实 Actions 中复验；`G-4` 的真实模型调用仍未执行（仓库尚无提供商 Secret）。
+
+## T086：修复 worker 在 Actions 中的仓库定位并发布 `v0.7.2`
+
+- 目标与范围：修复 `--worker` 在 GitHub Actions 中定位记忆仓库的方式。`v0.7.1` 的两次真实运行都在「运行 Dreaming worker」步骤失败，报 `GIT_FAILED: git remote failed: fork/exec /usr/bin/git: no such file or directory`。根因是 `memctl dream --worker` 沿用本地配置的默认仓库 `~/memory`，而 runner 的工作目录是 `$GITHUB_WORKSPACE`，`git` 于是在一个不存在的目录里启动，Go 把 `chdir` 失败报成了可执行文件缺失。
+- 契约：[11. GitHub Actions Dreaming](../11-github-actions-dreaming.md#25-工作流文件与自部署配置)、[CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令)。
+- 证据：诊断仓库 `gray0128/memctl-dream-diag` 的运行 [39224706290](https://github.com/gray0128/memctl-dream-diag/actions/runs/39224706290) 中，同一作业内 `command -v git`、`/usr/bin/git`、`git --version` 全部正常，只有 worker 步骤报该错误；`~/memory` 版本 [39224378495](https://github.com/gray0128/agent-memory-repo/actions/runs/39224378495) 表现相同。以 `GITHUB_WORKSPACE=/tmp/diagmem` 在本地复现同一环境后，修复前失败、修复后推进到推送结果分支。
+- 修复：`--worker` 先解析工作仓库——显式 `AGENT_MEMORY_DIR` 优先，否则使用 `GITHUB_WORKSPACE`，两者都缺失或目录不存在时返回 `INVALID_ARGUMENT`/`NO_REPO`，不再静默回退到默认路径；新增 `internal/cli/dream_worker_test.go` 覆盖三种分支。
+- 验证：`go test ./internal/cli/ ./internal/dream/ ./internal/assets/` 通过；`go vet ./...` 无输出；本地以 Actions 环境变量组合执行 `/tmp/memctl-fix2 dream --worker`，错误从「Git 可执行文件缺失」变为「无法推送结果分支」（本地裸仓库无推送凭据），确认仓库定位已修复。
+- 未验证与遗留：修复后的完整链路需在 `v0.7.2` 发布后用真实 Actions 与真实 DeepSeek 端点复验；`G-4` 的真实模型调用尚未成功执行过一次。
