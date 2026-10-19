@@ -162,11 +162,28 @@ Agent（模型）
 | Grok | `~/.grok/config.toml` | `grok mcp add --scope user memctl -- <memctl> mcp --agent grok` | `[mcp_servers.memctl]`，写入 `enabled = true` |
 | Command Code | `~/.commandcode/mcp.json` | `commandcode mcp add --scope user memctl <memctl> mcp --agent commandcode` | 省略 `--scope user` 时写入项目级路径 |
 | Antigravity | `~/.gemini/config/mcp_config.json` | `agy mcp add --type stdio memctl <memctl> mcp --agent antigravity` | 也可手工编辑 `mcpServers`，条目为 `{command, args, disabled}`；记忆仓库不在工作区时需同时设 `env` |
-| DSH | profile 的 `cordis.patch.yml` | 在 profile 中插入 `@deepseek-ai/dsh-mcp-client` stdio 条目，`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","dsh"]` | 需要宿主自带该包；本机 `desktop` profile 尚未安装该包 |
+| DSH | profile 的 `cordis.patch.yml` | 用 `insert:` 追加 `@deepseek-ai/dsh-mcp-client` stdio 条目，`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","dsh"]` | 该包随 DSH 应用分发，profile 无需安装或声明依赖；必须用 `insert:`，见下 |
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
 
-有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑；本机 `desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`。
+有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（`memory_read`、`memory_write`），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。
+
+DSH 的注册条目写在 profile 的 `cordis.patch.yml` 里，追加一条 `insert:` 记录：
+
+```yaml
+- insert:
+    - id: mcp-memctl
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: memctl
+        transport: stdio
+        command: /Users/<user>/.agent-memory/bin/memctl
+        args: ["mcp", "--agent", "dsh"]
+```
+
+`@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-base` 等内核包一起随 DSH 应用分发，位于应用包内 `dsh/node_modules/` 下，profile 的 `package.json` 与 `node_modules` 都不需要它。因此该步骤只改 profile 配置，不装包。写成不带 `insert:` 的顶层 `- id:` 记录会被宿主拒绝：`patch: entry "<id>" not found`（目标条目必须已存在）或 `id is required for non-insert patches`，两种情况都不会加载该 server。
+
+本机实测不需要重启应用：改动保存后 13 秒内，宿主重新合成条目树并派生了 `memctl mcp --agent dsh` 子进程。确认方式是看 `ps` 中该进程的父进程是否为 DSH 主进程；模型侧工具名固定为 `mcp__memctl__memory_read` 与 `mcp__memctl__memory_write`。
 
 pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这两个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
 

@@ -132,6 +132,7 @@
 - 命令与结果：新增 `internal/mcp/probe.go`，以 `mcp --agent status` 启动当前二进制、完成握手并读取 `tools/list`，3 秒预算；`internal/cli/mcp_status.go` 在 `install --status` 的适配器列表之后输出 `mcp: serving memory_read, memory_write (<version>)` 与 8 条注册动作，探测失败时输出 `mcp: unavailable: <原因>` 且不输出命令。`go test ./internal/mcp ./internal/cli ./tests/integration -run 'TestM|TestPrintMCPStatus' -count=1` 通过，覆盖 `M09` 的成功、失败与不写文件三个分支；`gofmt -l`、`go vet ./...` 无输出。宿主侧：Claude Code、Codex、pi、OpenCode、Grok、Command Code 各自执行 `mcp add` 后状态命令显示已连接（pi 列出 2 个工具），Antigravity 与 DSH 无等价子命令，注册表中二者改为手工编辑并标注实际文件。Codex `workspace-write` 会话中，`default_tools_approval_mode = "approve"` 时 `memory_read` 返回 `fileRevision`、`memory_write` 返回 `transaction`/`commit`/`revision`/`sync` 并产生提交，同会话 bash 的 `touch ~/memory/x` 返回 `Operation not permitted`、`memctl read` 返回 `IO_FAILED: cannot open repository lock`。
 - 验收：`M09` 通过；`M08` 由 DSH 与 Codex 两个宿主覆盖；`M05` 在 Codex 通道复验。`docs/09` 的 5.2、5.3、6.2、7 与 `04`、`README` 已同步。
 - 未验证与遗留：Claude Code、Grok、Command Code、OpenCode、Antigravity 与 pi 只确认注册与连接，未在受限会话中完成模型驱动的受管写入；`desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`，DSH 侧仍按手工插入条目接入；Codex 的 `approval_policy = "never"` 会让 MCP 调用失败，属宿主行为，需要用户侧配置。
+- 更正（2026-10-19，`T079`）：上文「`desktop` profile 未安装 `@deepseek-ai/dsh-mcp-client`」的前提不成立。该包与 `dsh-base` 等内核包一起随 DSH 应用分发，位于 `app.asar` 的 `dsh/node_modules/@deepseek-ai/dsh-mcp-client`，空依赖 profile 也能加载；缺的是 profile 里的配置条目，不是包。原文保留，现行结论见 [09](../09-mcp-memory-tools.md#52-各宿主的注册命令)。
 - 下一步：如需覆盖其余宿主的受限会话写入，按 `docs/09` 6.2 的相同步骤逐个实测；其余未验证项见 [STATUS](../STATUS.md#当前事实)。
 
 ## T073：其余宿主的受限会话实测
@@ -191,3 +192,14 @@
 - 验收：文档检查通过；链接与锚点脚本无失效项，CLI 命令与 REST 路由核对无差异，跨文档表述一致。`T076` 完成记录已归档到 [阶段 F](#t076明确发布入口为标签推送)。
 - 未验证与遗留：文档检查不替代二进制、平台或宿主测试；本轮未改代码，未重跑测试套件。
 - 下一步：可选事项为配套 Skill、Codex 插件调研、Dreaming 真实 runner 验证与 pi.dev 收录；未验证项见 [STATUS](../STATUS.md#当前事实)。
+
+## T078：配套 Agent Skill
+
+- 目标与范围：为使用 memctl 的 Agent 提供 `skills/memctl/`，覆盖读取与写入时机、按基线受管写入、同步与冲突恢复、沙箱宿主改用 MCP 工具；通过 `skills` CLI 从 GitHub 在线安装到 `~/.agents/skills`，不改变产品行为。
+- 契约：[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、[MCP 记忆工具](../09-mcp-memory-tools.md#4-系统如何工作)、[目录结构与依赖](../01-architecture-and-modules.md#5-目录结构与依赖)。
+- 验证日期与环境：2026-10-18，macOS arm64，Go 1.27.1。
+- 结构：`SKILL.md` 的 frontmatter 只有 `name` 与 `description`，name 为 `memctl`；正文按「确认环境 → 判断读写 → 受管写入 → 同步与冲突 → MCP 降级 → 边界」组织，每步给出完成标准；`references/memory-conventions.md` 与 `references/recovery.md` 由入口按需链接。
+- 事实核对：Skill 中的 `read`、`write`、`sync`、`resolve`、`recover`、`mcp`、`install` 命令与参数逐一对照当前提交构建的 `help --json`；错误码取自 `internal/memerr` 并对照 `02` 4.3；冲突解决 JSON 字段对照 `app.ConflictView` 的 `baseRevision`、`conflictId` 与 `files`。
+- 验收：三个 Skill 文件存在，frontmatter 可解析且无额外字段，入口链接可解析；`README` 与 `01` 第 5 节已登记 `skills/memctl/`；已用 `skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y` 在线安装到 `~/.agents/skills/memctl`，`~/.agents/.skill-lock.json` 记录来源 `gray0128/memctl`，`skills list -g --json` 可见，宿主技能目录识别出 `memctl` 并通过 `skill` 工具加载；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
+- 未验证与遗留：真实任务中的自动触发与执行未验证。
+- 下一步：需要时分发到宿主 skills 目录，并用真实会话验证触发与执行。
