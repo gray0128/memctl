@@ -122,3 +122,6 @@ TestB2SSEDecoderHandlesSplitChunksAndMultilineDataCoversA05 4
 TestT091MCPStatusRoute 1
 TestT091MCPStatusReadOnly 1
 TestT091MCPStatusWritesNothing 1
+TestT094ReadHidesExpiredEntry 2
+TestT094SnapshotHidesExpiredEntries 2
+TestT094InjectionHidesExpiredEntry 2

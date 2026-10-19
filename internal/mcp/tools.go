@@ -190,13 +190,15 @@ func (s *Server) memoryRead(ctx context.Context, params json.RawMessage) (CallTo
 		return textResult(errorText(err), true), nil
 	}
 	payload := struct {
-		FilePath     string `json:"filePath"`
-		FileRevision string `json:"fileRevision"`
-		RawContent   string `json:"rawContent"`
+		FilePath      string `json:"filePath"`
+		FileRevision  string `json:"fileRevision"`
+		RawContent    string `json:"rawContent"`
+		HiddenExpired int    `json:"hiddenExpired,omitempty"`
 	}{
-		FilePath:     file.RelPath,
-		FileRevision: file.FileRevision,
-		RawContent:   file.RawContent,
+		FilePath:      file.RelPath,
+		FileRevision:  file.FileRevision,
+		RawContent:    file.RawContent,
+		HiddenExpired: file.HiddenExpired,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

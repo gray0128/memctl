@@ -45,6 +45,10 @@ Report it to the user instead.
   migrations): append a new entry with its `added:` date and leave the older
   one untouched; it records what was true then. A reversed decision is not an
   error, and the earlier entry is not rewritten.
+- Time-limited facts (a trial period, a temporary constraint, a deadline) carry
+  `until: YYYY-MM-DD` in the trailing metadata. Once that day has passed the
+  entry is hidden from injection and every read surface; the file and Git
+  history keep it. Never delete a hidden entry yourself.
 - No change log in memory files: no "previously X, now Y". Git history holds
   the earlier versions.
 

@@ -135,3 +135,18 @@
 - 结论：pi.dev 目录直接消费 npm search 索引，收录门槛不在 pi.dev 侧。本包的问题表现为 npm 索引文档的 `score.final = 0` 且不在可枚举窗口内，属于 npm 侧的索引状态，`pi` 仓库文档只声明 `pi-package` 关键字即可发现。因此「补关键字、补仓库字段」不是修复路径。
 - 阻塞与解除条件：修复需要让 npm 重新索引该包，可行做法是发布一个新版本（例如 `0.5.2`，同时补齐 registry 文档缺失的 README 元数据）；本机 `~/.npmrc` 的 `registry.npmjs.org` token 已失效（`npm whoami` 返回 401，`GET /-/whoami` 返回 401），无法执行发布。解除条件：用户重新执行 npm 登录并确认可以发布 `memctl-pi` 新版本。
 - 未验证：重新发布能否让索引恢复，需要一次真实发布后复测 `?name=memctl-pi` 与 `name:memctl-pi` 才能确认；向 npm 提交索引重建请求是否可行未验证。
+
+## T094：记忆过期规则的读取侧实现
+
+- 目标与范围：落实 [10. 记忆更新与过期](../10-memory-lifecycle.md) §3.3/§3.4。用户于 2026-10-19 确认三个未决问题：隐藏期 30 天、三个读取入口统一过滤、事件型条目继续留在 `MEMORY.md`/`notes/`。本轮实现 `until` 解析与读取期隐藏；隐藏期满后的删除未实现。
+- 契约：[记忆生命周期](../10-memory-lifecycle.md#34-判定与隐藏的落地口径)、[REST 路由](../02-domain-models-and-contracts.md#42-路由)。
+- 实现：
+  1. `internal/vault/parse.go` 把合法 `until: YYYY-MM-DD` 解析为 `MemoryEntry.UntilDate`；缺失或非法值保持空，按永不过期处理，元数据原文与顺序不变。
+  2. `internal/vault/lifecycle.go`、`hide.go` 提供唯一判定与投影：`EntryExpired` 以 `until` 次日本地零点为界，`HideExpiredEntries` 只替换到期条目的正文，保留 `until`/`source`/`added` 原文与其他所有字节。
+  3. `App.ReadFile` 对 Markdown 应用投影并返回 `HiddenExpired`；`scanVault` 在快照与 `ListEntries` 中剔除到期条目，快照新增 `hiddenExpired` 总数；注入复用 `ReadFile`，因此自动一致。
+  4. 三个入口的响应都带上计数：CLI `read --json`、MCP `memory_read` 与 `GET /api/v1/files/{path...}` 增加 `hiddenExpired`；`VaultSnapshot` 增加同名顶层字段。
+  5. 写入路径不变：`planPut` 仍以磁盘原文做基线校验，隐藏条目在下次写入时按原样保留；测试 `TestWriteAfterHideKeepsExpiredEntry` 覆盖。
+  6. 内嵌指引与 `skills/memctl` 约定补入 `until` 规则，`R01` 增加对应断言。
+- 验证（2026-10-19，darwin/arm64）：`go test ./internal/...` 全部通过；`web/src` 未改动。新增 `internal/vault/lifecycle_test.go`（判定边界、解析、投影）、`internal/app/lifecycle_test.go`（读取投影、快照、注入、写入保留）、`tests/integration/t094_expiry_test.go`（HTTP 读取、快照与条目、注入），分片清单登记三条集成测试。
+- 真实二进制手测（隔离 `HOME` 与临时仓库）：`read MEMORY.md --json` 返回 `hiddenExpired: 1`，正文里到期条目变成占位符且保留 `until`/`source`/`added`；`entries --json` 的 `total` 为 3，不含到期条目；`start --sid s1` 注入的同样是占位符；磁盘文件仍含原文；基于该读取结果做一次 `write` 后，被隐藏条目仍完整保留，再次读取仍报 `hiddenExpired: 1`。
+- 未验证与遗留：隐藏期满 30 天后的删除入口未实现（不在读取路径自动删除）；`until` 只支持日期粒度，不含时刻；时区取本地时钟，跨时区设备对同一 `until` 的切换时刻可能相差数小时；UI 未展示 `hiddenExpired`（本轮未要求视觉验证）。

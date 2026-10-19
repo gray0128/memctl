@@ -46,6 +46,10 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 			Editable:     file.Editable,
 		},
 		"rawContent": file.RawContent,
+		// hiddenExpired tells the client that expired time-limited entries
+		// were replaced by a placeholder; the baseline is still the on-disk
+		// revision. See docs/10-memory-lifecycle.md section 3.3.
+		"hiddenExpired": file.HiddenExpired,
 	})
 }
 

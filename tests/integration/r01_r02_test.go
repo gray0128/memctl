@@ -64,6 +64,7 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"### After an entry stops being true",
 		"rewrite the entry in place",
 		"No change log in memory files",
+		"until: YYYY-MM-DD",
 		"# Memory",
 	} {
 		if !strings.Contains(start.stdout, want) {

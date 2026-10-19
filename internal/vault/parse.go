@@ -15,6 +15,12 @@ import (
 // MetadataField is one order-preserving key/value pair from an entry's trailing
 // metadata. Keys are open, so Raw keeps the exact original segment and unknown
 // or repeated keys are never dropped or reordered.
+
+// UntilKey is the optional metadata key that marks a time-limited entry. It is
+// not required, and an entry without it never expires. See
+// docs/10-memory-lifecycle.md section 3.1.
+const UntilKey = "until"
+
 type MetadataField struct {
 	Key   string
 	Value string
@@ -45,7 +51,10 @@ type MemoryEntry struct {
 	Metadata     []MetadataField
 	Heading      string
 	AddedDate    string
-	InlineLinks  []WikiLink
+	// UntilDate is the raw `until` metadata value when it is a legal
+	// YYYY-MM-DD date; otherwise it stays empty and the entry never expires.
+	UntilDate   string
+	InlineLinks []WikiLink
 }
 
 // Line is one physical line kept with its original terminator so Raw reproduces
@@ -257,6 +266,10 @@ func parseEntry(relPath, fileRevision string, lineNumber int, rawLine, body, hea
 		case "added":
 			if isDate(field.Value) {
 				entry.AddedDate = field.Value
+			}
+		case UntilKey:
+			if isDate(field.Value) {
+				entry.UntilDate = field.Value
 			}
 		}
 	}

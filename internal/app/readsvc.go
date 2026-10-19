@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/doctor"
@@ -142,6 +143,10 @@ type Snapshot struct {
 	Graph      KnowledgeGraphDTO `json:"graph"`
 	SyncState  SyncStateDTO      `json:"syncState"`
 	Health     HealthDTO         `json:"health"`
+	// HiddenExpired counts the time-limited entries excluded from this
+	// snapshot because their `until` date had passed. It exists so the UI can
+	// tell "no entries" apart from "entries hidden by expiry".
+	HiddenExpired int `json:"hiddenExpired"`
 }
 
 // EntryQuery filters the paged entry list.
@@ -225,7 +230,7 @@ func (a *App) Snapshot(ctx context.Context) (Snapshot, error) {
 	defer session.Close()
 	ctx = session.ctx
 
-	scan, err := scanVault(session)
+	scan, err := scanVault(session, a.clock())
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -234,15 +239,16 @@ func (a *App) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snapshot := Snapshot{
-		RepoID:     config.RepoID(session.repoPath),
-		RepoPath:   session.repoPath,
-		Revision:   scan.revision,
-		Stale:      false,
-		EntryPoint: vault.EntryPointName,
-		Files:      scan.files,
-		Graph:      scan.graph,
-		SyncState:  syncState,
-		Health:     scan.health,
+		RepoID:        config.RepoID(session.repoPath),
+		RepoPath:      session.repoPath,
+		Revision:      scan.revision,
+		Stale:         false,
+		EntryPoint:    vault.EntryPointName,
+		Files:         scan.files,
+		Graph:         scan.graph,
+		SyncState:     syncState,
+		Health:        scan.health,
+		HiddenExpired: scan.hiddenExpired,
 	}
 	a.cacheSnapshot(snapshot)
 	return snapshot, nil
@@ -303,7 +309,7 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 	}
 	defer session.Close()
 
-	scan, err := scanVault(session)
+	scan, err := scanVault(session, a.clock())
 	if err != nil {
 		return EntryPage{}, err
 	}
@@ -451,9 +457,12 @@ type vaultScan struct {
 	graph    KnowledgeGraphDTO
 	entries  []MemoryEntryDTO
 	health   HealthDTO
+	// hiddenExpired counts the time-limited entries the scan dropped because
+	// their `until` date had passed.
+	hiddenExpired int
 }
 
-func scanVault(session *writeSession) (*vaultScan, error) {
+func scanVault(session *writeSession, now time.Time) (*vaultScan, error) {
 	paths, err := session.root.ListManaged()
 	if err != nil {
 		return nil, err
@@ -508,6 +517,9 @@ func scanVault(session *writeSession) (*vaultScan, error) {
 		})
 
 		parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
+		// The snapshot uses one definition of "visible": an expired
+		// time-limited entry is dropped here, exactly as ReadFile hides it in a
+		// full-file read. See docs/10-memory-lifecycle.md section 3.3.
 		links, diagnostics := parsed.ResolveLinks(index)
 		for _, diagnostic := range diagnostics {
 			switch diagnostic.Code {
@@ -531,6 +543,10 @@ func scanVault(session *writeSession) (*vaultScan, error) {
 			IndexedInRoot: false,
 		}
 		for i := range parsed.Entries {
+			if vault.EntryExpired(parsed.Entries[i].UntilDate, now) {
+				scan.hiddenExpired++
+				continue
+			}
 			entry := toEntryDTO(parsed.Entries[i])
 			fileDTO.Entries = append(fileDTO.Entries, entry)
 			scan.entries = append(scan.entries, entry)

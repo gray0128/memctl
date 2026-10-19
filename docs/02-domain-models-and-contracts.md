@@ -36,7 +36,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 | 对象 | 必需字段 | 可选字段及说明 |
 | --- | --- | --- |
-| `VaultSnapshot` | `repoId`, `repoPath`, `revision`, `stale`, `files`, `graph`, `syncState`, `health` | `entryPoint` 为根文件路径；未初始化时使用错误响应 |
+| `VaultSnapshot` | `repoId`, `repoPath`, `revision`, `stale`, `files`, `graph`, `syncState`, `health`, `hiddenExpired` | `entryPoint` 为根文件路径；`hiddenExpired` 为因 `until` 到期而排除的条目总数；未初始化时使用错误响应 |
 | `MemoryFile` | `relPath`, `fileRevision`, `kind`, `sizeBytes`, `updatedAt`, `editable` | `wikiKey`, `title`, `lineCount`, `indexedInRoot`, `entries`, `outgoingLinks`, `backlinks` |
 | `MemoryEntry` | `id`, `filePath`, `fileRevision`, `lineNumber`, `rawLine`, `factText`, `sources`, `metadata` | `heading`, `addedDate`, `inlineLinks`；`metadata` 是保序键值数组，不用 map 丢弃重复键 |
 | `SourceRef` | `raw`, `scheme` | `device`, `agent`, `sessionId` 仅在合法 `agent://` 来源可解析时提供 |
@@ -129,7 +129,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | 方法与路径 | 输入 | 输出及行为 |
 | --- | --- | --- |
 | `GET /api/v1/snapshot` | 无 | `VaultSnapshot` |
-| `GET /api/v1/files/{path...}` | 根相对路径 | `{file, rawContent}`，附带文件 `ETag` |
+| `GET /api/v1/files/{path...}` | 根相对路径 | `{file, rawContent, hiddenExpired}`，附带文件 `ETag`；`hiddenExpired` 为本次读取被隐藏的到期条目数 |
 | `PUT /api/v1/files/{path...}` | 版本头、`{rawContent}` | `MutationResult` |
 | `POST /api/v1/files:move` | `{fromPath, toPath, baseRevision}` | `MutationResult`；同一事务内移动文件并只重写已解析到源文件的链接；仅大小写不同的重命名经事务内中间路径完成，拒绝覆盖已有目标 |
 | `GET /api/v1/entries` | `q, agent, device, file, from, to, limit, offset` | `{revision, items, total}`；默认 50、最多 200 条，变更后重新分页 |

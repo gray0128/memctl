@@ -232,13 +232,15 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
 	payload := struct {
-		FilePath     string `json:"filePath"`
-		FileRevision string `json:"fileRevision"`
-		RawContent   string `json:"rawContent"`
+		FilePath      string `json:"filePath"`
+		FileRevision  string `json:"fileRevision"`
+		RawContent    string `json:"rawContent"`
+		HiddenExpired int    `json:"hiddenExpired,omitempty"`
 	}{
-		FilePath:     file.RelPath,
-		FileRevision: file.FileRevision,
-		RawContent:   file.RawContent,
+		FilePath:      file.RelPath,
+		FileRevision:  file.FileRevision,
+		RawContent:    file.RawContent,
+		HiddenExpired: file.HiddenExpired,
 	}
 	if err := encoder.Encode(payload); err != nil {
 		return fail(stderr, "read", memerr.Wrap(memerr.IOFailed, err, "cannot write JSON output"))

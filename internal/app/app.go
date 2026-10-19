@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
@@ -84,6 +85,9 @@ type App struct {
 	// itself: initialization, the Dreaming workflow and apply, and reverts. See
 	// App.SetCommitSource.
 	commitSource git.Source
+	// now returns the wall clock used by read-time projections. Tests replace
+	// it to make an `until` boundary deterministic; production leaves it nil.
+	now func() time.Time
 }
 
 // New builds the application service for the given configuration.
@@ -184,14 +188,52 @@ func (a *App) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 // holds the repository lock without waiting and refuses to read while a
 // transaction, a conflict or a Git intermediate state is active, so the
 // returned content is never a transaction-intermediate tree.
+// ReadFile reads one managed file and applies the documented read-time
+// projection: an expired time-limited entry is replaced by a placeholder with
+// its metadata preserved, and HiddenExpired reports how many entries were
+// hidden. The on-disk file and the revision returned as the write baseline are
+// unchanged, so a later write never silently drops a hidden entry.
+// See docs/10-memory-lifecycle.md section 3.3.
 func (a *App) ReadFile(ctx context.Context, relPath string) (vault.FileRead, error) {
 	session, err := a.beginRead(ctx)
 	if err != nil {
 		return vault.FileRead{}, err
 	}
 	defer session.Close()
-	return session.root.ReadFile(relPath)
+	file, err := session.root.ReadFile(relPath)
+	return a.projectRead(relPath, file, err)
 }
+
+// projectRead applies the hide projection to one file read. A non-Markdown or
+// binary file is left alone, and a read error passes through unchanged.
+func (a *App) projectRead(relPath string, file vault.FileRead, err error) (vault.FileRead, error) {
+	if err != nil {
+		return file, err
+	}
+	if file.Kind != vault.KindEntryPoint && file.Kind != vault.KindMarkdown {
+		return file, nil
+	}
+	hidden, count := vault.HideExpiredEntries(file.RelPath, file.FileRevision, []byte(file.RawContent), a.clock())
+	if count == 0 {
+		return file, nil
+	}
+	file.RawContent = hidden
+	file.HiddenExpired = count
+	return file, nil
+}
+
+// clock returns the wall clock of read-time projections.
+func (a *App) clock() time.Time {
+	if a.now != nil {
+		return a.now()
+	}
+	return time.Now()
+}
+
+// SetClock replaces the clock used by read-time projections. It exists for
+// tests that need a deterministic `until` boundary; production callers leave it
+// unset.
+func (a *App) SetClock(now func() time.Time) { a.now = now }
 
 // initExisting handles a non-empty target directory: an existing memory
 // repository is reused, anything else is refused without being modified.

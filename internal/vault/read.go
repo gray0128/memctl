@@ -55,6 +55,11 @@ type FileRead struct {
 	ModTime    time.Time
 	Editable   bool
 	RawContent string
+	// HiddenExpired counts the time-limited entries this read projected away
+	// because their `until` date had passed. RawContent carries a placeholder
+	// for each of them; the on-disk file is unchanged. See
+	// docs/10-memory-lifecycle.md section 3.3.
+	HiddenExpired int
 }
 
 // Root is a repository-bound file accessor. Every path it accepts is
