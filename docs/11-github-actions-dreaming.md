@@ -309,7 +309,7 @@ jobs:
 | [01. 架构与模块](./01-architecture-and-modules.md) | 3.1、3.2、3.4、4、5 | `.github` 纳入非记忆受保护路径；删除本地 runner 沙箱依赖；说明模型 API Key 仅存于 GitHub Actions Secrets；`internal/dream` 职责更新为远端分支触发、worker 多步结构化整理与结果树校验 |
 | [02. 模型与契约](./02-domain-models-and-contracts.md) | 2.3、3、4.2 | `DreamProposal.runner` 与 `POST /api/v1/dream:preview` 的 `runner` 取值改为 `"deepseek" \| "minimax" \| "openai" \| "anthropic"` |
 | [03. 流程与恢复](./03-workflows-and-dataflows.md) | 6 | 七步流程改为：锁内校验基线与工作流文件 → 推送 `dream/req` 分支触发 Action → worker 静态候选识别与多步结构化调用并推送 `dream/res` 分支 → 本地拉取结果树并按不可信输入计算 Diff 与 `patchHash` → 持久化提案并清理远端临时分支 → 确认后受管事务应用 |
-| [04. CLI、UI 与分发](./04-ui-and-cli-specification.md) | 1、4、5、6 | `dream` 命令支持 `--runner deepseek\|minimax\|openai\|anthropic`、`--init-workflow` 与内部 `--worker`；UI「整理接入」展示提供商选择与工作流就绪状态；运行时不再依赖本地 runner 与平台沙箱 |
+| [04. CLI、UI 与分发](./04-ui-and-cli-specification.md) | 1、4、5、6 | `dream` 命令支持 `--runner deepseek\|minimax\|openai\|anthropic`、`--init-workflow` 与内部 `--worker`；UI「整理」展示提供商选择与工作流就绪状态；运行时不再依赖本地 runner 与平台沙箱 |
 | [05. 验收与交付](./05-validation-and-delivery.md) | 1、2、3 | 更新 `D01`–`D04` 与 `R02` 验收口径，消除非 macOS 平台在 Dreaming 上的 `UNSUPPORTED` 限制，新增阶段 G 实施计划 |
 
 ## 6. 验收矩阵与实施计划

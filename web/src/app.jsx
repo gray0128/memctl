@@ -10,9 +10,12 @@ import { ConflictView } from './components/ConflictView.jsx'
 import { AuditView } from './components/AuditView.jsx'
 import { DiagnosticsView } from './components/DiagnosticsView.jsx'
 import { AdapterView } from './components/AdapterView.jsx'
+import { DreamView } from './components/DreamView.jsx'
 
-// The views of docs/04-ui-and-cli-specification.md section 4. The 整理接入 view
-// carries the Dreaming proposal panel and the adapter install panel.
+// The views of docs/04-ui-and-cli-specification.md section 4. 整理 carries the
+// Dreaming proposal workflow; 客户端接入 carries the MCP channel status and
+// the adapter install panel. They are separate views so reviewing a proposal
+// never asks the operator to reason about host configuration at the same time.
 const VIEWS = [
   {
     id: 'overview',
@@ -72,11 +75,20 @@ const VIEWS = [
     ),
   },
   {
-    id: 'adapters',
-    label: '整理接入',
+    id: 'dream',
+    label: '整理',
     icon: (
       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'adapters',
+    label: '客户端接入',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
       </svg>
     ),
   },
@@ -184,6 +196,9 @@ export function App() {
       break
     case 'diagnostics':
       content = <DiagnosticsView api={api} refreshKey={refreshKey} />
+      break
+    case 'dream':
+      content = <DreamView api={api} refreshKey={refreshKey} />
       break
     case 'adapters':
       content = <AdapterView api={api} refreshKey={refreshKey} />

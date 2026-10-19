@@ -1,4 +1,4 @@
-// Adapter detection and install helpers for the 整理接入 view.
+// Adapter detection and install helpers for the 客户端接入 view.
 //
 // The REST contract of docs/02-domain-models-and-contracts.md section 4.2
 // returns an AdapterInstallPlan whose artifacts carry the configuration
@@ -91,4 +91,38 @@ export function summarizeInstall(result) {
   }
   if (parts.length === 0) parts.push('没有可安装的变更')
   return `${statusLabel(result.status && result.status.status)}：${parts.join('，')}`
+}
+
+// MCP channel helpers for the 客户端接入 view.
+//
+// GET /api/v1/mcp reports whether the running binary serves the memory tools
+// and one registration action per host. The view only displays that answer:
+// memctl never runs a host's `mcp add` and never merges host configuration, so
+// there is no apply action for this panel.
+
+// mcpAvailable reports whether the probed binary answers tools/list. A missing
+// response is reported by the view with mcpReason().
+export function mcpAvailable(status) {
+  return Boolean(status && status.available)
+}
+
+// mcpReason renders why the channel is unavailable, preferring the server's
+// diagnostic over a generic placeholder.
+export function mcpReason(status) {
+  if (!status) return '未探测'
+  if (status.available) return ''
+  return status.reason || '二进制未返回 tools/list'
+}
+
+// mcpTools renders the served tool names for the status line.
+export function mcpTools(status) {
+  const tools = (status && status.tools) || []
+  return tools.length > 0 ? tools.join('、') : '无'
+}
+
+// mcpAction renders the actionable text of one registration: the host command
+// when the host has a CLI, otherwise the manual instruction.
+export function mcpAction(registration) {
+  if (!registration) return ''
+  return registration.command || registration.instruction || ''
 }

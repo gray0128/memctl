@@ -46,6 +46,7 @@ var documentedRoutes = []struct {
 	{http.MethodGet, "/api/v1/dream/proposal-1"},
 	{http.MethodGet, "/api/v1/adapters"},
 	{http.MethodPost, "/api/v1/adapters/claude-code/install"},
+	{http.MethodGet, "/api/v1/mcp"},
 	{http.MethodGet, "/api/v1/events"},
 	{http.MethodGet, "/"},
 	{http.MethodGet, "/assets/"},

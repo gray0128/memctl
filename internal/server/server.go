@@ -6,6 +6,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/adapters"
 	"github.com/gray0128/memctl/internal/app"
+	"github.com/gray0128/memctl/internal/mcp"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/watcher"
 )
@@ -64,6 +66,11 @@ type Options struct {
 	// SSEHeartbeat is the comment interval of the SSE stream. Zero uses
 	// DefaultSSEHeartbeat. Tests use a short interval.
 	SSEHeartbeat time.Duration
+	// MCPStatus probes the memctl MCP channel for GET /api/v1/mcp. A nil value
+	// uses the running binary, so the UI reports the same status as
+	// `install --status`. Tests inject a fixed status to avoid starting a
+	// child process.
+	MCPStatus func(context.Context) (mcp.Status, error)
 }
 
 // Server holds the routes, session token and address policy.
@@ -78,6 +85,7 @@ type Server struct {
 	events          *watcher.Bus
 	sseHeartbeat    time.Duration
 	adapters        adapters.Env
+	mcpStatus       func(context.Context) (mcp.Status, error)
 	mux             *http.ServeMux
 	// dreamRun bounds concurrent Dreaming generations started by the API, as
 	// docs/04-ui-and-cli-specification.md section 5 requires. A preview that
@@ -128,6 +136,10 @@ func New(opts Options) (*Server, error) {
 	if sseHeartbeat <= 0 {
 		sseHeartbeat = DefaultSSEHeartbeat
 	}
+	mcpStatus := opts.MCPStatus
+	if mcpStatus == nil {
+		mcpStatus = probeMCPStatus
+	}
 	adapterEnv := adapters.DefaultEnv(opts.App.StateDir())
 	if opts.Adapters != nil {
 		adapterEnv = *opts.Adapters
@@ -144,6 +156,7 @@ func New(opts Options) (*Server, error) {
 		events:          events,
 		sseHeartbeat:    sseHeartbeat,
 		adapters:        adapterEnv,
+		mcpStatus:       mcpStatus,
 		dreamRun:        make(chan struct{}, DefaultMaxConcurrentDreams),
 	}
 	for _, name := range []string{"127.0.0.1", "localhost"} {
@@ -221,6 +234,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/doctor:fix", s.handleDoctorFix)
 	s.mux.HandleFunc("GET /api/v1/adapters", s.handleAdapters)
 	s.mux.HandleFunc("POST /api/v1/adapters/{agent}/install", s.handleAdapterInstall)
+	s.mux.HandleFunc("GET /api/v1/mcp", s.handleMCPStatus)
 	s.mux.HandleFunc("POST /api/v1/dream:preview", s.handleDreamPreview)
 	s.mux.HandleFunc("POST /api/v1/dream:apply", s.handleDreamApply)
 	s.mux.HandleFunc("GET /api/v1/dream/{proposalId}", s.handleDreamProposal)

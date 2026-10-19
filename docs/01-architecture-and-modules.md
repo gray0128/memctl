@@ -105,7 +105,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | 包 | 输入与输出 | 职责及依赖 |
 | --- | --- | --- |
 | `internal/cli`、`hookio` | argv、stdin → 请求、stdout、退出码 | 协议转换，不直接写工作树 |
-| `internal/mcp` | stdio 上的 JSON-RPC → MCP 响应 | 协议适配，把 `memory_read`/`memory_write` 映射为 app 读写；不新增存储、锁或事务，不读宿主配置 |
+| `internal/mcp` | stdio 上的 JSON-RPC → MCP 响应；通道探测与各宿主注册动作 | 协议适配，把 `memory_entries`/`memory_read`/`memory_write` 映射为 app 读写；不新增存储、锁或事务，不读宿主配置 |
 | `internal/app` | 类型化请求 → 结果或错误 | 唯一事务入口，调用锁、vault、git、state |
 | `internal/vault` | 文件快照 → 条目、图谱、变更计划 | 不执行 Git，不取得应用锁；不持有过期文件内容直接写回 |
 | `internal/git` | Git 命令请求 → 状态、结果、错误 | 使用 argv 调用 Git，检查操作状态，不自行决定 abort 或忽略错误 |
@@ -114,7 +114,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/doctor` | vault 快照 → 诊断和修复计划 | 默认只读；修复计划交 app 提交 |
 | `internal/dream` | 固定基线、模型提供商 → 提案；worker 模式执行多步结构化整理 | 本地负责远端 `dream/req` 触发、`dream/res` 结果树拉取与不可信范围校验、提案持久化；worker 在 GitHub Actions 内执行静态候选提取与多步结构化模型调用；应用交 app，不在 worker 内直接写主分支 |
 | `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
-| `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复 |
+| `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装、MCP 通道状态 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复；MCP 状态复用 `internal/mcp` 的探测与注册表 |
 | `internal/update` | 当前版本与平台 → 下载、校验与替换结果 | 只请求固定的 GitHub Releases 地址；校验 SHA-256 后同目录原子替换，不执行下载的二进制，不自动重启 |
 | `internal/watcher` | 文件事件 → 索引失效通知 | 不解析业务状态，不承担持久化消息队列职责 |
 

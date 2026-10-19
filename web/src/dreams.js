@@ -1,4 +1,4 @@
-// Dreaming proposal helpers for the 整理接入 view.
+// Dreaming proposal helpers for the 整理 view.
 //
 // docs/04-ui-and-cli-specification.md section 4 requires the view to generate a
 // proposal, preview the fixed diff, query its status and only apply an

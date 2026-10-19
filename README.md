@@ -95,7 +95,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 | 同步与冲突 | `sync --wait`、`resolve` | 前台同步与多阶段冲突解决；断网不撤销已保存的本地内容 |
 | 会话上下文 | `start`、`context`、`pull`、`tag`、`wrap` | Hook 注入、会话级去重与来源标签；`wrap` 透传被包装程序的退出码与信号 |
 | 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
-| Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理接入 7 个视图；只读模式在服务端拒绝写请求 |
+| Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理、客户端接入 8 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.1`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |

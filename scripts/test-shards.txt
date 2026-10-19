@@ -119,3 +119,6 @@ TestD2DreamReadOnlyCoversA03 2
 TestB3UIBundlesGraphAndDiffLibraries 3
 TestB3ReadOnlyUIRejectsWritesCoversA03 1
 TestB2SSEDecoderHandlesSplitChunksAndMultilineDataCoversA05 4
+TestT091MCPStatusRoute 1
+TestT091MCPStatusReadOnly 1
+TestT091MCPStatusWritesNothing 1

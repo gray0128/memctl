@@ -114,6 +114,10 @@ export function createApi(options = {}) {
     // preview is never overwritten. See
     // docs/02-domain-models-and-contracts.md section 4.2.
     adapters: (signal) => request('/api/v1/adapters', { signal }),
+    // The MCP channel status backs the 客户端接入 view: it reports whether the
+    // running binary serves the memory tools and the registration command of
+    // each host. Read-only; it never edits host configuration.
+    mcpStatus: (signal) => request('/api/v1/mcp', { signal }),
     installAdapter: (agent, payload) =>
       writeJSON(`/api/v1/adapters/${encodeURIComponent(agent)}/install`, 'POST', payload),
 

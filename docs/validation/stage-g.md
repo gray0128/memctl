@@ -99,3 +99,14 @@
 - 验证（2026-10-19，darwin/arm64）：`go test ./internal/git ./internal/app ./internal/dream ./internal/cli ./internal/server` 与 `go test ./tests/integration -run 'TestT027|TestC2|TestB1|TestB3'`、`web` 的 `npm test`（94 项）全部通过；`go vet ./internal/...` 无输出。新增 `TestAppendTrailers`、`TestParseLogReadsAppendedTrailers`、`TestAuditResolvesRootAndWorkflowSource`、revert 与 dream apply 的 trailer 断言，以及 `web/src/audit.test.js` 的 8 项来源/分组/分页用例。
 - 界面验证（ego-browser，真实二进制与临时记忆仓库，26 次提交）：第 1 页 20 条、下一页可用；第 2 页 6 条且「下一页」禁用、页码出现 1/2；提交展开后 Diff 与回滚面板正常；两条无 trailer 的合成提交显示「未记录来源」并带悬停说明；圆点与竖线同心、日期分组标题与计数正确。
 - 未验证与遗留：来源补齐只对之后产生的提交生效，旧版本已写入且没有 trailer 的历史提交仍显示「未记录来源」，不提供历史改写；`dream --worker` 在 Actions 中的结果提交沿用其原有格式，不进入本地审计时间轴；窄屏（<640px）下的时间轴未单独复验。
+
+## T091：拆分整理与客户端接入视图并展示 MCP 状态
+
+- 目标与范围：落实待办中的前两项。原先唯一的「整理接入」视图同时承载 Dreaming 提案与 adapter 安装，职责混杂；MCP 通道状态只存在于 `install --status` 的文本输出，UI 无法查看。本轮把视图拆为「整理」（仅 Dreaming）与「客户端接入」（MCP 通道 + adapter 安装），并让 UI 展示 MCP 的注册动作与可用性。
+- 契约：[Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[REST 路由](../02-domain-models-and-contracts.md#42-路由)、[MCP 记忆工具的探测](../09-mcp-memory-tools.md#53-探测)。
+- 后端：新增 `GET /api/v1/mcp`，返回 `{executable, available, version?, tools, reason?, registrations: [{agent, command?, instruction?}]}`。探测与注册表从 `internal/cli` 移到 `internal/mcp`（`StatusEnv`/`Status`/`Registrations`），`printMCPStatus` 与 HTTP 路由共用同一实现，避免 CLI 与 UI 的输出漂移。`server.Options` 新增可注入的 `MCPStatus`，集成测试不启动子进程。
+- 前端：`app.jsx` 新增「整理」导航项（`dream`），原 `adapters` 项改名为「客户端接入」；新增 `DreamView.jsx`（只包 DreamPanel）与 `MCPPanel.jsx`（通道状态、工具列表、逐宿主注册动作与复制按钮、Codex/pi/Grok 的前置条件提示）；`AdapterView.jsx` 移除 DreamPanel，改为在顶部渲染 MCPPanel。`adapters.js` 新增 `mcpAvailable`/`mcpReason`/`mcpTools`/`mcpAction` 纯函数并补单元测试。
+- 边界：MCP 面板只读。注册仍由宿主自己的 `mcp add` 完成，memctl 不运行宿主命令、不解析或合并宿主 MCP 配置；二进制未响应 `mcp` 时展示原因并保留注册动作供核对，不隐藏面板。
+- 验证（2026-10-19，darwin/arm64）：`go test ./internal/... ./plugins/...` 全部通过；`go vet ./internal/...` 无输出；`cd web && npm test` 96 项通过；`make build` 成功。新增 `internal/mcp/status_test.go`（3 项）、`internal/server/mcp_test.go`（3 项）、`tests/integration/t091_mcp_status_test.go`（路由契约、只读、不写宿主配置）与 `web/src/adapters.test.js` 的 MCP 用例；`t037` 路由表与 `b1` 路由冒烟补入 `/api/v1/mcp`，分片清单登记三条新测试。
+- 真实运行（隔离 `HOME` 与临时状态目录，`memctl ui --port 0`）：`GET /api/v1/mcp` 返回 `available: true`、版本 `v0.7.3-4-g335df66-dirty`、三个工具与 8 条注册动作（7 条命令 + dsh 手工步骤，均指向实际二进制绝对路径）；构建产物包含「记忆整理」「MCP 记忆工具通道」「客户端接入」文案。
+- 未验证与遗留：未做浏览器内的视觉与交互验证（本轮未要求 UI/UX 验证）；「整理」页沿用原 DreamPanel 的轮询与禁用逻辑，未改动其行为。

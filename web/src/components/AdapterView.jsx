@@ -9,7 +9,7 @@ import {
   statusLabel,
   summarizeInstall,
 } from '../adapters.js'
-import { DreamPanel } from './DreamPanel.jsx'
+import { MCPPanel } from './MCPPanel.jsx'
 
 const STATUS_CONFIG = {
   configured: {
@@ -160,9 +160,9 @@ export function AdapterView({ api, refreshKey }) {
       {/* Top Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">整理与客户端接入</h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">客户端接入</h1>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            AI 整理建议审查与宿主 IDE / 终端适配器配置注入
+            生命周期 Hook、MCP 记忆工具与宿主适配器配置注入
           </p>
         </div>
         <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -170,8 +170,8 @@ export function AdapterView({ api, refreshKey }) {
         </span>
       </div>
 
-      {/* AI Dreaming Proposal Panel */}
-      <DreamPanel api={api} refreshKey={refreshKey} />
+      {/* MCP Channel Status */}
+      <MCPPanel api={api} refreshKey={refreshKey} adapters={adapters} />
 
       {/* Adapters Section Title */}
       <div>

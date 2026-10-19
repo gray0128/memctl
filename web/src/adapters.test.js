@@ -5,6 +5,10 @@ import {
   canInstall,
   capabilityLabel,
   installBaseline,
+  mcpAction,
+  mcpAvailable,
+  mcpReason,
+  mcpTools,
   planArtifacts,
   statusLabel,
   summarizeInstall,
@@ -86,5 +90,37 @@ describe('adapter helpers', () => {
       '需要处理：没有可安装的变更',
     )
     expect(summarizeInstall(null)).toBe('')
+  })
+})
+
+describe('mcp helpers', () => {
+  const status = {
+    executable: '/opt/memctl',
+    available: true,
+    version: 'v9.9.9',
+    tools: ['memory_entries', 'memory_read', 'memory_write'],
+    registrations: [
+      { agent: 'codex', command: 'codex mcp add memctl -- /opt/memctl mcp --agent codex' },
+      { agent: 'dsh', instruction: 'add an @deepseek-ai/dsh-mcp-client stdio entry' },
+    ],
+  }
+
+  it('reports availability, reason and tools', () => {
+    expect(mcpAvailable(status)).toBe(true)
+    expect(mcpReason(status)).toBe('')
+    expect(mcpTools(status)).toBe('memory_entries、memory_read、memory_write')
+    expect(mcpAvailable({ available: false, reason: 'no tools/list response' })).toBe(false)
+    expect(mcpReason({ available: false, reason: 'no tools/list response' })).toBe('no tools/list response')
+    expect(mcpReason({ available: false })).toBe('二进制未返回 tools/list')
+    expect(mcpReason(null)).toBe('未探测')
+    expect(mcpTools(null)).toBe('无')
+  })
+
+  it('renders the actionable text of one registration', () => {
+    expect(mcpAction(status.registrations[0])).toBe(
+      'codex mcp add memctl -- /opt/memctl mcp --agent codex',
+    )
+    expect(mcpAction(status.registrations[1])).toBe('add an @deepseek-ai/dsh-mcp-client stdio entry')
+    expect(mcpAction(null)).toBe('')
   })
 })

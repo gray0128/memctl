@@ -13,6 +13,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/mcp"
 	"github.com/gray0128/memctl/internal/server"
 )
 
@@ -56,6 +57,19 @@ func newB1Fixture(t *testing.T, readOnly bool) *b1Fixture {
 		Addr:     "127.0.0.1:18420",
 		ReadOnly: readOnly,
 		Token:    b1Token,
+		// GET /api/v1/mcp probes the running memctl binary. os.Executable is
+		// the test binary here, so the fixture returns the documented shape
+		// for a serving binary instead of starting a child process. The probe
+		// itself is covered by internal/mcp and TestM09.
+		MCPStatus: func(context.Context) (mcp.Status, error) {
+			return mcp.Status{
+				Executable:    "/opt/memctl",
+				Available:     true,
+				Version:       "v9.9.9",
+				Tools:         mcp.ToolNames(),
+				Registrations: mcp.Registrations("/opt/memctl"),
+			}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("build server: %v", err)
@@ -169,6 +183,7 @@ func TestB1RoutesCoversA01(t *testing.T) {
 		{"/api/v1/entries", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		{"/api/v1/audit", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		{"/api/v1/doctor", func(status int) { mustStatus(t, status, http.StatusOK) }},
+		{"/api/v1/mcp", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		// No conflict is captured in this fixture, so the route answers 204.
 		{"/api/v1/conflict", func(status int) { mustStatus(t, status, http.StatusNoContent) }},
 	}

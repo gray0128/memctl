@@ -149,6 +149,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `GET /api/v1/dream/{proposalId}` | 无 | `DreamProposal` |
 | `POST /api/v1/dream:apply` | `{proposalId, patchHash}` | `MutationResult` |
 | `GET /api/v1/adapters` | 无 | `{adapters: AdapterStatus[]}`；只探测与预览，不写文件 |
+| `GET /api/v1/mcp` | 无 | `{executable, available, version?, tools, reason?, registrations: [{agent, command?, instruction?}]}`；探测当前二进制的 MCP 通道并给出每个宿主的注册动作，只读，不写宿主配置 |
 | `POST /api/v1/adapters/{agent}/install` | `{dryRun?, expectedConfigRevisions?}` | `AdapterInstallResult`；`dryRun` 只返回计划，实际安装要求每个已存在目标文件的配置基线 |
 | `GET /api/v1/events` | Token 请求头 | SSE，客户端使用 fetch 流读取 |
 

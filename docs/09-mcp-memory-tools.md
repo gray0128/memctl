@@ -195,7 +195,8 @@ Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件
 
 ### 5.3 探测
 
-- `memctl install --status` 在适配器列表之后输出 `mcp:` 块：把当前可执行文件按 `mcp --agent status` 启动一次，完成握手并读取 `tools/list`，成功时输出 `mcp: serving memory_read, memory_write (<version>)`，随后按 5.2 输出每个宿主的注册命令。
+- `memctl install --status` 在适配器列表之后输出 `mcp:` 块：把当前可执行文件按 `mcp --agent status` 启动一次，完成握手并读取 `tools/list`，成功时输出 `mcp: serving <工具列表> (<version>)`（当前为 `memory_entries, memory_read, memory_write`），随后按 5.2 输出每个宿主的注册命令。
+- Web UI 的「客户端接入」视图通过 `GET /api/v1/mcp` 展示同一份结果：可执行文件、版本、工具列表、不可用原因，以及每个宿主的注册命令或手工步骤。探测逻辑与注册表实现在 `internal/mcp`，CLI 与 HTTP 共用，避免两处漂移。界面只提供复制命令，不运行 `mcp add`，也不写宿主配置。
 - 探测只使用协议，不读状态目录，不写任何文件；超时上限 10 秒，子进程无论成功失败都会被回收。预算不能太小：探测与并行编译争用 CPU 时，正常的二进制也可能在 3 秒内没能完成握手，从而被误报为不可用。
 - 二进制无法响应 `mcp`（旧版本、路径不可执行、未返回 `tools/list`）时输出 `mcp: unavailable: <原因>` 并省略全部注册命令：注册一个每次调用都失败的 server 比不注册更难排查。
 - 不解析、不合并宿主的 MCP 配置文件。宿主间的字段名、数组与字符串拼写、项目级与用户级作用域均不同，手写解析器会随宿主升级失效；注册由各宿主自有的命令负责，失败时由宿主给出错误。
