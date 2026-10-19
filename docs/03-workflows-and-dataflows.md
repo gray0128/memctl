@@ -185,13 +185,13 @@ CLI 使用同一 `resolve` 接口，不由 Hook 指示 Agent 自行执行不受�
 
 ## 6. Dreaming 提案
 
-首版按用户触发运行，不安装周期性任务。静态规则识别候选，AI 生成整理建议；「确认前不修改主库」与「模型判断一定正确」是不同承诺。
+首版按用户触发运行，不安装周期性任务。整理在记忆仓库远端的 GitHub Actions 临时运行器内执行：由静态规则识别候选，再经代码控制的多步结构化模型调用生成整理建议；「确认前不修改主库」与「模型判断一定正确」是不同承诺。完整协议、Schema 与提供商配置见 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)。
 
-1. 在仓库锁内确认干净状态，固定 `baseHead` 和 `baseRevision`，导出当前提交的受支持文件到独立临时目录。不导出 `.git`、remote 配置、宿主 Hook、宿主凭据文件或外部符号链接；记忆正文仍可能敏感，需按后续授权步骤处理。不使用带对象硬链接的 `clone --local` 充当隔离。
-2. 释放主仓库锁后运行 runner。临时目录可写，主仓库和用户配置不可写；限制执行权限、环境、输出量、耗时与子进程。所选 runner 的模型端点可以需要网络，但只授权必要访问；「本地 CLI」不等于本地模型。
-3. 只有已验证的 runner/平台隔离组合才启动。缺少沙箱能力时返回 `UNSUPPORTED`，不回退到不受限 shell，也不通过禁用宿主安全机制运行。
-4. 从独立固定基线计算 Diff，包含新增、删除和模式变化；拒绝越界路径、Git 配置修改、不支持类型和超限结果。解析检查能验证格式、链接和变更范围，不能证明没有语义损失。
-5. 持久化 `DreamProposal`、有序变化清单和 `patchHash`；删除临时执行环境。首次选择 runner 即完成发送确认：CLI 与 UI 在用户选择 runner 时说明导出的受支持文本会发送给该 runner 的模型端点，本地 CLI 不等于本地模型；不把原始会话日志自动加入材料。
+1. 在仓库锁内确认干净状态、已配置并确认私有 GitHub 远端（`origin`），且当前提交存在 `.github/workflows/memctl-dream.yml`。固定 `baseHead` 和 `baseRevision`，导出当前提交的受支持文件到独立临时基线目录（不导出 `.git`、`.github`、remote 配置、宿主凭据文件或外部符号链接），持久化 `status: generating` 提案后释放主仓库锁。缺少远端确认返回 `REMOTE_NOT_APPROVED`，缺少远端或工作流文件返回针对性 `UNSUPPORTED` 错误并提示 `memctl dream --init-workflow`。
+2. 复用已授权的 Git 凭据，将 `baseHead` 推送到远端请求引用 `refs/heads/dream/req/<proposalId>/<runner>`，触发 GitHub Actions 工作流。本地不执行模型 CLI、不读取也不传递任何模型 API Key。
+3. GitHub Actions 运行器检出 `baseHead`，立即删除远端 `dream/req` 分支，并调用 `memctl dream --worker`：先用 `vault` 与 `doctor` 提取膨胀索引、孤立文件、断链与到期 `until` 等静态候选，再按 [记忆生命周期规则](./10-memory-lifecycle.md#3-记忆分类与处理规则)（状态型就地改写、事件型只增不改、有时效型到期清理）分批调用所选提供商（`deepseek | minimax | openai | anthropic`）输出结构化 JSON，每步经代码级单步守卫校验后以 `baseHead` 为唯一父提交推送到 `refs/heads/dream/res/<proposalId>`（失败时推送携带脱敏错误原因的空树提交）。
+4. 本地轮询拉取 `refs/heads/dream/res/<proposalId>` 到私有引用 `refs/memctl/dream/<proposalId>`，校验结果提交的唯一父提交等于 `baseHead`。若运行元数据标记失败，将提案更新为 `failed`；若标记就绪，将结果树作为不可信输入导出到临时目录，从独立固定基线计算 Diff（含新增、修改、删除和模式变化），拒绝越界路径、`.git`/`.github` 修改、不支持类型和超限结果。解析检查能验证格式、链接和变更范围，不能证明没有语义损失。
+5. 持久化 `DreamProposal`、有序变化清单和 `patchHash`；删除本地临时目录，并尽力删除远端 `dream/req`、`dream/res` 分支与本地 `refs/memctl/dream/<proposalId>`。选择 `runner`（模型提供商）即完成发送确认：CLI 与 UI 说明受管记忆文本将在 GitHub Actions 中发送给所选模型提供商的 API 端点，不把原始会话日志自动加入材料。
 6. 用户确认的是已有 `proposalId + patchHash`。应用时不重新运行模型；在仓库锁内检查原始基线，过期则标为 `stale` 并要求重新生成。
 7. 校验通过后将提案交受管事务提交，事务记录同时保存 `proposalId`；记录 `appliedCommit` 并唤起同步。若提交后提案状态未更新就中断，先按事务恢复结果补齐状态，再处理重试。重复 apply 返回同一结果。
 

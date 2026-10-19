@@ -22,10 +22,10 @@ memctl <subcommand> [flags] [-- command...]
 | `write <path>` | `--base REV --stdin --agent NAME --sid ID` | stdin 为文件原文，不是 Hook JSON；基线为修订或 `absent`，原子受管写入并本地提交 |
 | `resolve` | `--json`、`--apply FILE --conflict ID` 或 `--abort --conflict ID` | 默认查看快照；应用 JSON 文件中的 `baseRevision/resolvedFiles`，或中止当前解决过程 |
 | `recover` | `--status` 或 `--rollback` | 查看或恢复本工具未完成事务；不接管外部 Git 操作 |
-| `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、runner 与安装 |
+| `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、Dreaming 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
-| `dream` | `--runner claude` 或 `--runner codex` | 选择 runner 即确认将导出的受支持文本发送给该 runner 的模型端点；生成并保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
-| `dream` | `--show ID` 或 `--apply ID --patch-hash HASH` | 查看或确认已有提案；apply 不重新调用模型 |
+| `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
+| `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 安装；只写状态目录，不修改 pi settings；不提供 tarball 形式 |
@@ -34,7 +34,7 @@ memctl <subcommand> [flags] [-- command...]
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
 
-同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成、查看、应用互斥；`install --status` 不写文件。
+同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成（`--runner`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）五种模式互斥；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，末尾附带 MCP 工具探测与各宿主注册命令，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 
@@ -220,7 +220,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | 冲突解决 | 三方上下文、文本合并、删除选择、阶段进度与中止 | 「继续解决」可能进入下一提交；unsupported 类型提供人工入口，不称一键无损 |
 | 审计回滚 | Git 历史、Diff、可解析来源、可疑内容提示；确认后 revert | 无法确定来源显示未知；回滚失败展示恢复状态 |
 | 诊断 | 只读诊断按错误、告警、信息分组，展示问题位置与建议；对确定性修复执行 `doctor:fix` | 基线过期要求刷新后重试；无确定性修复规则时提示人工处理 |
-| 整理接入 | 提案生成、固定 Diff 确认、状态查询；adapter 探测、预览、安装 | 沙箱不可用禁用生成；过期提案禁止应用；配置成功与宿主验证分开；安装基线过期后重新探测预览 |
+| 整理接入 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、固定 Diff 确认、状态查询；adapter 探测、预览、安装 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用生成并提示 `dream --init-workflow`；过期提案禁止应用；配置成功与宿主验证分开；安装基线过期后重新探测预览 |
 
 图谱和条目编辑最终调用相同事务；「拆分」在同一事务内创建目标文件、从源文件移除该条目并保留其来源元数据，整体失败不能留下半套索引。拆分不自动修改入口文件：新文件在被条目链接指向之前按孤立文件显示。初版整理仅支持整份提案确认，符合流程文档中的应用边界。概览的指标卡片可键盘聚焦，按回车或空格触发跳转。
 
@@ -237,7 +237,7 @@ UI 不自动生成健康分；按错误、警告、信息展示诊断数。只�
 1. 服务仅绑定 `127.0.0.1`，默认端口 18420；占用时明确报错，不复用未知服务或切换公网地址。Host 精确匹配实际监听端口的 `127.0.0.1` 或 `localhost`，不信任代理头。
 2. 每次启动生成 32 字节随机 Session Token，嵌入当前首页 meta。所有 API 方法，包括 GET、PATCH 和 SSE，校验 `X-Memctl-Token`；Token 不放 URL、日志或 localStorage。
 3. 浏览器 API 请求存在 Origin 时要求与当前页面允许源精确一致；拒绝 `null` 或其他来源，不开放跨域 CORS。没有 Origin 的本地 CLI 请求仍需 Token。
-4. 首页和 API 返回 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`，首页设置 `Referrer-Policy: no-referrer` 和禁止被嵌入的 CSP `frame-ancestors 'none'`。脚本、样式与连接限制为所需本地资源，不加载外部 CDN。根路径 `GET /` 返回内嵌首页并在 meta 中注入 Session Token、只读标识与 Dreaming 隔离能力（`memctl-dream-sandbox` 取 `available`/`unavailable`）；UI 据此在没有已验证沙箱时禁用提案生成，服务端仍会独立重复校验。`GET /assets/` 返回内嵌脚本与样式且仅服务普通文件、不列出目录；两者属于静态资源，携带与首页一致的只允许本地 `self` 的 CSP，不要求 Token。
+4. 首页和 API 返回 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`，首页设置 `Referrer-Policy: no-referrer` 和禁止被嵌入的 CSP `frame-ancestors 'none'`。脚本、样式与连接限制为所需本地资源，不加载外部 CDN。根路径 `GET /` 返回内嵌首页并在 meta 中注入 Session Token、只读标识与 Dreaming 就绪状态（`memctl-dream-sandbox` 在已配置确认远端且存在 `.github/workflows/memctl-dream.yml` 时取 `available`，否则取 `unavailable`）；UI 据此在未就绪时禁用提案生成并提示初始化工作流，服务端仍会独立重复校验。`GET /assets/` 返回内嵌脚本与样式且仅服务普通文件、不列出目录；两者属于静态资源，携带与首页一致的只允许本地 `self` 的 CSP，不要求 Token。
 5. 只读模式由路由中间件执行，不仅隐藏按钮。文件路径校验仍使用架构定义的统一访问器，鉴权成功不能绕过路径边界。
 6. API 限制请求体、并发生成任务、头部读取时间和空闲连接；SSE 采用适合长连接的单独写入策略、有限队列和心跳。不能用普通响应总写超时误杀所有 SSE。
 7. Token 防御网页跨站请求，不隔离同一 OS 用户下有权读取首页的本机程序；不把本地 Web 控制台当成多用户认证系统。
@@ -382,4 +382,4 @@ GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/
 
 `main` 推送与标签推送使用不同的并发策略：前者 `cancel-in-progress: true`，新提交取消排队中的旧运行；后者为 `false`，已开始的发布不被取消。
 
-运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需用户已安装的 runner 和经过验证的隔离能力。没有 runner 只影响整理生成，不影响 CLI、同步、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。
+运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需记忆仓库已配置并确认私有 GitHub 远端、仓库内存在 `.github/workflows/memctl-dream.yml` 以及在 GitHub Actions Secrets 中配置所选模型提供商的 API Key。未配置远端或工作流只影响整理生成，不影响 CLI、本地读写、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。

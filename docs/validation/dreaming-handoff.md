@@ -1,6 +1,6 @@
 # Dreaming 交接文档
 
-> 状态：`D-1`、`D-2` 已实现并通过自动化验收；**真实 runner 未跑通**，凭据获取策略未定。本文档汇总 Dreaming 的实现现状、代码位置、判定逻辑、验证证据与后续选项，供接续会话直接使用，不需要重新调研。记录日期 2026-10-19，macOS arm64，Go 1.27.1，`memctl v0.6.0`（工作树含 `T080`、`T081` 未发布改动）。
+> 状态：`D-1`、`D-2` 本地沙箱实现已通过合成验收，真实本地 CLI runner 因隔离环境凭据问题未跑通；**`T082` 已选定架构演进方案（见 [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)）**，废弃本地 CLI runner 与 macOS Seatbelt 沙箱，改为依托记忆仓库的 GitHub Actions 运行 `memctl dream --worker`（由代码控制的有界多步结构化模型调用，内置 `deepseek`、`minimax`、`openai`、`anthropic` 四个提供商）。本文档保留 `D-1`/`D-2` 本地实现现状、代码位置与实测记录，作为阶段 G（`G-2`–`G-4`）代码迁移的对照基线。记录日期 2026-10-19，macOS arm64，Go 1.27.1，`memctl v0.6.0`。
 
 ## 1. 一页结论
 
@@ -308,16 +308,16 @@ When you are done, stop. memctl will compute the difference itself.
 | 6 | `pi` 扩展会触发 `memctl start` | 污染输出、可能与仓库争锁 | 已确定加 `-ne`，未写入代码 |
 | 7 | 提案永不清理 | 状态目录随使用增长 | 设计如此，未评估 |
 
-## 14. 下一步建议顺序
+## 14. 后续决议与实施顺序（`T082` 已定案）
 
-1. **确认 §10.1 的凭据方案**（推荐 A），这决定后续所有改动。
-2. 实现凭据暂存 + `pi` runner，跑一次真实端到端生成与确认。
-3. 归档真实 runner 验收记录，更新 `STATUS.md` 的「真实 runner 未验证」条目。
-4. 修正 prompt：加入 `docs/10` 的三档规则，去掉与事件型冲突的表述。
-5. 澄清 `docs/03` §6「静态规则识别候选」：要么实现（把 `doctor` 诊断传入 prompt），要么改写该句。
-6. 再考虑发布：`T081` 的注入规则变更尚未发布，与 Dreaming 改动可合并成一次 release。
+经 `T082` 方案评审，决定**不采用 §10 的本地凭据暂存方案**，改为迁移至 **GitHub Actions 远端整理架构**，完整设计与契约见 [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)：
 
-## 15. 复现命令
+1. **删除本地 runner 与 Seatbelt 沙箱**：移除 `claude`/`codex` 本地 CLI runner 及 `sandbox_darwin.go` 等本地子进程沙箱实现。
+2. **代码控制的有界结构化调用**：新增 `memctl dream --worker`，在 GitHub Actions 虚拟机的工作流中按「阶段 1（静态扫描与分簇）→ 阶段 2（受控循环结构化调用 + Step Guard）→ 阶段 3（跨文件一致性收敛）」执行。
+3. **内置四个模型提供商**：支持 `deepseek`、`minimax`、`openai`、`anthropic`，用户通过 `--runner <provider>` 指定并在仓库 GitHub Actions Secrets 配置对应 API Key。
+4. **阶段 G 实施顺序**：`G-1`（方案与契约修订，`T082` 已完成）→ `G-2`（删除本地沙箱与 CLI runner，实现 `--worker` 与 4 个 Provider）→ `G-3`（实现 Git 分支投递/轮询、`--init-workflow`、`.github` 保护边界与 UI 同步）→ `G-4`（`D01`–`D05` 集成测试与真实 GitHub Actions 验收）。
+
+## 15. 复现命令（`D-1`/`D-2` 历史基线）
 
 ```bash
 # 单元与集成测试（不接触真实 runner）
@@ -339,10 +339,11 @@ HOME=$REAL/home TMPDIR=$REAL/tmp PI_CODING_AGENT_DIR=$REAL/home/.pi/agent \
 
 | 文档 | 内容 |
 | --- | --- |
+| [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md) | 远端整理架构、Git 分支协议、有界结构化调用与四家 Provider 规格 |
 | [03. 流程与恢复](../03-workflows-and-dataflows.md#6-dreaming-提案) | 七步流程契约与承诺边界 |
 | [02. 模型与契约](../02-domain-models-and-contracts.md#23-审计诊断整理与接入) | `DreamProposal` 字段与状态语义 |
 | [04. CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令) | `dream` 命令、HTTP 安全、只读拦截 |
-| [05. 验收与交付](../05-validation-and-delivery.md#2-核心测试矩阵) | `D01`–`D04` 验收场景、`D-1`/`D-2` 交付边界 |
+| [05. 验收与交付](../05-validation-and-delivery.md#2-核心测试矩阵) | `D01`–`D05` 验收场景、阶段 G 交付边界 |
 | [10. 记忆更新与过期](../10-memory-lifecycle.md) | 三档记忆规则，与 prompt 冲突之处见 §8 |
 | 阶段 D 归档 | `T035`、`T036`、`T037`、`T038` 的实现与审查记录 |
 | `tests/integration/t037_release_test.go` | 发布前的路由覆盖检查，含三个 dream 路由 |

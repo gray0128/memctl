@@ -80,7 +80,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据报告 `info`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
 
-`DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的 Agent 状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
+`DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`；`DreamProposal.runner` 为所选的内置模型提供商标识符（`deepseek | minimax | openai | anthropic`）。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的执行状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 
 `AdapterStatus.status` 为 `unsupported | not_installed | configured | verified | needs_attention`。写入配置只得到 `configured`；只有宿主实测成功才是 `verified`。`AdapterStatus.capabilities` 为该 adapter 当前接入路径的受管能力，取值 `hooks`（命令 Hook 配置）、`config`（宿主功能开关配置）、`plugin`（需随宿主加载的插件文件），按注册顺序去重；原生插件已安装时只报告 `plugin`，旧路径只报告 `hooks`。它只描述本工具维护的对象，不表示宿主已实测可用。
 
@@ -102,7 +102,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `syncer.Run` | 已持锁仓库上下文、deadline → `SyncSummary` | 上下文由 app 传入；不嵌套持锁，不反向依赖 app |
 | `app.Resolve` | 冲突 ID、阶段结果 → 状态或下一冲突 | 绑定指定重放阶段 |
 | `app.Revert` | 提交 hash、仓库基线 → `MutationResult` | 验证父提交数，失败保留恢复信息 |
-| `dream.Preview` | runner、固定基线 → 提案 ID | 不修改主仓库 |
+| `dream.Preview` | 模型提供商（`runner`）、固定基线 → 提案 ID | 触发远端 GitHub Actions 整理并拉取校验结果树；确认前不修改主仓库 |
 | `adapters.Plan` / `adapters.Apply` | 探测环境、agent → 安装计划 / 安装结果 | 每配置路径独立锁与基线校验；无法安全合并时给人工补丁，不写文件 |
 | `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案后执行受管事务 |
 | `lock.Acquire` | context、资源键 → release 或错误 | 仓库操作使用同一锁；非重入 |
@@ -145,7 +145,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `POST /api/v1/audit/{hash}/revert` | `{baseRevision}` | `MutationResult` |
 | `GET /api/v1/doctor` | 无 | `DoctorReport` |
 | `POST /api/v1/doctor:fix` | `{issueCodes, baseRevision}` | `{report, result}`；仅应用确定性修复 |
-| `POST /api/v1/dream:preview` | `{runner: "claude" 或 "codex", baseRevision?}` | 202、`{proposalId}`；`baseRevision` 可选，省略时服务端在锁内固定当前基线，提供时按预条件校验 |
+| `POST /api/v1/dream:preview` | `{runner: "deepseek" \| "minimax" \| "openai" \| "anthropic", baseRevision?}` | 202、`{proposalId}`；`baseRevision` 可选，省略时服务端在锁内固定当前基线，提供时按预条件校验；远端未配置、未确认私有或缺少工作流文件时同步返回错误 |
 | `GET /api/v1/dream/{proposalId}` | 无 | `DreamProposal` |
 | `POST /api/v1/dream:apply` | `{proposalId, patchHash}` | `MutationResult` |
 | `GET /api/v1/adapters` | 无 | `{adapters: AdapterStatus[]}`；只探测与预览，不写文件 |

@@ -64,7 +64,7 @@ flowchart TB
 
 默认仓库为 `~/memory`，可通过配置选择其他独立仓库；一个进程只绑定一个仓库。入口验证 `git rev-parse --show-toplevel` 的规范化路径等于配置根目录，且存在根 `MEMORY.md`。误指向项目子目录、非空普通目录或当前项目时拒绝初始化。
 
-首版受管仓库使用普通非 bare 工作树；外部 linked worktree、submodule 和嵌套仓库仅诊断，不作为自动写入目标。内部 Dreaming 工作目录不是受管记忆仓库。
+首版受管仓库使用普通非 bare 工作树；外部 linked worktree、submodule 和嵌套仓库仅诊断，不作为自动写入目标。Dreaming 结果校验使用的临时导出目录不是受管记忆仓库。
 
 `repoId` 是规范化绝对根路径的 SHA-256，用于本机状态分区，不是跨设备身份。路径移动后重新建立本机状态，不自动沿用原会话缓存。仓库互斥锁固定在该仓库实际 Git 目录下的 `memctl.lock`，不受 `AGENT_MEMORY_STATE` 覆盖影响；同一仓库选择不同状态目录不能绕过互斥。
 
@@ -76,7 +76,7 @@ flowchart TB
 
 - 接收根相对路径，内部使用 `/`；拒绝绝对路径、空路径、`.`、`..`、NUL、反斜杠、Windows 盘符、UNC、设备名和替代数据流路径。
 - HTTP 解码只进行一次；不能在检查后再次解码。针对大小写不敏感文件系统、尾随点或空格等别名重新核验实际目标。
-- `.git` 及其大小写等价路径、嵌套仓库、submodule 不属于可编辑记忆。Git 内部文件只允许 Git 引擎和恢复存储按固定用途操作。
+- `.git`、`.github` 及其大小写等价路径、嵌套仓库、submodule 不属于可编辑记忆。Git 内部文件只允许 Git 引擎和恢复存储按固定用途操作；`.github/workflows/memctl-dream.yml` 仅允许 `memctl dream --init-workflow` 在仓库锁内创建或更新，常规扫描、读写、MCP、UI 编辑与 Dreaming 提案均忽略或拒绝 `.github` 路径。
 - 不沿符号链接或 Windows reparse point 读取、遍历或写入；普通文件写入拒绝多硬链接目标，避免修改别名内容。图谱可以标记不支持资产，不将其内容跟随到库外。
 - 使用根句柄相对访问或等效防跟随实现；仅做字符串前缀比较、`EvalSymlinks` 后再普通打开，不能作为防路径替换的保证。Go/平台实现未通过路径竞争测试时不开放写入功能。
 - 新文件检查已存在的全部父目录；文件移动拒绝覆盖已有目标。大小写重命名需使用事务内中间路径并验证链接更新。
@@ -92,7 +92,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 
 ### 3.4 凭据与信任边界
 
-`memctl` 不存储、不复制、不生成凭据，也不把凭据写入记忆仓库、运行状态、恢复记录、提案、日志或 remote URL。远端同步复用用户已有的 Git 与 SSH 凭据来源：SSH agent（`SSH_AUTH_SOCK`）、`~/.ssh` 中的密钥与 `known_hosts`、Git credential helper、系统密钥链，以及用户配置的 `GIT_ASKPASS` 与 `SSH_ASKPASS`。这些配置、helper 及其脚本属于用户已信任的执行环境；`memctl` 不改写它们，也不把调用 Git 宣称为凭据沙箱。
+`memctl` 不存储、不复制、不生成凭据，也不把凭据写入记忆仓库、运行状态、恢复记录、提案、日志或 remote URL。远端同步与 Dreaming 分支触发/拉取均复用用户已有的 Git 与 SSH 凭据来源：SSH agent（`SSH_AUTH_SOCK`）、`~/.ssh` 中的密钥与 `known_hosts`、Git credential helper、系统密钥链，以及用户配置的 `GIT_ASKPASS` 与 `SSH_ASKPASS`。Dreaming 使用的模型 API Key 仅配置在远端仓库的 GitHub Actions Secrets 中，只在 GitHub Actions 临时运行器内注入给 `--worker` 进程，本地 `memctl` 不读取、不存储、不传递任何模型密钥。这些配置、helper 及其脚本属于用户已信任的执行环境；`memctl` 不改写它们，也不把调用 Git 宣称为凭据沙箱。
 
 每次调用 Git 都剔除仓库重定向变量（`GIT_DIR`、`GIT_WORK_TREE`、`GIT_INDEX_FILE`、`GIT_OBJECT_DIRECTORY`、`GIT_ALTERNATE_OBJECT_DIRECTORIES`、`GIT_COMMON_DIR`、`GIT_NAMESPACE`、`GIT_PREFIX`、`GIT_CEILING_DIRECTORIES`），显式绑定目标仓库。凭据与网络环境另按固定白名单传递，白名单内保留 `HOME`、`PATH`、`TMPDIR`、代理变量，凭据相关变量（`SSH_AUTH_SOCK`、`SSH_AGENT_PID`、`GIT_SSH`、`GIT_SSH_COMMAND`、`GIT_SSH_VARIANT`、`GIT_ASKPASS`、`SSH_ASKPASS`、`SSH_ASKPASS_REQUIRE`、`GIT_TERMINAL_PROMPT`）、用户 Git 配置通道（`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_SYSTEM`、`GIT_CONFIG_NOSYSTEM`、`XDG_CONFIG_HOME`、`GIT_CONFIG_COUNT` 及配套 `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`）和身份覆盖变量（`GIT_AUTHOR_NAME`、`GIT_AUTHOR_EMAIL`、`GIT_COMMITTER_NAME`、`GIT_COMMITTER_EMAIL`）。身份变量在白名单内是因为后台重放会创建提交，`memctl` 不能因派生而改变用户已经生效的提交身份。前台与后台的 Git 子进程都只获得这份白名单：前台取自调用方环境，后台派生使用父进程在派生时传入的白名单快照，不读取登录 shell 或宿主初始化文件。该白名单是全项目唯一定义，流程与场景按 [同步流程](./03-workflows-and-dataflows.md#43-凭据环境继承与失败处理) 引用。
 
@@ -112,7 +112,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/syncer` | 同步请求 → 本地与远端状态 | 编排 fetch、rebase、push，通过 app 的仓库执行上下文互斥 |
 | `internal/state`、`lock` | 仓库身份 → 状态、恢复记录、锁 | 原子状态写入和内核锁；PID 仅供诊断，不能决定锁是否仍有效 |
 | `internal/doctor` | vault 快照 → 诊断和修复计划 | 默认只读；修复计划交 app 提交 |
-| `internal/dream` | 固定快照、runner → 提案 | 隔离生成与校验；应用交 app，不在 Agent 内直接推送 |
+| `internal/dream` | 固定基线、模型提供商 → 提案；worker 模式执行多步结构化整理 | 本地负责远端 `dream/req` 触发、`dream/res` 结果树拉取与不可信范围校验、提案持久化；worker 在 GitHub Actions 内执行静态候选提取与多步结构化模型调用；应用交 app，不在 worker 内直接写主分支 |
 | `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
 | `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复 |
 | `internal/update` | 当前版本与平台 → 下载、校验与替换结果 | 只请求固定的 GitHub Releases 地址；校验 SHA-256 后同目录原子替换，不执行下载的二进制，不自动重启 |
@@ -141,6 +141,7 @@ memctl/
     08-pi-plugin.md          # pi 专用插件
     09-mcp-memory-tools.md   # 受沙箱宿主的 MCP 写入通道
     10-memory-lifecycle.md   # 记忆更新、过期与时间线规则
+    11-github-actions-dreaming.md # 基于 GitHub Actions 的 Dreaming 远端整理方案
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配

@@ -237,3 +237,18 @@
 - 验证：`go test ./...` 全量通过；`go vet ./...` 无输出；`TestR01EmbeddedInstructionsFromEmptyHome` 增加对 `### After an entry stops being true`、`rewrite the entry in place` 与 `No change log in memory files` 的断言并单独重跑通过；`make build` 后执行 `./bin/memctl start --json`，实际注入正文含新小节；全量 Markdown 链接与锚点检查无失效项；`git diff --check` 通过。
 - 未验证与遗留：新规则只约束模型行为，没有确定性检查；实际会话中是否遵守需要观察。指引篇幅从 2322 字节增加到 2913 字节，每轮注入的增量约 590 字节。
 - 下一步：观察真实写入是否符合三档规则；若出现「把决策条目当错误改写」的实例，再考虑用 `doctor` 诊断补充确定性提示。
+
+## T082：基于 GitHub Actions 的 Dreaming 远端整理方案与契约修订（`G-1`）
+
+- 目标与范围：针对 [Dreaming 交接文档](./dreaming-handoff.md) 记录的本地沙箱 CLI runner 凭据阻塞，按用户确认的四项设计决策（删除本地 runner 与 Seatbelt 沙箱、代码控制的有界多步结构化调用、内置四家模型提供商并由用户配置 API Key、依托 GitHub Actions 自用且支持自部署），完成技术调研、撰写完整方案文档 [11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)，并修订权威契约 `01`–`05`。本轮属于阶段 G 的 `G-1`，只做方案设计与契约修订，不改动产品代码。
+- 契约：[11. GitHub Actions Dreaming](../11-github-actions-dreaming.md)、[架构与边界](../01-architecture-and-modules.md#3-仓库路径与信任边界)、[模型与契约](../02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[Dreaming 提案](../03-workflows-and-dataflows.md#6-dreaming-提案)、[CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令)、[验收与交付](../05-validation-and-delivery.md#阶段-g-的实施顺序)。
+- 验证日期与环境：2026-10-19，macOS arm64。
+- 调研结论：
+  1. 通道协议：利用记忆仓库已有的已批准 GitHub 远端（`origin`）投递临时分支 `refs/heads/dream/req/<proposalId>` 触发 `.github/workflows/memctl-dream.yml`，Worker 写回 `refs/heads/dream/res/<proposalId>` 并在提交正文附带 `DreamWorkerMeta` JSON 块；失败时推送空提交携带脱敏错误摘要，使本地 `memctl` 在 5 秒轮询周期内立即收敛为 `failed`，无需本机额外配置 GitHub API Token。
+  2. GitHub Actions 边界：默认 `GITHUB_TOKEN` 推送分支不会递归触发 `push` 工作流，且无 `workflows` 权限无法修改 `.github/workflows/`；本地必须在 `vault` 与 `dream.protectedPath` 中将 `.github` 纳入禁止编辑范围，防止 `doctor` 误报孤儿文件并阻断篡改后的远端分支借本地 `ApplyDream` 修改工作流。
+  3. 有界多步结构化调用：`memctl dream --worker` 在 Actions 内按「阶段 1（静态扫描与分簇）→ 阶段 2（受控循环结构化调用 + Step Guard 护栏，最多 6 步）→ 阶段 3（跨文件一致性收敛）」执行，每步强约束 JSON Schema 并融合 [10. 记忆更新与过期](../10-memory-lifecycle.md) 的三档分类规则（状态型就地改写、事件型保护、死链修复）。
+  4. 内置四个模型提供商：`deepseek`（`deepseek-chat` + `json_object`）、`minimax`（`MiniMax-M2.7` 非流式 JSON）、`openai`（`gpt-5.4-mini` + `json_schema` strict）、`anthropic`（`claude-sonnet-4-6` + `tools`/`tool_choice`），API Key 仅存于仓库 GitHub Actions Secrets。
+- 改动与契约同步：新增 `docs/11-github-actions-dreaming.md`；更新 `docs/README.md`、`docs/01`–`docs/05`、`docs/validation/dreaming-handoff.md` 与 `docs/STATUS.md`，补入阶段 G（`G-1`–`G-4`）实施顺序与 `D01`–`D05` 验收场景。
+- 验证：全量 Markdown 相对链接与锚点检查通过；`git diff --check` 无输出。
+- 未验证与遗留：产品代码尚未迁移（当前代码仍为 `D-1`/`D-2` 本地沙箱实现），留待 `G-2`–`G-4` 实施与真实验证。
+- 下一步：按 `G-2` 删除本地沙箱与 CLI runner，实现 `internal/dream/provider.go`、`internal/dream/worker.go` 与 `memctl dream --worker`。
