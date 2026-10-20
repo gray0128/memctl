@@ -1,15 +1,14 @@
-# 12. 跨会话新记忆提炼：本地蒸馏、分支传输与阶段 A5 方案
+# 12. 跨会话新记忆提炼：本地当前 Agent 交互式整理方案
 
-> 状态：`H-1` 方案与契约已完成（2026-10-20，`T098`），`H-2`–`H-4` 代码尚未实现。本文档定义 Dreaming 跨原始会话日志自动提炼未记录新记忆的完整架构：本地确定性蒸馏与脱敏缓存、`dream/req` 临时树提交传输协议、GitHub Actions worker 的阶段 A5 跨会话提炼、Go 代码级来源绑定守卫与验收矩阵。基础模型、写入事务、生命周期规则与 GitHub Actions 整理主流程分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[10](./10-memory-lifecycle.md) 与 [11](./11-github-actions-dreaming.md)。
+> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`），`H-2`–`H-4` 代码尚未实现。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
-- 补齐上游 [Agent Memory Repo](https://cognition.com/agent-memory-repo) 对 Dreaming 定义的第一项职责（跨历史会话发现隐式规律并保存为新条目），与 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) 已实现的第二项职责（合并重复、清理到期与核对来源）合流为一次完整的远端整理运行。
-- 保持本地零模型凭据：本地只执行 0 次模型调用的确定性蒸馏（解析宿主会话日志、剔除工具大输出、正则脱敏凭据与可疑指令过滤），将单会话上限 `16 KiB` 的结构化摘要 `SessionDigest` 写入 `$STATE/repos/<repoId>/cache/corpus/`。
-- 保持主分支不存原始日志：`memctl dream --runner <provider>` 触发时，本地使用 `git commit-tree` 构造一个以 `baseHead` 为唯一父提交的临时提交，仅在 `refs/heads/dream/req/<proposalId>/<provider>` 引用上多携带一个受保护的 `.memctl-dream-corpus.json` 文件（最多 `20` 个未消费会话、总上限 `256 KiB`）；提供 `--no-corpus` 开关在单次运行中跳过会话摘要上传。
-- 保持代码控制的有界结构化调用：GitHub Actions 中的 `memctl dream --worker` 在阶段 A（静态诊断）与阶段 B（分批文件改写）之间新增阶段 A5（跨会话新记忆提炼，最多 `2` 次模型调用）。阶段 A5 只提炼三类高价值信号（用户显式纠正与偏好、多轮排障配方与领域映射、架构决策与里程碑事件），对隐式习惯执行跨会话频次门控（至少在 `2` 个独立会话中出现）。
-- 强制真实来源绑定（Provenance Guard）：模型在阶段 A5 只输出候选事实文本与引用的输入会话下标 `sessionIndices`，不得自行拼写 `[source: ...]`；由 Go 代码校验下标合法性后确定性拼装 `- <fact> [source: <sourceTag>; added: <date>]`，再作为 `NEW_SESSION_MEMORY` 静态候选汇入阶段 B 合入对应 Markdown 文件。
-- 保持确认前不改主库：`.memctl-dream-corpus.json` 列入受保护路径禁区，worker 生成 `dream/res/<proposalId>` 时将其剔除并仍以原始 `baseHead` 为唯一父提交；本地 `ApplyDream` 确认提交后才将本次参与整理的 `SessionDigest` 标记为已消费。
+- 职责正交切分：已实现的 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)（`--runner <provider>` 与 `--worker`）保持不动，仅负责远端对已有记忆库执行去重、到期清理与索引整理；跨原始会话日志提炼未记录新记忆则**仅在本地当前活跃 Agent 会话内由用户显式发起并完成**，完全放弃将本地会话语料上传至远端分支或 GitHub Actions 处理。
+- 零额外模型凭据、零子进程派生、数据不出本机：由用户正在使用的当前 Agent 会话自身充当整理推理大脑，直接通过 CLI（`memctl dream --prepare` / `memctl dream --propose --stdin`）或 MCP 工具（`memory_dream_prepare` / `memory_dream_propose`）与本机 `memctl` 交互；既不要求本地配置 API Key，也不由 `memctl` 反向派生无头 Agent CLI 子进程。
+- 本地确定性会话蒸馏（`internal/corpus`）：`sync` 与 `end` 在本地执行 0 次模型调用的确定性提取（解析各宿主会话日志、剥离工具大输出、正则脱敏凭据与过滤可疑提示词注入回合），将单会话上限 `16 KiB` 的结构化摘要 `SessionDigest` 缓存在 `$STATE/repos/<repoId>/cache/corpus/`，防止当前 Agent 直接读取几十 MB 的原始 `.jsonl` 撑爆上下文窗口。
+- 强制真实来源绑定（Provenance Guard）与单步确定性守卫：当前 Agent 在提交整理提案时，针对新提炼记忆只输出候选事实文本 `fact` 与引用的输入会话下标 `sessionIndices`，不得自行手写 `[source: ...]`；由本地 `memctl` 的 Go 代码校验下标合法性后确定性拼装 `- <fact> [source: <sourceTag>; added: <date>]`，并统一执行 30 天到期删除闸门（`DELETION_DEFERRED`）、受保护路径拦截、`MEMORY.md` 200 行限额与双向链接校验。
+- 保持确认前不改主库：本地 `--propose` / `memory_dream_propose` 校验通过后，将结果直接持久化为本地 `status: "ready"`、`runner: "local-agent"` 的标准 `DreamProposal`（绑定 `baseHead` 与 `patchHash`）。用户可在当前会话指示 Agent 执行 `memctl dream --apply`（或 `memory_dream_apply`），也可在 `memctl ui` 的「整理」视图审阅 Diff 后点击确认；仅当 `ApplyDream` 提交成功后，才将本次参与整理的 `SessionDigest` 标记为已消费（`consumedBy`）。
 
 ## 2. 系统如何工作
 
@@ -17,33 +16,36 @@
 
 ```mermaid
 flowchart TB
-    subgraph Local["用户本机（0 次模型调用、零模型凭据）"]
+    subgraph Collect["1. 日常会话自动蒸馏（0 次模型调用）"]
         Hook["宿主 Hook / 插件收尾\n(sync / end / turn/end / session_shutdown)"]
         Corpus["internal/corpus 本地蒸馏器\n(提取对话与工具签名 + 正则脱敏 + 注入过滤)"]
         Cache["$STATE/repos/<repoId>/cache/corpus/\n(<sha256>.json, 单会话 ≤ 16 KiB, TTL 14 天)"]
-        Begin["memctl dream --runner <provider>\n(打包未消费摘要 → git commit-tree)"]
-        Apply["ApplyDream / UI 审阅确认\n(校验 patchHash → 受管事务提交 → 标记摘要已消费)"]
+        Hook -->|"stdin transcript_path / --transcript\n或按 SID 定位宿主日志"| Corpus
+        Corpus --> Cache
     end
 
-    subgraph Remote["GitHub 私有远端与 Actions 运行器"]
-        Req["refs/heads/dream/req/<proposalId>/<provider>\n(父提交 = baseHead, 附加 .memctl-dream-corpus.json)"]
-        Worker["memctl dream --worker\n阶段 A: 静态诊断 + 读取并移除临时语料文件\n阶段 A5: 跨会话提炼候选条目 + 代码级来源绑定\n阶段 B: 分批合入目标文件与清理\n阶段 C: MEMORY.md 索引对齐"]
-        Res["refs/heads/dream/res/<proposalId>\n(唯一父提交 = baseHead, 不含临时语料文件)"]
-    end
+    subgraph Interactive["2. 用户在当前 Agent 内显式发起整理（全本地闭环）"]
+        User["用户显式指令\n(如「整理记忆 / Dreaming」)"]
+        Agent["当前活跃 Agent 会话\n(复用当前模型上下文与 Skill 指引)"]
+        Prepare["memctl dream --prepare --json\n或 MCP memory_dream_prepare\n(刷新当前会话摘要 + 锁定 baseHead + 返回静态诊断、记忆全文与未消费 SessionDigest[])"]
+        Propose["memctl dream --propose --stdin\n或 MCP memory_dream_propose\n(Provenance Guard 拼装真实 source + 30天过期闸门 + 索引/链接校验)"]
+        Proposal["$STATE/repos/<repoId>/proposals/<id>.json\n(status=ready, runner=local-agent, 绑定 patchHash)"]
+        Apply["ApplyDream 显式确认\n(CLI dream --apply / MCP memory_dream_apply / Web UI 整理视图)"]
 
-    Hook -->|"stdin transcript_path / --transcript\n或按 SID 定位宿主日志"| Corpus
-    Corpus --> Cache
-    Begin -->|"读取未消费 SessionDigest"| Cache
-    Begin -->|"git push"| Req
-    Req --> Worker
-    Worker -->|"删除 dream/req\n推送结果树"| Res
-    Res -->|"fetch + 不可信校验"| Apply
-    Apply -->|"写入 consumedBy"| Cache
+        User --> Agent
+        Agent -->|"步骤 1：获取整理材料"| Prepare
+        Cache --> Prepare
+        Prepare -->|"返回 DreamPrepareBundle"| Agent
+        Agent -->|"步骤 2：提交结构化候选与文件修订"| Propose
+        Propose --> Proposal
+        Proposal -->|"展示 Diff 供用户确认"| Apply
+        Apply -->|"受管事务提交 main\n并写入 consumedBy"| Cache
+    end
 ```
 
 ### 2.2 本地会话采集与确定性蒸馏（`internal/corpus`）
 
-本地采集在 `memctl sync`、`memctl end`（含 `--stdin` Hook 路径以及 `memctl-dsh`、`memctl-pi` 的回合结束与会话卸载路径）中以非阻塞、尽力而为（best-effort）的方式执行。任何日志缺失、格式未知或读取超时均静默跳过，不阻塞宿主，也不影响 Git 同步。
+本地采集在 `memctl sync`、`memctl end`（含 `--stdin` Hook 路径以及 `memctl-dsh`、`memctl-pi` 的回合结束与会话卸载路径）以及 `dream --prepare` / `memory_dream_prepare` 中以非阻塞、尽力而为（best-effort）的方式执行。任何日志缺失、格式未知或读取超时均静默跳过，不阻塞宿主，也不影响 Git 同步。
 
 #### 1. 各宿主原始会话日志定位
 
@@ -94,9 +96,9 @@ flowchart TB
 | `MaxTurnTextBytes` | 单回合 `user` 或 `assistant` 文本上限 `1024` 字节（按 UTF-8 字符边界截断并标记 `…`） |
 | `MaxToolsPerTurn` | 单回合最多 `5` 条工具签名，每条上限 `160` 字节；只记录工具名、首行命令或根相对路径及退出码，丢弃工具 stdout/stderr 与文件内容 |
 | `MaxSessionDigestBytes` | 单个 `SessionDigest` 序列化后上限 `16 KiB`；超限时从最早的非纠正回合开始裁剪 |
-| `CorpusStateTTL` | `14` 天（与 `SessionStateTTL` 一致）；每次采集与 `dream` 启动时自动清理过期文件 |
-| `cwdBase` | 仅保留工作目录的 basename（如 `memctl`），不上传宿主机完整绝对路径结构 |
-| `wroteMemoryInSession` | 若该会话已在记忆仓库产生包含 `Session: <sid>` trailer 的提交，记为 `true`，供阶段 A5 降低重复提取权重 |
+| `CorpusStateTTL` | `14` 天（与 `SessionStateTTL` 一致）；每次采集与 `dream --prepare` 启动时自动清理过期文件 |
+| `cwdBase` | 仅保留工作目录的 basename（如 `memctl`），不记录宿主机完整绝对路径结构 |
+| `wroteMemoryInSession` | 若该会话已在记忆仓库产生包含 `Session: <sid>` trailer 的提交，记为 `true`，供当前 Agent 降低重复提取权重 |
 
 #### 3. 本地确定性清洗与脱敏规则
 
@@ -111,46 +113,40 @@ flowchart TB
    - URL 内嵌凭据：`https?://[^/\s:@]+:[^/\s:@]+@`。
 3. **可疑指令回合过滤**：复用 `doctor` 的可疑提示词注入检测模式（如要求忽略系统规则、外发数据或修改安全配置）；命中可疑模式的单个回合直接丢弃，不进入 `turns`。
 
-### 2.3 `dream/req` 临时树提交传输协议
+### 2.3 本地当前 Agent 交互式整理协议（`prepare` → `propose` → `apply`）
 
-本方案复用 [11. GitHub Actions Dreaming §2.2](./11-github-actions-dreaming.md#22-git-分支与提交元数据协议) 的 Git 引用通道，不调用 GitHub REST API，也不修改本地工作树或 `main` 分支：
+用户在当前 Agent 会话中显式发起整理时，Agent 按配套 Skill（`skills/memctl/SKILL.md`）指引执行两步结构化交互；受沙箱限制的宿主（如 `workspace-write` 下的 Codex 与 DSH）直接调用同名 MCP 工具，无需放宽工作区沙箱。
 
-1. **选择待上传摘要**：`dream.Service.Begin` 在固定 `baseHead` 后（且未指定 `--no-corpus` 时），扫描 `$STATE/repos/<repoId>/cache/corpus/`，筛选 `consumedBy == ""` 且 `turns` 非空的摘要，按 `updatedAt` 倒序取最多 `MaxCorpusSessions = 20` 个，累计字节上限 `MaxCorpusBytes = 256 KiB`，组装为 `DreamCorpusPayload`：
+#### 步骤 1：准备整理上下文（`memctl dream --prepare --json` / MCP `memory_dream_prepare`）
 
-   ```json
-   {
-     "schemaVersion": 1,
-     "proposalId": "dp-0123456789abcdef0123456789abcdef",
-     "baseHead": "e4b8...",
-     "sessions": [ /* SessionDigest[] */ ]
-   }
-   ```
-
-2. **无痕构造请求提交**：
-   - 当 `sessions` 为空（或传入 `--no-corpus`）时：`refs/heads/dream/req/<proposalId>/<provider>` 直接指向 `baseHead`（与无语料模式完全相同）。
-   - 当 `sessions` 非空时：使用 `git hash-object -w --stdin` 将 `DreamCorpusPayload` 写入本地 Git 对象库得到 `<blobHash>`，读取 `baseHead^{tree}` 并追加一条根目录树项 `100644 blob <blobHash>\t.memctl-dream-corpus.json`，通过 `git mktree` 与 `git commit-tree <treeHash> -p <baseHead> -m "dream-req(<proposalId>)"` 生成临时提交 `<reqCommit>`，推送 `<reqCommit>:refs/heads/dream/req/<proposalId>/<provider>`。本地 `HEAD`、索引与工作树保持原样不变。
-3. **远端检出与基线还原**：
-   - GitHub Actions 工作流检出 `dream/req/<proposalId>/<provider>` 后立即删除该远端分支。
-   - 工作流向 `memctl dream --worker` 传入 `--ref "${GITHUB_REF_NAME}" --base-head "${GITHUB_SHA}"`。
-   - `--worker` 启动时检查当前提交：若当前提交包含 `.memctl-dream-corpus.json` 且其唯一父提交包含 `MEMORY.md`，则读取 `.memctl-dream-corpus.json` 中的 `DreamCorpusPayload`，并将对比与结果提交的真实基线还原为 `DreamCorpusPayload.baseHead`（同时校验该值等于当前提交的唯一父提交哈希）；若当前提交不含 `.memctl-dream-corpus.json`，则直接以 `--base-head` 为基线（保持向后兼容，无需用户重写旧工作流 YAML）。
-   - 结果提交 `refs/heads/dream/res/<proposalId>` 的唯一父提交始终是记忆仓库的真实 `baseHead`，且文件树中绝不包含 `.memctl-dream-corpus.json`。
-
-### 2.4 Worker 阶段 A5：跨会话新记忆提炼
-
-在 [11. GitHub Actions Dreaming §2.3](./11-github-actions-dreaming.md#23-代码控制的多步结构化调用流程) 的三阶段流程中，当 `DreamCorpusPayload.sessions` 非空时，在阶段 A 与阶段 B 之间执行阶段 A5（最多 `MaxExtractBatches = 2` 次模型调用，计入总调用上限 `MaxTotalCalls = 12`）。
-
-#### 1. 阶段 A5 的输入载荷（`extractRequest`）
+1. **刷新当前会话摘要**：若当前调用带有稳定 `agent` 与 `sid`（或能按 `sid` 定位当前会话日志），先尽力触发一次当前会话的增量蒸馏，确保当前会话的最新对话已写入 `cache/corpus/`。
+2. **锁定基线与静态扫描**：在仓库锁内确认工作树干净、无未完成事务或冲突，记录 `baseHead` 与 `baseRevision`；运行与 `doctor` 相同的静态扫描（识别膨胀索引、孤立文件、断链、重复候选，以及区分「仍在 30 天隐藏期」与「隐藏期已满可删除」的到期 `until` 条目）。
+3. **读取未消费会话摘要**：扫描 `$STATE/repos/<repoId>/cache/corpus/`，筛选 `consumedBy == ""` 且 `turns` 非空的 `SessionDigest`，按 `updatedAt` 倒序取最多 `MaxCorpusSessions = 20` 个（累计上限 `MaxCorpusBytes = 256 KiB`），并按顺序赋予整数下标 `sessionIndex: 0..N-1`。
+4. **返回 `DreamPrepareBundle`**：
 
 ```json
 {
   "today": "2026-10-20",
-  "phase": "extract",
-  "entryFile": "# Memory\n\n## Index\n...",
-  "existingFiles": [
-    { "path": "notes/memctl-release-process.md", "title": "发布流程", "headings": ["规则"] }
+  "baseHead": "e4b8...",
+  "baseRevision": "rev-...",
+  "rules": {
+    "entryMaxLines": 200,
+    "deletionGraceDays": 30,
+    "implicitPreferenceMinSessions": 2
+  },
+  "findings": [
+    {
+      "code": "EXPIRED_ELIGIBLE",
+      "path": "notes/sprint.md",
+      "message": "- 临时冻结发布 [source: ...; added: 2026-08-01; until: 2026-09-01] (expired >= 30d, eligible for deletion)"
+    }
   ],
-  "existingFacts": [
-    "- 发布唯一入口是推标签 [source: agent://...; added: 2026-10-18]"
+  "files": [
+    {
+      "path": "MEMORY.md",
+      "revision": "sha256:...",
+      "content": "# Memory\n\n## Index\n..."
+    }
   ],
   "sessions": [
     {
@@ -162,101 +158,74 @@ flowchart TB
       "wroteMemoryInSession": false,
       "turns": [ /* ... */ ]
     }
-  ],
-  "correction": ""
+  ]
 }
 ```
 
-#### 2. 阶段 A5 的系统提示词契约（提取与门控规则）
+#### 步骤 2：Agent 提炼规则与提交提案（`memctl dream --propose --stdin` / MCP `memory_dream_propose`）
 
-1. **三类可提取目标**：
+当前 Agent 根据 `DreamPrepareBundle` 在会话上下文内完成推理：
+
+1. **三类可提取新记忆信号**：
    - **显式纠正与持久偏好（`state`）**：用户在对话中纠正 Agent 的错误假设、命名习惯、工具选择或输出风格（如「不要运行本地 `make release`，发布只推标签」）。
-   - **多轮排障结论与领域映射（`state` 或 `event`）**：经过排查才定位的非显而易见事实、模块映射关系或环境约束（如「`ghost_text` 事件对应自动补全指标」「DSH 的 MCP 客户端随应用内置无需在 profile 安装」）。
-   - **架构决策与有时效约束（`event` 或 `time_limited`）**：明确的技术选型理由、迁移结论，或带明确截止日期的临时约束（换算为 `until: YYYY-MM-DD`）。
+   - **多轮排障结论与领域映射（`state` 或 `event`）**：经过排查才定位的非显而易见事实、模块映射关系或环境约束（如「DSH 的 MCP 客户端随应用内置无需在 profile 安装」）。
+   - **架构决策与有时效约束（`event` 或 `time_limited`）**：明确的技术选型理由、迁移结论，或带明确截止日期的临时约束（以对应会话的 `date` 为基准换算为 `until: YYYY-MM-DD`）。
 2. **跨会话频次门控（防噪音扩散）**：
-   - 用户明确发出的全局规则、明确纠正或已验证的排障根因：允许从单个会话（`len(sessionIndices) >= 1`）提炼。
+   - 用户明确发出的全局规则、显式纠正或已验证的排障根因：允许从单个会话（`len(sessionIndices) >= 1`）提炼。
    - 隐式行为偏好（用户未说「记住/以后都这样」，仅在交互中表现出某种倾向）：必须在至少 `2` 个不同会话（`len(sessionIndices) >= 2`）中重复出现一致信号才允许提炼；只出现 1 次的隐式倾向必须忽略。
-   - 禁止提炼：单次具体编码任务的待办状态、可由 `git log` 或代码搜索直接得出的普通函数名/行号、临时报错日志、与 `existingFacts` 语义重复的事实。
-3. **相对时间换算**：会话文本中的「今天」「明天」「下周」必须以该会话的 `date` 字段为基准换算为 `YYYY-MM-DD`。
-
-#### 3. 阶段 A5 的输出 Schema（`DreamExtractOutput`）
-
-模型不得在 `fact` 中手写 `[source: ...]` 或前导 `- `，必须输出符合以下 JSON Schema 的结构：
+   - 禁止提炼：单次具体编码任务的待办状态、可由 `git log` 或代码搜索直接得出的普通函数名/行号、临时报错日志、与已有文件条目语义重复的事实。
+3. **结构化输入（`DreamProposeInput`）**：
+   Agent 不得在 `newMemories[].fact` 中手写 `[source: ...]` 或前导 `- `，而是通过 `--stdin` 或 `memory_dream_propose` 提交如下结构化对象：
 
 ```json
 {
-  "type": "object",
-  "required": ["candidates", "warnings"],
-  "additionalProperties": false,
-  "properties": {
-    "candidates": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["kind", "targetPath", "fact", "sessionIndices", "rationale"],
-        "additionalProperties": false,
-        "properties": {
-          "kind": { "type": "string", "enum": ["state", "event", "time_limited"] },
-          "targetPath": { "type": "string" },
-          "fact": { "type": "string" },
-          "until": { "type": "string" },
-          "sessionIndices": {
-            "type": "array",
-            "items": { "type": "integer" }
-          },
-          "rationale": { "type": "string" }
-        }
-      }
-    },
-    "warnings": {
-      "type": "array",
-      "items": { "type": "string" }
-    }
-  }
-}
-```
-
-#### 4. 代码级来源绑定守卫（Provenance Step Guard）
-
-每次收到 `DreamExtractOutput` 后，worker 执行确定性校验（失败时最多纠正重试 `MaxStepRetries = 1` 次）：
-
-1. **下标与来源真实性校验**：`candidates` 最多 `MaxExtractedCandidates = 30` 条；每条的 `sessionIndices` 必须非空，且每个整数 $i$ 必须满足 $0 \le i < \text{len(sessions)}$。越界或为空立即拒绝并触发纠正重试。
-2. **正文与元数据净化**：`fact` 必须为单行非空文本（不含换行符），不得包含模型自行拼写的 `[source:` 或 `[added:` 尾注，且必须再次通过 §2.2 的凭据脱敏与可疑指令检查；若 `kind == "time_limited"`，`until` 必须是合法的 `YYYY-MM-DD` 且不早于对应会话的 `date`。
-3. **目标路径校验**：`targetPath` 必须通过 `vault.ValidateRelPath`、以 `.md` 结尾且不命中 `protectedPath`。
-4. **Go 代码确定性拼装标准条目**：
-   - 按 `sessionIndices` 首次出现的顺序去重，提取对应的真实 `sessions[i].sourceTag`，取所引用会话中最新的 `date` 作为 `added` 日期。
-   - 由 Go 代码生成标准条目文本：
-     `- <fact> [source: <tag1>; source: <tag2>; added: <latestDate>]`（若含 `until`，追加 `; until: <YYYY-MM-DD>`）。
-   - 若 `normalizeFact(fact)` 与当前记忆库中已有条目的归一化文本完全相同，静默跳过该候选，避免重复入库。
-5. **汇入阶段 B 批次规划**：
-   - 每条通过校验的候选转化为一条静态诊断信号：`staticFinding{Code: "NEW_SESSION_MEMORY", Path: targetPath, Message: formattedBullet + " (rationale: " + rationale + ")"}`。
-   - 若 `targetPath` 是尚不存在的新主题文件，将其加入阶段 B 的批次目标列表（允许阶段 B 对该路径执行 `create`），随后阶段 B 将这些带有真实 `source` 的条目写入对应文件，阶段 C 自动更新 `MEMORY.md` 的 `## Index` 链接。
-
-### 2.5 运行元数据扩展与消费状态更新
-
-`DreamWorkerMeta`（见 [11. GitHub Actions Dreaming §2.2](./11-github-actions-dreaming.md#22-git-分支与提交元数据协议)）新增两个可选整数字段：
-
-```json
-{
-  "schemaVersion": 1,
-  "proposalId": "dp-0123456789abcdef0123456789abcdef",
   "baseHead": "e4b8...",
-  "provider": "deepseek",
-  "model": "deepseek-chat",
-  "status": "ready",
-  "steps": 3,
-  "sessionsScanned": 4,
-  "newMemoriesExtracted": 2,
-  "warnings": [],
-  "error": ""
+  "baseRevision": "rev-...",
+  "newMemories": [
+    {
+      "kind": "state",
+      "targetPath": "notes/release.md",
+      "section": "## 规则",
+      "fact": "发布唯一入口是推送 v* 标签，禁止在本地运行 make release 上传产物",
+      "sessionIndices": [0],
+      "rationale": "用户在会话 0 明确纠正发布流程"
+    }
+  ],
+  "files": [
+    {
+      "path": "MEMORY.md",
+      "action": "update",
+      "content": "# Memory\n\n## Index\n- [[notes/release]] — 发布规则\n"
+    }
+  ],
+  "warnings": []
 }
 ```
 
-本地消费状态流转规则：
+#### 步骤 3：Go 代码级来源绑定与确定性守卫（Provenance & Step Guard）
 
-1. `dream.Service.Begin` 在持久化提案内部记录 `record` 时，同时记录本次打包进 `.memctl-dream-corpus.json` 的会话摘要文件名列表 `corpusDigests: string[]`。
-2. 提案处于 `generating`、`ready`、`failed` 或 `stale` 期间，对应的 `SessionDigest` 文件保持 `consumedBy: ""`；若提案失败或过期作废，下次运行 `memctl dream` 仍会纳入这些会话。
-3. 当且仅当用户执行 `ApplyDream`（`memctl dream --apply` 或 `POST /api/v1/dream:apply`）且受管写入事务成功提交后，服务遍历该提案记录的 `corpusDigests`，将对应 `SessionDigest` 文件的 `consumedBy` 更新为该 `proposalId`。
+`memctl` 收到 `DreamProposeInput` 后，在本地内存中基于 `baseHead` 快照依次执行确定性守卫（任一校验失败立即返回结构化错误原因与修正提示，供当前 Agent 在同一轮修正重试，不写盘）：
+
+1. **下标与来源真实性校验（Provenance Guard）**：
+   - `newMemories` 最多 `MaxExtractedCandidates = 30` 条；每条的 `sessionIndices` 必须非空，且每个整数 $i$ 必须满足 $0 \le i < \text{len(sessions)}$（对应 `baseHead` 准备阶段读取的未消费会话列表）。越界或为空立即返回 `INVALID_INPUT`。
+   - `fact` 必须为单行非空文本（不含换行符），不得包含模型自行拼写的 `[source:` 或 `[added:` 尾注，且必须再次通过 §2.2 的凭据脱敏与可疑指令检查；若 `kind == "time_limited"`，`until` 必须是合法的 `YYYY-MM-DD` 且不早于对应会话的 `date`。
+   - 若 `normalizeFact(fact)` 与当前记忆库已有条目的归一化文本完全相同，自动跳过该条候选，避免重复入库。
+2. **Go 代码确定性拼装与注入**：
+   - 按 `sessionIndices` 首次出现的顺序去重，提取对应的真实 `sessions[i].sourceTag`，取所引用会话中最新的 `date` 作为 `added` 日期。
+   - 由 Go 代码生成标准条目行：`- <fact> [source: <tag1>; source: <tag2>; added: <latestDate>]`（含 `until` 时追加 `; until: <YYYY-MM-DD>`），并按 `targetPath` 与可选 `section` 标题确定性合入目标 Markdown 文件（目标文件尚不存在且未在 `files` 中提供时，自动创建带一级标题与该条目的新文件；若 `MEMORY.md` 的 `## Index` 尚未包含 `[[targetPath]]`，自动补齐索引链接）。
+3. **文件修订与生命周期守卫**：
+   - 对合入新记忆及 `files[]` 修订后的完整结果树，复用 `dream` 既有的全套不可信输入校验：拒绝 `.git`/`.github` 等 `protectedPath`、校验事件型条目未被删除、校验未满 30 天隐藏期的 `until` 条目未被删除（违者返回 `DELETION_DEFERRED`）、校验 `MEMORY.md` 不超过 200 行且不存在新的断链或孤立文件。
+4. **生成本地提案**：
+   - 校验全部通过后，计算从 `baseHead` 到目标文件树的有序 `changes`、`diff` 与 `patchHash`，在 `$STATE/repos/<repoId>/proposals/<proposalId>.json` 持久化 `status: "ready"`、`runner: "local-agent"`、`sessionsScanned: len(sessions)`、`newMemoriesExtracted: len(acceptedNewMemories)` 的 `DreamProposal`（同时在提案内部记录本次涉及的 `corpusDigests` 文件名列表）。
+   - 向调用方返回 `{proposalId, status: "ready", patchHash, sessionsScanned, newMemoriesExtracted, changes, diff, warnings}`。
+
+#### 步骤 4：显式确认与消费标记（`ApplyDream`）
+
+1. Agent 将生成的提案摘要与 Diff 展示给用户；用户确认后，可通过以下任一入口应用提案：
+   - 当前 Agent 调用 `memctl dream --apply <proposalId> --patch-hash <patchHash>` 或 MCP `memory_dream_apply`；
+   - 用户在终端手工运行上述命令，或在 `memctl ui` 的「整理」视图审阅 Diff 后点击「应用提案」。
+2. `ApplyDream` 持仓库锁校验 `baseRevision` 与 `patchHash`，通过受管写入事务提交到主分支（提交说明带 `Proposal: <proposalId>` trailer），并将该提案关联的 `corpusDigests` 中各 `SessionDigest` 文件的 `consumedBy` 更新为 `<proposalId>`。
+3. 提案在被 `ApplyDream` 成功提交前，所有 `SessionDigest` 的 `consumedBy` 保持为空字符串 `""`；若提案被丢弃或因基线变化转为 `stale`，下次整理仍会纳入这些会话摘要。
 
 ## 3. 安全、治理与禁止项
 
@@ -264,37 +233,37 @@ flowchart TB
 
 | 边界 | 机制与保障 |
 | --- | --- |
-| 原始会话日志不出本机 | 本地只提取高度裁剪（单回合 $\le 1024$ 字节、单会话 $\le 16\text{ KiB}$、无工具长输出）且经正则脱敏的 `SessionDigest`；完整 `.jsonl` 永不上传 |
-| 临时语料不进主分支与结果分支 | `.memctl-dream-corpus.json` 仅存在于短暂存活的 `dream/req` 分支，且被列入 `protectedPath`；`dream/res` 与 `main` 绝不包含该文件 |
-| 杜绝伪造来源 URI | 模型只输出整数下标 `sessionIndices`，`[source: agent://...; added: YYYY-MM-DD]` 完全由 Go 代码根据本地采集的权威身份生成 |
-| 隐私可控与单次跳过 | 支持环境变量 `AGENT_MEMORY_CORPUS=0` 全局关闭采集，以及 `memctl dream --runner <provider> --no-corpus`（和 HTTP `noCorpus: true`）单次跳过上传会话摘要 |
+| 会话数据完全不出本机 | `SessionDigest` 仅保存在本机 `$STATE/repos/<repoId>/cache/corpus/`，仅由本机当前 Agent 通过本地 CLI/MCP 读取；不上传 Git 分支，不发往 GitHub Actions |
+| 历史日志脱敏与防撑爆 | 本地蒸馏器剥离工具长输出与系统块，单回合 $\le 1024$ 字节、单会话 $\le 16\text{ KiB}$，并对 API Key/Token/密码执行正则脱敏、过滤可疑提示词注入回合 |
+| 杜绝伪造来源 URI | Agent 只输出整数下标 `sessionIndices`，`[source: agent://...; added: YYYY-MM-DD]` 完全由本机 Go 代码根据权威会话身份拼装 |
+| 确认前不改主库 | `dream --propose` 与 `memory_dream_propose` 只写 `$STATE/repos/<repoId>/proposals/` 下的待审阅提案，不修改 `~/memory` 工作树与 Git 历史 |
 
 ### 3.2 禁止项
 
 1. **禁止在本地采集路径调用模型或阻塞宿主退出**：`internal/corpus` `MUST` 仅使用确定性解析与正则处理，单次提取耗时预算不超过 `200 ms`；读取失败或超时必须静默放弃，不得令 `sync` 或 `end` 返回非零退出码。
-2. **禁止信任模型手写的 `source` 元数据**：阶段 A5 的 Step Guard `MUST` 拒绝任何在 `fact` 中内嵌 `[source:` 的模型输出，或越界引用不存在的 `sessionIndices`；否则模型可通过幻觉伪造审计来源。
-3. **禁止将 `.memctl-dream-corpus.json` 视为受管记忆文件**：`vault` 与 `dream` 的 `protectedPath` `MUST` 拦截 `.memctl-dream-corpus.json`（含大小写变体）；若远端返回的 `dream/res` 结果树仍残留该文件，本地 `scanWorkTree` 必须拒绝该提案并标为 `failed`（`D03`）。
-4. **禁止在提案未应用前将会话摘要标为已消费**：只有 `ApplyDream` 完成本地 Git 提交后才允许写入 `consumedBy`；预览生成（`Preview`）本身不得消耗摘要，否则用户拒绝或过期重跑提案时会丢失尚未入库的会话线索。
+2. **禁止信任 Agent 手写的 `source` 元数据**：`dream --propose` 与 `memory_dream_propose` 的 Provenance Guard `MUST` 拒绝任何在 `newMemories[].fact` 中内嵌 `[source:` 的输入，或越界引用不存在的 `sessionIndices`。
+3. **禁止绕过提案直接落盘批量整理结果**：跨会话整理与全库去重/清理 `MUST` 先通过 `propose` 生成绑定 `patchHash` 的 `DreamProposal`，再经 `ApplyDream` 校验基线并提交；不得在 `propose` 阶段直接改动主分支。
+4. **禁止在提案未应用前将会话摘要标为已消费**：只有 `ApplyDream` 完成本地 Git 提交后才允许写入 `consumedBy`；仅执行 `prepare` 或 `propose` 不得消耗摘要。
 
-## 4. 调研依据：为什么采用「本地确定性蒸馏 + 远端阶段 A5」
+## 4. 调研依据：为什么采用「本地蒸馏缓存 + 当前 Agent 交互式整理」
 
-| 对照维度 | Cognition Devin（上游） | Claude Code / OpenClaw | Letta / Mem0 | 本方案（`memctl`） |
+| 对照维度 | Cognition Devin（上游） | Claude Code / OpenClaw | 远端 Actions 方案（已放弃用于会话提炼） | 本方案（本地当前 Agent 交互式） |
 | --- | --- | --- | --- | --- |
-| 会话材料获取 | 云端 VM 直接读取同机完整会话日志 | 本地 daemon 扫描 `~/.claude/projects/*.jsonl` 或 `.dreams/session-corpus/` | 服务端接收对话 `messages[]` | 复用 Hook stdin 的 `transcript_path` 与插件 `--transcript`，在本地生成 ≤ 16 KiB 脱敏摘要并通过 `dream/req` 分支传给 Actions |
-| 噪音与一次性状态过滤 | 后台 Agent 对比多次会话中的用户纠正与工具成败 | Light → REM → Deep 三阶段：先切片去重，再按频次门控（如跨会话出现）晋升长期记忆 | 提取与全库整理分离，避免单次调用同时做提取与删除 | 本地蒸馏剔除工具大输出（Light）→ 远端阶段 A5 独立提炼并执行隐式偏好 $\ge 2$ 次会话门控（REM）→ 阶段 B/C 合入文件树并对齐索引（Deep） |
-| 来源可追溯（Provenance） | 每条记忆附带 `[source: <session_url>; added: YYYY-MM-DD]` | 转换相对日期为绝对 ISO 日期，不强制每行绑定 session URI | 数据库字段记录 `episode_id` 与时间戳 | 模型只返回 `sessionIndices`，由 Go 代码强制拼装权威 `agent://<device>/<agent>/<sid>` 与日期 |
-| 落盘确认方式 | 后台自动提交到记忆仓库 | 后台自动改写 `MEMORY.md` 并写 `DREAMS.md` 日记 | 自动覆写 Memory Block | 全部新提炼条目进入 `DreamProposal` 的固定 Diff（绑定 `patchHash`），经用户显式确认后才提交 `main` |
+| 执行环境与凭据 | 云端 VM 直接读取同机日志并调用云端模型 | 本地后台进程读取 `~/.claude/projects/*.jsonl` | 需将脱敏语料推上 GitHub 分支并配置 Actions API Key Secret | 直接复用用户当前活跃 Agent 会话与模型通道，零额外凭据、会话语料不出本机 |
+| 沙箱与进程兼容 | 同机特权进程 | 宿主内置逻辑 | 无本地沙箱问题，但有 30–90 秒 CI 排队延迟 | 通过既有 `memctl mcp` 与 CLI 原语交互，天然兼容 `workspace-write` 沙箱，10 秒级完成 |
+| 噪音与频次门控 | 对比多次会话中的用户纠正与工具成败 | Light → REM → Deep 三阶段，跨会话频次门控 | 远端多步调用 | 本地确定性蒸馏（Light）→ 当前 Agent 按频次门控提炼（REM）→ 本地 Go 守卫拼装来源并生成提案（Deep） |
+| 来源可追溯（Provenance） | `[source: <session_url>; added: YYYY-MM-DD]` | 转换相对日期为 ISO 日期 | 远端 worker 拼装 | Agent 只传 `sessionIndices`，本机 Go 代码强制拼装权威 `agent://<device>/<agent>/<sid>` 与日期 |
 
 ## 5. 契约改动映射
 
 | 文档 | 章节 | 修订内容 |
 | --- | --- | --- |
-| [01. 架构与模块](./01-architecture-and-modules.md) | 3.1、3.2、4、5 | `$STATE/repos/<repoId>/cache/corpus/` 纳入可重建缓存；`.memctl-dream-corpus.json` 纳入受保护非记忆路径；新增 `internal/corpus` 模块职责与目录规划 |
-| [02. 模型与契约](./02-domain-models-and-contracts.md) | 2.3、4.2 | `DreamProposal` 新增可选 `sessionsScanned?` 与 `newMemoriesExtracted?` 统计字段；`POST /api/v1/dream:preview` 请求体支持可选 `noCorpus?` 布尔字段 |
-| [03. 流程与恢复](./03-workflows-and-dataflows.md) | 4.1、6 | 说明 `sync`/`end` 顺带更新本地脱敏会话摘要缓存；第 6 节 Dreaming 提案流程补入 `dream/req` 临时语料提交、阶段 A5 提炼与 `ApplyDream` 消费标记 |
-| [04. CLI、UI 与分发](./04-ui-and-cli-specification.md) | 1、2、3 | `sync`/`end` 支持可选 `--transcript PATH`；`dream --runner` 支持可选 `--no-corpus`；环境变量表新增 `AGENT_MEMORY_CORPUS`；`hookio` 解析 `transcript_path` 与 `last_assistant_message` |
-| [05. 验收与交付](./05-validation-and-delivery.md) | 1、2 | 新增阶段 H（跨会话新记忆提炼）实施顺序及 `D06`、`D07` 验收场景 |
-| [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) | 2.1–2.3 | 在端到端数据流、分支协议与 worker 阶段中关联本文档定义的阶段 A5 与 `.memctl-dream-corpus.json` 规则 |
+| [01. 架构与模块](./01-architecture-and-modules.md) | 3.1、4、5 | `$STATE/repos/<repoId>/cache/corpus/` 纳入可重建缓存；新增 `internal/corpus` 模块职责与目录规划；`internal/dream` 支持本地 Agent 交互式 `prepare`/`propose` |
+| [02. 模型与契约](./02-domain-models-and-contracts.md) | 2.3 | `DreamProposal` 的 `runner` 支持 `"local-agent"`，新增可选 `sessionsScanned?` 与 `newMemoriesExtracted?` 统计字段 |
+| [03. 流程与恢复](./03-workflows-and-dataflows.md) | 4.1、6 | 说明 `sync`/`end` 顺带更新本地脱敏会话摘要缓存；第 6 节并列说明「GitHub Actions 远端整理（既有不动）」与「本地当前 Agent 交互式整理（`prepare` → `propose` → `apply`）」共用同一 `DreamProposal` 与 `ApplyDream` 闭环 |
+| [04. CLI、UI 与分发](./04-ui-and-cli-specification.md) | 1、2、3、4 | `sync`/`end` 支持可选 `--transcript PATH`；`dream` 新增 `--prepare [--json]` 与 `--propose --stdin`；环境变量表新增 `AGENT_MEMORY_CORPUS`；`hookio` 解析 `transcript_path` 与 `last_assistant_message`；UI「整理」视图支持展示 `local-agent` 提案及扫描会话数/新提炼条目数 |
+| [05. 验收与交付](./05-validation-and-delivery.md) | 1、2 | 更新阶段 H（本地当前 Agent 交互式跨会话整理）实施顺序及 `D06`、`D07` 验收场景 |
+| [09. MCP 记忆工具](./09-mcp-memory-tools.md) | 1、4.4、6.1 | `memctl mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`、`memory_dream_apply` 三个工具，供受沙箱宿主在会话内完成交互式整理 |
 
 ## 6. 验收矩阵与实施计划
 
@@ -303,13 +272,13 @@ flowchart TB
 | ID | 输入或故障场景 | 可验证结果 |
 | --- | --- | --- |
 | `D06` | Hook stdin 含 `transcript_path` / `last_assistant_message` 或传入 `--transcript`；日志含超长工具输出、各类 API Key/Token/密码、`<system-reminder>`、可疑提示词注入回合，或设置了 `AGENT_MEMORY_CORPUS=0` | 生成的 `SessionDigest` 大小 $\le 16\text{ KiB}$，所有凭据模式被替换为 `[REDACTED]`，系统块与可疑回合被剔除；`AGENT_MEMORY_CORPUS=0` 或日志文件缺失时不写缓存且命令退出码为 `0` |
-| `D07` | 存在未消费 `SessionDigest` 时运行 `dream`：构造 `dream/req` 临时提交 → `--worker` 执行阶段 A5 提炼并校验 `sessionIndices` → 汇入阶段 B/C 生成 `dream/res` → 本地校验并 `ApplyDream`；以及模型返回越界 `sessionIndices`、伪造 `[source:]`、残留 `.memctl-dream-corpus.json` 或传入 `--no-corpus` | 正常路径产出的新条目精确携带对应会话的 `source` 与 `added` 日期，`dream/res` 父提交仍等于原始 `baseHead` 且不含 `.memctl-dream-corpus.json`，`apply` 成功后摘要标记 `consumedBy`；越界下标或伪造 `source` 被阶段 A5 Step Guard 拦截纠正；结果树若残留 `.memctl-dream-corpus.json` 被本地 `D03` 拒绝；`--no-corpus` 不上传语料 |
+| `D07` | 存在未消费 `SessionDigest` 时通过 CLI（`dream --prepare` → `dream --propose --stdin` → `dream --apply`）或 MCP（`memory_dream_prepare` → `memory_dream_propose` → `memory_dream_apply`）执行本地交互式整理；以及传入越界 `sessionIndices`、伪造 `[source:]`、删除事件型条目或删除未满 30 天的过期条目 | 正常路径生成 `runner: "local-agent"`、`status: "ready"` 的 `DreamProposal`，新条目精确携带由 Go 代码拼装的真实会话 `source` 与 `added` 日期，不发起任何远端分支推送；`apply` 成功后提交主分支并将摘要标记 `consumedBy`；越界下标、伪造 `source`、删除事件型条目或触发 `DELETION_DEFERRED` 时被本地守卫拒绝且不生成提案 |
 
 ### 6.2 阶段 H 实施顺序
 
 | 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
 | --- | --- | --- | --- |
-| `H-1`：方案与契约修订（`T098`，本轮） | `G-4` | 新增 `docs/12-session-corpus-dreaming.md`，同步修订 `docs/01`–`05`、`docs/11`、`docs/README.md` 与 `docs/STATUS.md` | 文档链接、锚点与跨文档契约一致性检查 |
+| `H-1`：方案与契约修订（`T098`，本轮） | `G-4` | 新增 `docs/12-session-corpus-dreaming.md`，同步修订 `docs/01`–`05`、`docs/09`、`docs/README.md` 与 `docs/STATUS.md`；不改动已实现的 GitHub Actions Dreaming 功能 | 文档链接、锚点与跨文档契约一致性检查 |
 | `H-2`：本地会话蒸馏器与 Hook/插件接线 | `H-1` | 实现 `internal/corpus`（各宿主 JSONL 解析、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存）；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；更新 `memctl-pi` 与 `memctl-dsh` 传递会话文件路径 | `D06` 单元测试与 CLI 集成测试 |
-| `H-3`：`dream/req` 语料打包与 Worker 阶段 A5 | `H-2` | `internal/dream` 将 `.memctl-dream-corpus.json` 纳入 `protectedPath`；实现 `git commit-tree` 临时语料提交与 `--no-corpus`（含 HTTP `noCorpus`）；`worker.go` 实现阶段 A5（`DreamExtractOutput` Schema、Provenance Step Guard、`NEW_SESSION_MEMORY` 汇入阶段 B）与父提交基线还原；`ApplyDream` 成功后更新 `consumedBy` | `D07`、`D03` 单元测试与本地受控 Git 远端 + 模拟模型端点集成测试 |
-| `H-4`：CLI 帮助、UI 摘要统计展示与端到端验收 | `H-3` | 更新中英与 JSON 帮助（`--transcript`、`--no-corpus`、`AGENT_MEMORY_CORPUS`）；UI「整理」视图展示 `sessionsScanned` 与 `newMemoriesExtracted`；完成合成与真实仓库端到端验收 | `D06`、`D07`、`R06`、前端单测与端到端回归 |
+| `H-3`：本地交互式 `prepare`/`propose` 与 MCP 工具 | `H-2` | `internal/dream` 实现 `PrepareLocal` 与 `ProposeLocal`（含 Provenance Guard 来源拼装、文件合入、30 天删除闸门与索引校验）及 `ApplyDream` 后的 `consumedBy` 更新；CLI 新增 `dream --prepare`、`dream --propose --stdin`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`、`memory_dream_apply` | `D07` 单元测试、MCP 协议测试与 CLI 集成测试 |
+| `H-4`：配套 Skill、CLI 帮助、UI 展示与端到端验收 | `H-3` | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图兼容展示 `local-agent` 提案及 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | `D06`、`D07`、`R06`、前端单测与真实宿主会话回归 |
