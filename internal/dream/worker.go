@@ -792,11 +792,12 @@ Rules by memory class:
   never rewritten or deleted. You may move such an entry into a topic file, but
   the original fact text and its source/added metadata must survive, and the
   topic file must stay reachable from MEMORY.md.
-- Time-bound memory (entries carrying "until: YYYY-MM-DD"): delete it only when
-  staticFindings marks that entry as "the hidden period is over". An entry that
-  is merely past its date is hidden from reads but must survive until its 30-day
-  hidden period ends, so keep it unchanged. Never invent or extend an "until"
-  value.
+- Time-bound memory (entries carrying "until: YYYY-MM-DD"): an entry past its
+  date is already hidden from reads, but it must stay in the file for a 30-day
+  hidden period. Delete it only when its staticFindings entry says the hidden
+  period is over; when the finding says it is still inside the period, keep the
+  bullet byte for byte, including its "until" value. Never invent or extend an
+  "until" value.
 
 Format rules:
 - Keep one bullet per entry on one line: "- <fact> [source: <tag>; added: YYYY-MM-DD]".

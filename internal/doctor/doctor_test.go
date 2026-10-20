@@ -408,3 +408,47 @@ func TestCheckReportsExpiredEntryAsInfo(t *testing.T) {
 		t.Errorf("topic.md expired entry was not reported: %+v", expired)
 	}
 }
+
+// TestCheckDistinguishesHiddenPeriodPhase covers the operator hint: an entry
+// still inside its hidden period names the first deletable date, while one past
+// the period says it can be removed now. Both stay info and non-fixable.
+func TestCheckDistinguishesHiddenPeriodPhase(t *testing.T) {
+	dir := newDoctorRepo(t)
+	writeRepoFile(t, dir, "MEMORY.md", "# Memory\n\n## Index\n\n- [[topic]]\n- recent [until: 2026-10-10]\n- old [until: 2026-08-01]\n")
+	writeRepoFile(t, dir, "topic.md", "# Topic\n\n- alive [until: 2026-12-01]\n")
+
+	clock := func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.Local) }
+	report, err := doctor.CheckAt(context.Background(), dir, clock)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	byLine := map[int]doctor.Issue{}
+	for _, issue := range report.Issues {
+		if issue.Code == doctor.CodeExpiredEntry {
+			byLine[issue.LineNumber] = issue
+		}
+	}
+	if len(byLine) != 2 {
+		t.Fatalf("EXPIRED_ENTRY issues = %d, want 2: %+v", len(byLine), byLine)
+	}
+	recent, ok := byLine[6]
+	if !ok {
+		t.Fatalf("the recent entry (line 6) was not reported: %+v", byLine)
+	}
+	if !strings.Contains(recent.Suggestion, "2026-11-10") {
+		t.Errorf("recent suggestion = %q, want the first deletable date 2026-11-10", recent.Suggestion)
+	}
+	if strings.Contains(recent.Message, "deletable since") {
+		t.Errorf("a hidden entry must not claim it is deletable: %q", recent.Message)
+	}
+	old, ok := byLine[7]
+	if !ok {
+		t.Fatalf("the old entry (line 7) was not reported: %+v", byLine)
+	}
+	if !strings.Contains(old.Suggestion, "may remove it now") {
+		t.Errorf("old suggestion = %q, want a remove-now hint", old.Suggestion)
+	}
+	if !strings.Contains(old.Message, "deletable since 2026-09-01") {
+		t.Errorf("old message = %q, want the deletable date 2026-08-31", old.Message)
+	}
+}

@@ -334,19 +334,33 @@ func checkEntries(parsed map[string]vault.ParsedFile, now time.Time) []Issue {
 		}
 		// An expired time-limited entry is already hidden from every read
 		// surface; report it once so an operator can decide whether to delete
-		// it after the hidden period. This is not an error and is not
-		// auto-fixable.
+		// it after the hidden period. The phase matters: deleting inside the
+		// hidden period is refused with DELETION_DEFERRED, so the suggestion
+		// names the first date a Dreaming proposal may remove it. This is not an
+		// error and is not auto-fixable.
 		for _, entry := range file.Entries {
 			if entry.UntilDate == "" || !vault.EntryExpired(entry.UntilDate, now) {
 				continue
+			}
+			message := fmt.Sprintf("entry expired on %s and is hidden from reads", entry.UntilDate)
+			suggestion := "still inside its 30-day hidden period; a Dreaming proposal or the entry view may remove it after "
+			if vault.DeletionDue(entry.UntilDate, now) {
+				suggestion = "the hidden period is over; a Dreaming proposal or the entry view may remove it now"
+				if deletableAt, ok := vault.DeletableAt(entry.UntilDate, now); ok {
+					message += fmt.Sprintf("; deletable since %s", deletableAt.Format(vault.DateLayout))
+				}
+			} else if deletableAt, ok := vault.DeletableAt(entry.UntilDate, now); ok {
+				suggestion += deletableAt.Format(vault.DateLayout)
+			} else {
+				suggestion = "keep it until the 30-day hidden period ends"
 			}
 			issues = append(issues, Issue{
 				Code:       CodeExpiredEntry,
 				Severity:   SeverityInfo,
 				FilePath:   rel,
 				LineNumber: entry.LineNumber,
-				Message:    fmt.Sprintf("entry expired on %s and is hidden from reads", entry.UntilDate),
-				Suggestion: "keep it until the 30-day hidden period ends, then delete it through the Dreaming proposal or the entry view",
+				Message:    message,
+				Suggestion: suggestion,
 			})
 		}
 		// The whole text is scanned line by line because pull/start inject the
