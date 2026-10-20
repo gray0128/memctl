@@ -312,6 +312,10 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
 
   const items = page ? page.items : []
   const total = page ? page.total : 0
+  // Entries hidden by an expired `until` are excluded from `total` by the
+  // server. Surface the count so an empty result is not mistaken for "nothing
+  // was ever recorded". See docs/10-memory-lifecycle.md section 3.4.
+  const hiddenExpired = (snapshot && snapshot.hiddenExpired) || 0
   const end = Math.min(offset + PAGE_SIZE, total)
 
   return (
@@ -477,6 +481,14 @@ export function EntryBrowser({ api, refreshKey, snapshot }) {
       <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
         <span className="flex items-center gap-2">
           <span>共找到 <strong className="text-slate-800 dark:text-slate-200 font-mono">{total}</strong> 条记忆事实</span>
+          {hiddenExpired > 0 && (
+            <span
+              className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+              title="`until` 已到期的条目从读取中隐藏，正文与 Git 历史仍在"
+            >
+              另有 {hiddenExpired} 条已过期并隐藏
+            </span>
+          )}
           {loading && (
             <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
               <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">

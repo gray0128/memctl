@@ -161,3 +161,5 @@
 - Dreaming 提案的同一闸门（同日）：`ApplyDream` 在落盘前逐文件比对原文与提案内容，若提案会移除处于隐藏期内的到期条目则返回 `DELETION_DEFERRED`，提案保持 `ready`；新增 `dreamDeferredEntries`/`requireDreamDeleteWindow`，测试 `TestApplyDreamRefusesDeleteInsideHiddenPeriod` 与 `TestApplyDreamAllowsDeleteAfterHiddenPeriod`。`plugins/pi` 的版本断言改为读取内嵌清单，避免每次升版都要改测试。
 
 - 收尾（2026-10-20）：`doctor` 的 `EXPIRED_ENTRY` 按隐藏期阶段给出不同提示——仍在隐藏期时在建议里给出首个可删除日期，隐藏期已满时在消息里标注 `deletable since <date>`；新增 `TestCheckDistinguishesHiddenPeriodPhase`。Dreaming worker 的 batch 提示词同步收紧为「只在该条目的静态候选声明隐藏期已满时才删除」。用户已确认批量清理由 Dreaming 提案统一发起，该设计选择已关闭。
+
+- UI 展示（2026-10-20）：条目视图的结果栏在快照 `hiddenExpired > 0` 时显示「另有 N 条已过期并隐藏」，避免把「被隐藏」误读成「没有记录」；文案与 `docs/04` 的视图表同步。真实二进制验证：快照 `hiddenExpired = 1`，`MEMORY.md` 的条目列表只剩索引链接与当前事实，构建产物含该文案。
