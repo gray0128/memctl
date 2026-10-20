@@ -102,7 +102,7 @@ Agent（模型）
 | `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` |
 | `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content` | `transaction`、`commit`、`revision`、`sync` |
-| `memory_dream_prepare` | 锁定当前基线并读取静态诊断、受管文件与本地未消费 `SessionDigest[]`（阶段 H） | 无 | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`rules`、`findings`、`files`、`sessions`） |
+| `memory_dream_prepare` | 触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 20 个未消费 `SessionDigest[]`（阶段 H） | `project?`（可选项目目录名 `cwdBase`，限定只取该项目下的多个会话） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter?`、`remainingUnconsumed`、`rules`、`findings`、`files`、`sessions`） |
 | `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） |
 | `memory_dream_apply` | 按 `proposalId` 与 `patchHash` 确认应用已就绪提案并标记关联会话摘要已消费（阶段 H） | `proposalId`、`patchHash` | `MutationResult` |
 

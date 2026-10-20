@@ -26,7 +26,7 @@ memctl <subcommand> [flags] [-- command...]
 | `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、Dreaming 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
 | `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
-| `dream` | `--prepare [--json]` 或 `--propose --stdin` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 输出当前基线、静态诊断与未消费 `SessionDigest[]`；`--propose --stdin` 校验 Agent 提交的结构化整理结果并拼装真实会话 `source`，生成本地 `ready` 提案；不写主库 |
+| `dream` | `--prepare [--project NAME] [--json]` 或 `--propose --stdin` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 触发本机存量多会话补扫，按当前项目（或 `--project` 指定项目）优先输出当前基线、静态诊断与最多 20 个未消费 `SessionDigest[]`；`--propose --stdin` 校验 Agent 提交的结构化整理结果并拼装真实会话 `source`，生成本地 `ready` 提案；不写主库 |
 | `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型，成功后将关联 `SessionDigest` 标记为已消费）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |

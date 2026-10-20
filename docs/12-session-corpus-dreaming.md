@@ -6,7 +6,7 @@
 
 - 职责正交切分：已实现的 [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)（`--runner <provider>` 与 `--worker`）保持不动，仅负责远端对已有记忆库执行去重、到期清理与索引整理；跨原始会话日志提炼未记录新记忆则**仅在本地当前活跃 Agent 会话内由用户显式发起并完成**，完全放弃将本地会话语料上传至远端分支或 GitHub Actions 处理。
 - 零额外模型凭据、零子进程派生、数据不出本机：由用户正在使用的当前 Agent 会话自身充当整理推理大脑，直接通过 CLI（`memctl dream --prepare` / `memctl dream --propose --stdin`）或 MCP 工具（`memory_dream_prepare` / `memory_dream_propose`）与本机 `memctl` 交互；既不要求本地配置 API Key，也不由 `memctl` 反向派生无头 Agent CLI 子进程。
-- 本地确定性会话蒸馏（`internal/corpus`）：`sync` 与 `end` 在本地执行 0 次模型调用的确定性提取（解析各宿主会话日志、剥离工具大输出、正则脱敏凭据与过滤可疑提示词注入回合），将单会话上限 `16 KiB` 的结构化摘要 `SessionDigest` 缓存在 `$STATE/repos/<repoId>/cache/corpus/`，防止当前 Agent 直接读取几十 MB 的原始 `.jsonl` 撑爆上下文窗口。
+- 本地确定性会话蒸馏与存量多会话补扫（`internal/corpus`）：一方面，`sync` 与 `end` 在日常会话中执行 0 次模型调用的确定性提取（解析各宿主会话日志、剥离工具大输出、正则脱敏凭据与过滤可疑提示词注入回合），将单会话上限 `16 KiB` 的结构化摘要 `SessionDigest` 缓存在 `$STATE/repos/<repoId>/cache/corpus/`；另一方面，`dream --prepare`（及 `memory_dream_prepare`）启动时自动对本机已知宿主的会话存储目录执行**存量历史会话补扫（Backfill Scan）**，将最近 14 天内尚未入池的多个会话补入缓存，并按**当前项目（`cwdBase`）优先**策略一次打包最多 `20` 个未消费会话（支持 `--project <name>` 限定只处理指定项目下的多个会话，剩余未消费会话通过 `remainingUnconsumed` 指示继续分批处理）。
 - 强制真实来源绑定（Provenance Guard）与单步确定性守卫：当前 Agent 在提交整理提案时，针对新提炼记忆只输出候选事实文本 `fact` 与引用的输入会话下标 `sessionIndices`，不得自行手写 `[source: ...]`；由本地 `memctl` 的 Go 代码校验下标合法性后确定性拼装 `- <fact> [source: <sourceTag>; added: <date>]`，并统一执行 30 天到期删除闸门（`DELETION_DEFERRED`）、受保护路径拦截、`MEMORY.md` 200 行限额与双向链接校验。
 - 保持确认前不改主库：本地 `--propose` / `memory_dream_propose` 校验通过后，将结果直接持久化为本地 `status: "ready"`、`runner: "local-agent"` 的标准 `DreamProposal`（绑定 `baseHead` 与 `patchHash`）。用户可在当前会话指示 Agent 执行 `memctl dream --apply`（或 `memory_dream_apply`），也可在 `memctl ui` 的「整理」视图审阅 Diff 后点击确认；仅当 `ApplyDream` 提交成功后，才将本次参与整理的 `SessionDigest` 标记为已消费（`consumedBy`）。
 
@@ -47,18 +47,21 @@ flowchart TB
 
 本地采集在 `memctl sync`、`memctl end`（含 `--stdin` Hook 路径以及 `memctl-dsh`、`memctl-pi` 的回合结束与会话卸载路径）以及 `dream --prepare` / `memory_dream_prepare` 中以非阻塞、尽力而为（best-effort）的方式执行。任何日志缺失、格式未知或读取超时均静默跳过，不阻塞宿主，也不影响 Git 同步。
 
-#### 1. 各宿主原始会话日志定位
+#### 1. 各宿主原始会话日志定位与存量目录补扫
 
-| 宿主（`--agent`） | 会话日志路径获取方式 | 提取源格式与关键字段 |
-| --- | --- | --- |
-| `claude-code`、`commandcode`、`grok` | Hook stdin JSON 原生携带 `"transcript_path"` 字段（由 `hookio.ReadInput` 解析），或显式传入 `--transcript <path>` | JSONL：提取用户文本消息、助手最终文本块，以及工具调用的名称、目标路径或命令名与退出状态 |
-| `codex` | Hook stdin JSON 原生携带 `"transcript_path"` 与 `"last_assistant_message"` 字段，或显式传入 `--transcript <path>` | JSON / JSONL：提取用户消息、工具调用摘要与 `last_assistant_message` |
-| `pi` | `memctl-pi` 在 `agent_settled` 与 `session_shutdown` 中通过 `ctx.sessionManager.getSessionFile()` 取得路径并以 `--transcript <path>` 传给 `memctl` | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 |
-| `dsh` | `memctl-dsh` 在 `turn/end` 与 `agent/disposed` 中定位当前 profile 下的会话文件并以 `--transcript <path>` 传入，不可得时跳过 | 会话记录：提取用户指令与每轮最终回复 |
-| `antigravity` | 优先读取 Hook stdin 的 `"transcript_path"`；缺失时按稳定 `sid`（`conversationId`）定位 `$HOME/.gemini/antigravity/brain/<sid>/.system_generated/logs/transcript.jsonl` | JSONL：提取 `type="USER_INPUT"` 与 `type="PLANNER_RESPONSE"` 的 `content`（跳过 `thinking` 与工具长输出） |
-| `opencode` | 显式传入 `--transcript <path>`，或按稳定 `sid` 读取 `$HOME/.local/share/opencode/storage/message/<sid>/` | JSON 消息文件：提取用户与助手文本 |
+`internal/corpus` 同时支持**单次实时采集**（由 Hook / 插件在 `sync`、`end` 时传入当前会话路径）与**存量多会话补扫**（由 `dream --prepare` / `memory_dream_prepare` 扫描本机宿主历史目录，发现最近 `14` 天内修改、且尚未在 `cache/corpus/` 生成摘要或原文件 `mtime` 更新的多个历史会话并补齐蒸馏）：
 
-设置环境变量 `AGENT_MEMORY_CORPUS=0`（或 `false`、`off`、`no`）时，本地完全禁用会话摘要采集，不读写 `$STATE/repos/<repoId>/cache/corpus/`。
+| 宿主（`--agent`） | 实时采集路径获取（`sync`/`end`） | 存量多会话补扫目录（`dream --prepare`） | 提取源格式与关键字段 |
+| --- | --- | --- | --- |
+| `claude-code` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | `$HOME/.claude/projects/*/*.jsonl`（由日志内 `cwd` 字段提取 `cwdBase`、文件名提取 `sid`） | JSONL：提取用户文本消息、助手最终文本块，以及工具调用的名称、目标路径或命令名与退出状态 |
+| `codex` | Hook stdin `"transcript_path"` 与 `"last_assistant_message"` 或 `--transcript <path>` | `$HOME/.codex/sessions/**/*.jsonl`（由首条 `session_meta` 提取 `id` 与 `cwd`） | JSON / JSONL：提取用户消息、工具调用摘要与 `last_assistant_message` |
+| `pi` | `memctl-pi` 通过 `ctx.sessionManager.getSessionFile()` 取得路径并传 `--transcript <path>` | `$HOME/.pi/agent/sessions/**/*.jsonl`（由会话 header 提取 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 |
+| `dsh` | `memctl-dsh` 定位当前 profile 下的会话文件并传 `--transcript <path>` | `$HOME/.dsh/profiles/*/sessions/**`（存在可读会话文件时扫描，否则跳过） | 会话记录：提取用户指令与每轮最终回复 |
+| `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位 | `$HOME/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl`（目录名为 `sid`） | JSONL：提取 `type="USER_INPUT"` 与 `type="PLANNER_RESPONSE"` 的 `content`（跳过 `thinking` 与工具长输出） |
+| `opencode` | `--transcript <path>` 或按 `sid` 读取 | `$HOME/.local/share/opencode/storage/message/*/` | JSON 消息文件：提取用户与助手文本 |
+| `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 各自用户态会话日志目录（存在时扫描最近 14 天 `.jsonl`） | JSONL：提取用户文本、助手文本与工具签名 |
+
+存量补扫每次最多解析 `MaxBackfillFilesPerRun = 50` 个未缓存会话文件（按文件 `mtime` 倒序），耗时预算不超过 `2 s`，确保首次在已有项目运行 `dream --prepare` 时即可涵盖该项目下已有的多个历史会话。设置环境变量 `AGENT_MEMORY_CORPUS=0`（或 `false`、`off`、`no`）时，本地完全禁用实时采集与存量补扫，不读写 `$STATE/repos/<repoId>/cache/corpus/`。
 
 #### 2. `SessionDigest` 数据结构与限额
 
@@ -117,11 +120,16 @@ flowchart TB
 
 用户在当前 Agent 会话中显式发起整理时，Agent 按配套 Skill（`skills/memctl/SKILL.md`）指引执行两步结构化交互；受沙箱限制的宿主（如 `workspace-write` 下的 Codex 与 DSH）直接调用同名 MCP 工具，无需放宽工作区沙箱。
 
-#### 步骤 1：准备整理上下文（`memctl dream --prepare --json` / MCP `memory_dream_prepare`）
+#### 步骤 1：准备整理上下文（`memctl dream --prepare [--project NAME] --json` / MCP `memory_dream_prepare`）
 
-1. **刷新当前会话摘要**：若当前调用带有稳定 `agent` 与 `sid`（或能按 `sid` 定位当前会话日志），先尽力触发一次当前会话的增量蒸馏，确保当前会话的最新对话已写入 `cache/corpus/`。
+1. **刷新当前会话与存量多会话补扫**：若当前调用带有稳定 `agent` 与 `sid`，先增量刷新当前会话摘要；随后对本机已知宿主的会话目录执行存量补扫（§2.2.1），将最近 14 天内尚未入池的多个历史会话蒸馏写入 `cache/corpus/`。
 2. **锁定基线与静态扫描**：在仓库锁内确认工作树干净、无未完成事务或冲突，记录 `baseHead` 与 `baseRevision`；运行与 `doctor` 相同的静态扫描（识别膨胀索引、孤立文件、断链、重复候选，以及区分「仍在 30 天隐藏期」与「隐藏期已满可删除」的到期 `until` 条目）。
-3. **读取未消费会话摘要**：扫描 `$STATE/repos/<repoId>/cache/corpus/`，筛选 `consumedBy == ""` 且 `turns` 非空的 `SessionDigest`，按 `updatedAt` 倒序取最多 `MaxCorpusSessions = 20` 个（累计上限 `MaxCorpusBytes = 256 KiB`），并按顺序赋予整数下标 `sessionIndex: 0..N-1`。
+3. **当前项目优先的多会话筛选与分批**：
+   - 扫描 `$STATE/repos/<repoId>/cache/corpus/`，筛选 `consumedBy == ""` 且 `turns` 非空的全部未消费 `SessionDigest`。
+   - **项目过滤与优先级**：
+     - 若显式传入 `--project <cwdBase>`（或 MCP 参数 `project: "<cwdBase>"`），则仅保留 `digest.cwdBase == project` 的多个会话摘要；
+     - 若未显式指定 `project`，默认以当前工作目录的 basename 作为优先项目：排序时先排与当前 `cwdBase` 匹配的多个会话（按 `updatedAt` 倒序），有剩余配额时再排其他项目的未消费会话（按 `updatedAt` 倒序）。
+   - 单次最多取 `MaxCorpusSessions = 20` 个会话（累计上限 `MaxCorpusBytes = 256 KiB`），按顺序赋予整数下标 `sessionIndex: 0..N-1`；超出本次配额的其余未消费会话计入返回字段 `remainingUnconsumed`，供用户在当前提案 `apply` 后继续发起下一批整理。
 4. **返回 `DreamPrepareBundle`**：
 
 ```json
@@ -129,6 +137,8 @@ flowchart TB
   "today": "2026-10-20",
   "baseHead": "e4b8...",
   "baseRevision": "rev-...",
+  "projectFilter": "memctl",
+  "remainingUnconsumed": 5,
   "rules": {
     "entryMaxLines": 200,
     "deletionGraceDays": 30,
@@ -154,6 +164,15 @@ flowchart TB
       "agent": "claude-code",
       "sourceTag": "agent://MacBookPro.local/claude-code/6ae43eec-...",
       "date": "2026-10-20",
+      "cwdBase": "memctl",
+      "wroteMemoryInSession": false,
+      "turns": [ /* ... */ ]
+    },
+    {
+      "sessionIndex": 1,
+      "agent": "codex",
+      "sourceTag": "agent://MacBookPro.local/codex/0199f2a0-...",
+      "date": "2026-10-19",
       "cwdBase": "memctl",
       "wroteMemoryInSession": false,
       "turns": [ /* ... */ ]
@@ -271,14 +290,14 @@ flowchart TB
 
 | ID | 输入或故障场景 | 可验证结果 |
 | --- | --- | --- |
-| `D06` | Hook stdin 含 `transcript_path` / `last_assistant_message` 或传入 `--transcript`；日志含超长工具输出、各类 API Key/Token/密码、`<system-reminder>`、可疑提示词注入回合，或设置了 `AGENT_MEMORY_CORPUS=0` | 生成的 `SessionDigest` 大小 $\le 16\text{ KiB}$，所有凭据模式被替换为 `[REDACTED]`，系统块与可疑回合被剔除；`AGENT_MEMORY_CORPUS=0` 或日志文件缺失时不写缓存且命令退出码为 `0` |
-| `D07` | 存在未消费 `SessionDigest` 时通过 CLI（`dream --prepare` → `dream --propose --stdin` → `dream --apply`）或 MCP（`memory_dream_prepare` → `memory_dream_propose` → `memory_dream_apply`）执行本地交互式整理；以及传入越界 `sessionIndices`、伪造 `[source:]`、删除事件型条目或删除未满 30 天的过期条目 | 正常路径生成 `runner: "local-agent"`、`status: "ready"` 的 `DreamProposal`，新条目精确携带由 Go 代码拼装的真实会话 `source` 与 `added` 日期，不发起任何远端分支推送；`apply` 成功后提交主分支并将摘要标记 `consumedBy`；越界下标、伪造 `source`、删除事件型条目或触发 `DELETION_DEFERRED` 时被本地守卫拒绝且不生成提案 |
+| `D06` | Hook stdin 含 `transcript_path` / `last_assistant_message`、传入 `--transcript`，或 `dream --prepare` 扫描存量宿主历史目录；日志含超长工具输出、各类 API Key/Token/密码、`<system-reminder>`、可疑提示词注入回合，或设置了 `AGENT_MEMORY_CORPUS=0` | 实时采集与存量补扫生成的每个 `SessionDigest` 大小均 $\le 16\text{ KiB}$，所有凭据模式被替换为 `[REDACTED]`，系统块与可疑回合被剔除；`AGENT_MEMORY_CORPUS=0` 或日志文件缺失时不写缓存且命令退出码为 `0` |
+| `D07` | 存在同一项目或跨项目的多个未消费 `SessionDigest` 时，通过 CLI（`dream --prepare [--project NAME]` → `dream --propose --stdin` → `dream --apply`）或 MCP（`memory_dream_prepare` → `memory_dream_propose` → `memory_dream_apply`）执行本地交互式整理；含跨多会话引用 `sessionIndices: [0, 1]`、超出 20 个会话返回 `remainingUnconsumed`、传入越界 `sessionIndices`、伪造 `[source:]`、删除事件型条目或删除未满 30 天的过期条目 | `--prepare` 默认优先返回当前 `cwdBase` 项目的多个会话（指定 `project` 时仅返回该项目会话）；`--propose` 正常路径生成 `runner: "local-agent"`、`status: "ready"` 的 `DreamProposal`，多会话提炼的新条目精确携带全部引用会话的 `source` 与最新 `added` 日期；`apply` 成功后提交主分支并将本次涉及的多个会话摘要统一标记 `consumedBy`；越界下标、伪造 `source`、删除事件型条目或触发 `DELETION_DEFERRED` 时被本地守卫拒绝且不生成提案 |
 
 ### 6.2 阶段 H 实施顺序
 
 | 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
 | --- | --- | --- | --- |
 | `H-1`：方案与契约修订（`T098`，本轮） | `G-4` | 新增 `docs/12-session-corpus-dreaming.md`，同步修订 `docs/01`–`05`、`docs/09`、`docs/README.md` 与 `docs/STATUS.md`；不改动已实现的 GitHub Actions Dreaming 功能 | 文档链接、锚点与跨文档契约一致性检查 |
-| `H-2`：本地会话蒸馏器与 Hook/插件接线 | `H-1` | 实现 `internal/corpus`（各宿主 JSONL 解析、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存）；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；更新 `memctl-pi` 与 `memctl-dsh` 传递会话文件路径 | `D06` 单元测试与 CLI 集成测试 |
-| `H-3`：本地交互式 `prepare`/`propose` 与 MCP 工具 | `H-2` | `internal/dream` 实现 `PrepareLocal` 与 `ProposeLocal`（含 Provenance Guard 来源拼装、文件合入、30 天删除闸门与索引校验）及 `ApplyDream` 后的 `consumedBy` 更新；CLI 新增 `dream --prepare`、`dream --propose --stdin`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`、`memory_dream_apply` | `D07` 单元测试、MCP 协议测试与 CLI 集成测试 |
+| `H-2`：本地会话蒸馏器、存量多会话补扫与 Hook/插件接线 | `H-1` | 实现 `internal/corpus`（各宿主 JSONL 解析、存量历史目录补扫 `Backfill`、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存）；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；更新 `memctl-pi` 与 `memctl-dsh` 传递会话文件路径 | `D06` 单元测试与 CLI 集成测试 |
+| `H-3`：本地交互式 `prepare`/`propose`、多会话项目筛选与 MCP 工具 | `H-2` | `internal/dream` 实现 `PrepareLocal`（含存量补扫触发、当前项目 `cwdBase` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数）与 `ProposeLocal`（含多会话 Provenance Guard 来源拼装、文件合入、30 天删除闸门与索引校验）及 `ApplyDream` 后的批量 `consumedBy` 更新；CLI 新增 `dream --prepare [--project NAME]`、`dream --propose --stdin`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`、`memory_dream_apply` | `D07` 单元测试、MCP 协议测试与 CLI 集成测试 |
 | `H-4`：配套 Skill、CLI 帮助、UI 展示与端到端验收 | `H-3` | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图兼容展示 `local-agent` 提案及 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | `D06`、`D07`、`R06`、前端单测与真实宿主会话回归 |
