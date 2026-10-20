@@ -95,16 +95,17 @@ Agent（模型）
 
 ### 4.4 工具集
 
-当前已实现三个日常读写工具（`memory_read`、`memory_entries`、`memory_write`），并在阶段 H（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）新增三个本地交互式 Dreaming 工具（`memory_dream_prepare`、`memory_dream_propose`、`memory_dream_apply`），使受沙箱限制的宿主也能在当前会话内完成跨会话新记忆提炼与整理。
+当前已实现三个日常读写工具（`memory_read`、`memory_entries`、`memory_write`），并在阶段 H（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）新增两个本地交互式 Dreaming 工具（`memory_dream_prepare`、`memory_dream_propose`），使受沙箱限制的宿主也能在当前会话内完成跨会话新记忆提炼与提案生成。
 
 | 工具 | 用途 | 参数 | 成功返回 |
 | --- | --- | --- | --- |
 | `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` |
 | `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content` | `transaction`、`commit`、`revision`、`sync` |
-| `memory_dream_prepare` | 触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 20 个未消费 `SessionDigest[]`（阶段 H） | `project?`（可选项目目录名 `cwdBase`，限定只取该项目下的多个会话） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter?`、`remainingUnconsumed`、`rules`、`findings`、`files`、`sessions`） |
-| `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） |
-| `memory_dream_apply` | 按 `proposalId` 与 `patchHash` 确认应用已就绪提案并标记关联会话摘要已消费（阶段 H） | `proposalId`、`patchHash` | `MutationResult` |
+| `memory_dream_prepare` | 触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） |
+| `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并与 `files[]` 逐字比对后持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） |
+
+不提供 `memory_dream_apply`：MCP 场景下无法区分「用户已审阅」与「Agent 自行决定应用」，应用提案只保留 CLI `dream --apply` 与 Web UI「整理」视图两个用户入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#32-禁止项)）。
 
 `memory_entries` 是只读查询：`q` 对条目正文做大小写不敏感的子串匹配，`file` 限定单文件，`agent`/`device`/`from`/`to` 按来源与 `added` 日期收窄，`limit` 上限 200（默认 50）。它不建立索引、不做语义检索，返回结构与 `GET /api/v1/entries` 一致；Agent 据此定位文件后再调用 `memory_read`。
 
@@ -299,5 +300,5 @@ Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.
 
 - 修改宿主 MCP 配置文件；注册使用各宿主自有的 `mcp add` 命令。
 - 多仓库、多记忆域、检索或语义搜索工具。
-- 通过 MCP 触发远端 GitHub Actions Dreaming 或 UI 操作（本地当前 Agent 交互式整理由阶段 H 的 `memory_dream_*` 覆盖，见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）。
+- 通过 MCP 触发远端 GitHub Actions Dreaming、应用提案或 UI 操作（本地交互式整理只覆盖 `memory_dream_prepare` 与 `memory_dream_propose`，见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）。
 - 读取或校验宿主已注册的 MCP 条目；`install --status` 只探测二进制自身。

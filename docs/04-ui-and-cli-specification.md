@@ -26,7 +26,7 @@ memctl <subcommand> [flags] [-- command...]
 | `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、Dreaming 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
 | `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
-| `dream` | `--prepare [--project NAME] [--json]` 或 `--propose --stdin` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 触发本机存量多会话补扫，按当前项目（或 `--project` 指定项目）优先输出当前基线、静态诊断与最多 20 个未消费 `SessionDigest[]`；`--propose --stdin` 校验 Agent 提交的结构化整理结果并拼装真实会话 `source`，生成本地 `ready` 提案；不写主库 |
+| `dream` | `--prepare [--project KEY] [--max-bytes N] [--json]`、`--propose --stdin` 或 `--list` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 触发本机存量多会话补扫，按当前项目（或 `--project` 指定项目）优先输出当前基线、静态诊断与最多 12 个未消费 `SessionDigest[]`（默认累计 96 KiB）；`--propose --stdin` 校验 Agent 提交的结构化整理结果并拼装真实会话 `source`，生成本地 `ready` 提案；`--list` 按创建时间倒序列出已持久化提案；三者都不写主库，且都不要求已配置远端或工作流文件 |
 | `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型，成功后将关联 `SessionDigest` 标记为已消费）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
@@ -36,7 +36,7 @@ memctl <subcommand> [flags] [-- command...]
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
 
-同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的生成（`--runner`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）五种模式互斥；`install --status` 不写文件。
+同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，末尾附带 MCP 工具探测与各宿主注册命令，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 
@@ -124,7 +124,7 @@ pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `
 | `AGENT_MEMORY_DIR` | `~/memory`；规范化为绝对路径后绑定仓库 |
 | `AGENT_MEMORY_STATE` | `~/.agent-memory`；仅覆盖运行状态根，不改变仓库锁位置 |
 | `AGENT_MEMORY_BACKGROUND` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时受管写入与自动 Hook 不派生后台同步 |
-| `AGENT_MEMORY_CORPUS` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时 `sync`/`end` 不采集本地会话日志摘要，`dream` 也不读取会话摘要缓存 |
+| `AGENT_MEMORY_CORPUS` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时 `sync`/`end` 不采集本地会话日志摘要，`dream --prepare` 既不补扫也不读取会话摘要缓存；不影响远端整理路径 |
 | `AGENT_MEMORY_AGENT` | `unknown`；`--agent` 优先 |
 | `AGENT_MEMORY_DEVICE` | OS 主机名；探测失败使用 `unknown` 并提示 |
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
@@ -223,7 +223,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | 冲突解决 | 三方上下文、文本合并、删除选择、阶段进度与中止 | 「继续解决」可能进入下一提交；unsupported 类型提供人工入口，不称一键无损 |
 | 审计回滚 | Git 历史按本地日期分组的时间轴、Diff、来源标签、可疑内容提示；游标分页（每页 20 条，上一页/下一页与已访问页码），确认后 revert | 提交说明未记录来源时显示「未记录来源」；下一页只在服务端返回游标时可用；回滚失败展示恢复状态 |
 | 诊断 | 只读诊断按错误、告警、信息分组，展示问题位置与建议；对确定性修复执行 `doctor:fix` | 基线过期要求刷新后重试；无确定性修复规则时提示人工处理 |
-| 整理 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、本地交互式提案（`local-agent`）扫描会话数与新提炼条目数展示、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用远端生成并提示 `dream --init-workflow`；本地 Agent 生成的提案可直接审阅与应用；过期提案禁止应用 |
+| 整理 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、本地提案列表（`GET /api/v1/dream`，含 `local-agent` 的扫描会话数与新提炼条目数）、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用远端生成并提示 `dream --init-workflow`，但不禁用本地提案的列举、审阅与应用；本地 Agent 生成的提案可直接审阅与应用；过期提案禁止应用 |
 | 客户端接入 | `memctl mcp` 通道状态（可执行文件、版本、工具、不可用原因）与每个宿主的注册命令或手工步骤；adapter 探测、预览、安装 | MCP 不可用时说明二进制未响应 `mcp` 并保留注册动作供核对；配置成功与宿主验证分开；安装基线过期后重新探测预览 |
 
 图谱和条目编辑最终调用相同事务；「拆分」在同一事务内创建目标文件、从源文件移除该条目并保留其来源元数据，整体失败不能留下半套索引。拆分不自动修改入口文件：新文件在被条目链接指向之前按孤立文件显示。初版整理仅支持整份提案确认，符合流程文档中的应用边界。概览的指标卡片可键盘聚焦，按回车或空格触发跳转。
