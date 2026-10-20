@@ -176,3 +176,7 @@
 - npm：`memctl-dsh@0.5.2` 已 staged（stage id `70327715-23d9-4a75-8b00-744540290fa6`，shasum `f9b8e15f…`），`npm stage approve` 需要浏览器二次认证，尚未发布；registry `latest` 在审批前仍为 `0.5.1`。
 - 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；本机 `desktop` profile 的 `memctl-dsh` 未升级到 `0.5.2`，界面安装与真实会话未在 `0.5.2` 复验；`memctl-dsh@0.5.2` 的 npm 发布待二次认证审批。
 - 附带发现（非本轮引入）：`memctl-dsh` 的 registry 文档里存在 `0.0.0-stage` 版本（`Temporary package placeholder for staged publishing`，创建于 2026-10-17T17:31:43Z），是首次 staged 发布时 npm 生成的占位版本，与 `T065` 删除过的 `memctl-pi` 同名占位版本同类。它不影响 `latest` 解析，但会让 `versions` 列表多一条无意义记录；清理需要在审批通过后执行 `npm unpublish memctl-dsh@0.0.0-stage`，本轮不做。
+
+- npm 发布与桌面升级补充（2026-10-20）：用户完成二次认证，`memctl-dsh@0.5.2` 已发布（registry `latest` 为 `0.5.2`，shasum `f9b8e15f9f5724de4369e04e9a77d91caee5933b`，8 个运行时文件），`0.0.0-stage` 占位版本已清理，`versions` 只剩 `0.5.1`、`0.5.2`，staged 队列为空。本机 `desktop` profile 通过 `dsh plugin --profile desktop add memctl-dsh@0.5.2` 从 `0.5.1` 升级到 `0.5.2`；`dsh plugin --profile desktop why memctl-dsh` 输出 `memctl-dsh@0.5.2`，profile 的 `dependencies` 与 `bundles` 一致，`node_modules/memctl-dsh/package.json` 的 `version` 为 `0.5.2`，`install --status` 返回 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.2`。`pi` 保持 `plugin@0.5.2`，`mcp: serving … (v0.9.0)`。
+- 关于产物目录：`~/.agent-memory/dsh/` 只有 `memctl-dsh-0.5.2.tgz` 而没有 `0.5.1`，符合 `EnsureTarball` 只写当前版本的行为；`0.5.1` 期间走 npm 通道，未生成过该 tarball。
+- 仍未做：`0.5.2` 的真实 DSH 会话（注入、`turn/end` 同步、收尾）未重新验证，升级只确认了包版本与适配器状态；绝对目录界面安装仍属未验证项。
