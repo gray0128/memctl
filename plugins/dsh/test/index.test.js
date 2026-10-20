@@ -339,3 +339,90 @@ test('missing binary is reported once and does not register listeners', async ()
   assert.equal(second.listeners['session/event'], undefined)
   assert.equal(warnings.filter((message) => message.includes('binary not found')).length, 1)
 })
+
+test('the session transcript path is passed to sync and end when DSH exposes one', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'memctl-dsh-sessions-'))
+  mkdirSync(join(root, '--Users-me-memctl--', 'session-11'), { recursive: true })
+  writeFileSync(join(root, '--Users-me-memctl--', 'session-11', 'session.v4.jsonl.zstd'), '')
+  mkdirSync(join(root, '--Users-me-other--', 'session-12'), { recursive: true })
+  writeFileSync(join(root, '--Users-me-other--', 'session-12', 'session.v10.jsonl.zstd'), '')
+
+  const { spawn, calls } = scriptedSpawn([{ stdout: startPayload('memory') }, { code: 0 }, { code: 0 }])
+  const bridge = createBridge({
+    spawn,
+    env: { MEMCTL_DSH_BIN: '/fake/memctl', DSH_SESSIONS_DIR: root },
+    home: '/nonexistent-home',
+    logger: silentLogger,
+  })
+  const agent = fakeAgent('session-11')
+  await bridge.onCreated(agent, 'startup')
+  agent.listeners['session/event']({ id: 'session-11' }, { type: 'turn/end' })
+  await new Promise((resolve) => setImmediate(resolve))
+  bridge.onDisposed(agent)
+
+  const sync = calls.find((call) => call.args[0] === 'sync')
+  assert.ok(sync, 'sync was not called')
+  assert.deepEqual(sync.args, ['sync', '--agent', 'dsh', '--sid', 'session-11', '--transcript', join(root, '--Users-me-memctl--', 'session-11', 'session.v4.jsonl.zstd')])
+
+  const end = calls.find((call) => call.args[0] === 'end')
+  assert.ok(end, 'end was not called')
+  assert.deepEqual(end.args, ['end', '--agent', 'dsh', '--sid', 'session-11', '--transcript', join(root, '--Users-me-memctl--', 'session-11', 'session.v4.jsonl.zstd')])
+
+  // The highest record version wins, and an unknown session yields no
+  // transcript so the command stays exactly as before.
+  assert.equal(bridge.transcriptOf({ id: 'session-12' }, { root }), join(root, '--Users-me-other--', 'session-12', 'session.v10.jsonl.zstd'))
+  assert.equal(bridge.transcriptOf({ id: 'session-missing' }, { root }), null)
+  assert.equal(bridge.transcriptOf({ id: 'session-11' }, { root: '/nonexistent-sessions' }), null)
+})
+
+test('a session without a transcript calls sync without --transcript', async () => {
+  const { spawn, calls } = scriptedSpawn([{ stdout: startPayload('memory') }, { code: 0 }, { code: 0 }])
+  const bridge = createBridge({
+    spawn,
+    env: { MEMCTL_DSH_BIN: '/fake/memctl' },
+    home: '/nonexistent-home',
+    logger: silentLogger,
+  })
+  const agent = fakeAgent('session-13')
+  await bridge.onCreated(agent, 'startup')
+  agent.listeners['session/event']({ id: 'session-13' }, { type: 'turn/end' })
+  await new Promise((resolve) => setImmediate(resolve))
+  bridge.onDisposed(agent)
+
+  const sync = calls.find((call) => call.args[0] === 'sync')
+  assert.deepEqual(sync.args, ['sync', '--agent', 'dsh', '--sid', 'session-13'])
+})
+
+test('the transcript root defaults to the DSH home and is overridable', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'memctl-dsh-home-'))
+  mkdirSync(join(home, '.dsh', 'sessions', '--w--', 'session-14'), { recursive: true })
+  writeFileSync(join(home, '.dsh', 'sessions', '--w--', 'session-14', 'session.jsonl.zstd'), '')
+
+  const { spawn, calls } = scriptedSpawn([{ stdout: startPayload('memory') }, { code: 0 }])
+  const bridge = createBridge({
+    spawn,
+    env: { MEMCTL_DSH_BIN: '/fake/memctl' },
+    home,
+    logger: silentLogger,
+  })
+  assert.equal(
+    bridge.transcriptOf({ id: 'session-14' }),
+    join(home, '.dsh', 'sessions', '--w--', 'session-14', 'session.jsonl.zstd'),
+  )
+
+  // The newest record in a session directory wins: an unversioned file is the
+  // oldest form, so a v2 record next to it is preferred.
+  writeFileSync(join(home, '.dsh', 'sessions', '--w--', 'session-14', 'session.v2.jsonl.zstd'), '')
+  assert.equal(
+    bridge.transcriptOf({ id: 'session-14' }),
+    join(home, '.dsh', 'sessions', '--w--', 'session-14', 'session.v2.jsonl.zstd'),
+  )
+
+  const agent = fakeAgent('session-14')
+  await bridge.onCreated(agent, 'startup')
+  agent.listeners['session/event']({ id: 'session-14' }, { type: 'turn/end' })
+  await new Promise((resolve) => setImmediate(resolve))
+  const sync = calls.find((call) => call.args[0] === 'sync')
+  assert.ok(sync, 'sync was not called')
+  assert.deepEqual(sync.args.slice(-2), ['--transcript', join(home, '.dsh', 'sessions', '--w--', 'session-14', 'session.v2.jsonl.zstd')])
+})

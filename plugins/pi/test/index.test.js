@@ -47,12 +47,13 @@ function startPayload(text) {
   return JSON.stringify({ hookSpecificOutput: { additionalContext: text } })
 }
 
-function fakeCtx(id, { cwd = '/work', idle = true, pending = false } = {}) {
+function fakeCtx(id, { cwd = '/work', idle = true, pending = false, sessionFile } = {}) {
   return {
     cwd,
     sessionManager: {
       getSessionId: () => id,
       getCwd: () => cwd,
+      ...(sessionFile === undefined ? {} : { getSessionFile: () => sessionFile }),
     },
     isIdle: () => idle,
     hasPendingMessages: () => pending,
@@ -333,4 +334,38 @@ test('MEMCTL_PI_BIN and the home binary are resolved before PATH', () => {
 
   const fromEnv = createBridge({ env: { MEMCTL_PI_BIN: '/custom/memctl' }, home, logger: silentLogger })
   assert.equal(fromEnv.resolveBinary(), '/custom/memctl')
+})
+
+test('the pi session file is passed to sync and end when the host exposes one', async () => {
+  const sessionFile = '/work/.pi/sessions/2026-10-20T01-00-00_abc.jsonl'
+  const { bridge, calls } = bridgeWith(
+    [{ stdout: startPayload('memory') }, { code: 0 }, { code: 0 }],
+  )
+  const ctx = fakeCtx('sid-transcript', { sessionFile })
+  bridge.onSessionStart({ reason: 'startup' }, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+  bridge.onAgentSettled({}, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+  bridge.onSessionShutdown({ reason: 'quit' }, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const sync = calls.find((call) => call.args[0] === 'sync')
+  assert.ok(sync, 'sync was not called')
+  assert.deepEqual(sync.args, ['sync', '--agent', 'pi', '--sid', 'sid-transcript', '--transcript', sessionFile])
+
+  const end = calls.find((call) => call.args[0] === 'end')
+  assert.ok(end, 'end was not called')
+  assert.deepEqual(end.args, ['end', '--agent', 'pi', '--sid', 'sid-transcript', '--transcript', sessionFile])
+})
+
+test('a pi session without getSessionFile calls sync without --transcript', async () => {
+  const { bridge, calls } = bridgeWith([{ stdout: startPayload('memory') }, { code: 0 }])
+  const ctx = fakeCtx('sid-plain')
+  bridge.onSessionStart({ reason: 'startup' }, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+  bridge.onAgentSettled({}, ctx)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const sync = calls.find((call) => call.args[0] === 'sync')
+  assert.deepEqual(sync.args, ['sync', '--agent', 'pi', '--sid', 'sid-plain'])
 })

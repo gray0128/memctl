@@ -31,6 +31,19 @@ const FALLBACK_BINARIES = ['/opt/homebrew/bin/memctl', '/usr/local/bin/memctl']
  * Build the lifecycle bridge. Exported for unit tests; the plugin entry point
  * below wires it to a pi ExtensionAPI.
  */
+/**
+ * Build the `sync`/`end` argv for one session. The transcript path is passed
+ * only when pi exposes one, so a pi version without `getSessionFile()` behaves
+ * exactly as before and memctl skips local distillation.
+ */
+export function syncArgs(state, command = 'sync') {
+  const args = [command, '--agent', 'pi', '--sid', state.id]
+  if (typeof state.transcript === 'string' && state.transcript !== '') {
+    args.push('--transcript', state.transcript)
+  }
+  return args
+}
+
 export function createBridge(options = {}) {
   const {
     spawn: spawnImpl = spawn,
@@ -102,6 +115,16 @@ export function createBridge(options = {}) {
     }
   }
 
+  function sessionTranscript(ctx) {
+    try {
+      const file = ctx?.sessionManager?.getSessionFile?.()
+      if (typeof file === 'string' && file !== '') return file
+    } catch (error) {
+      warn('sessionManager.getSessionFile() failed', error)
+    }
+    return null
+  }
+
   function sessionCwd(ctx) {
     try {
       const cwd = ctx?.sessionManager?.getCwd?.()
@@ -132,6 +155,10 @@ export function createBridge(options = {}) {
       const state = {
         id,
         cwd: sessionCwd(ctx),
+        // The session's own JSONL record, distilled by memctl into a local
+        // digest. pi does not always expose it, so a missing path just means
+        // no distillation for this session.
+        transcript: sessionTranscript(ctx),
         bin,
         // null: not loaded yet; '': loaded and empty; string: context body.
         context,
@@ -274,7 +301,7 @@ export function createBridge(options = {}) {
     }
     state.bin = bin
     state.syncRunning = true
-    runCommand(bin, ['sync', '--agent', 'pi', '--sid', state.id], {
+    runCommand(bin, syncArgs(state), {
       timeoutMs: syncTimeoutMs,
       cwd: state.cwd,
       capture: false,
@@ -316,7 +343,7 @@ export function createBridge(options = {}) {
       // final sync and release a session that is about to continue.
       if (event?.reason === 'reload') return
       if (state.bin === null) return
-      await spawnEndProcess(state.bin, state.id, state.cwd, endJoinMs)
+      await spawnEndProcess(state.bin, state, endJoinMs)
     } catch (error) {
       warn('session_shutdown listener failed', error)
     }
@@ -341,7 +368,7 @@ export function createBridge(options = {}) {
     const pending = []
     for (const state of states.values()) {
       cleanupState(state)
-      if (state.bin !== null) pending.push(spawnEndProcess(state.bin, state.id, state.cwd, endJoinMs))
+      if (state.bin !== null) pending.push(spawnEndProcess(state.bin, state, endJoinMs))
     }
     states.clear()
     await Promise.all(pending)
@@ -471,7 +498,8 @@ export function createBridge(options = {}) {
     })
   }
 
-  function spawnEndProcess(bin, id, cwd, joinMs) {
+  function spawnEndProcess(bin, state, joinMs) {
+    const id = state.id
     return new Promise((resolve) => {
       let child
       const spawnOptions = {
@@ -480,9 +508,9 @@ export function createBridge(options = {}) {
         detached: true,
         stdio: 'ignore',
       }
-      if (typeof cwd === 'string' && cwd !== '') spawnOptions.cwd = cwd
+      if (typeof state.cwd === 'string' && state.cwd !== '') spawnOptions.cwd = state.cwd
       try {
-        child = spawnImpl(bin, ['end', '--agent', 'pi', '--sid', id], spawnOptions)
+        child = spawnImpl(bin, syncArgs(state, 'end'), spawnOptions)
       } catch (error) {
         warn(`session ${id} end failed`, error)
         resolve()

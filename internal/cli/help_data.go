@@ -211,6 +211,14 @@ var helpRootData = helpRoot{
 			),
 		},
 		{
+			Name:    "AGENT_MEMORY_CORPUS",
+			Default: "on",
+			Description: loc(
+				"Set to 0, false, off or no to disable local session distillation on sync/end and the corpus cache under the state root.",
+				"设为 `0`、`false`、`off` 或 `no` 可关闭 `sync`/`end` 的本地会话蒸馏，以及状态根下的会话摘要缓存。",
+			),
+		},
+		{
 			Name:    "AGENT_MEMORY_AGENT",
 			Default: "unknown",
 			Description: loc(
@@ -538,11 +546,12 @@ var helpCommandData = []helpCommand{
 			"memctl sync --wait",
 			"memctl sync --capture [--wait]",
 			"memctl sync --agy",
+			"memctl sync --agent NAME --sid ID --stdin --transcript PATH",
 		},
 		Summary: loc("Synchronize with the remote, or capture serial external edits.", "同步远端，或接收在 memctl 之外完成的编辑。"),
 		Description: loc(
-			"With no mode, starts a detached best-effort background sync and returns immediately with empty stdout; this is the automatic Hook path. `--wait` runs the remote sync in the foreground and reports the result. `--capture` commits edits made serially outside memctl, then starts background sync unless `--wait` is also set. Capture is refused while Git is in a merge, rebase, revert or cherry-pick state. `--agy` prints `{}` for Antigravity hooks.",
-			"不带模式时启动一个分离的后台同步并立即返回，stdout 为空；这是自动 Hook 路径，尽力执行，不等待结果。`--wait` 在前台执行远端同步并报告结果。`--capture` 提交在 memctl 之外串行完成的编辑，然后启动后台同步；同时提供 `--wait` 时改为前台同步。Git 处于 merge、rebase、revert 或 cherry-pick 状态时拒绝 `--capture`。`--agy` 为 Antigravity Hook 输出 `{}`。",
+			"With no mode, starts a detached best-effort background sync and returns immediately with empty stdout; this is the automatic Hook path. `--wait` runs the remote sync in the foreground and reports the result. `--capture` commits edits made serially outside memctl, then starts background sync unless `--wait` is also set. Capture is refused while Git is in a merge, rebase, revert or cherry-pick state. `--agy` prints `{}` for Antigravity hooks. Every mode also distills the current session log into the local corpus cache when a transcript path is available: `--transcript` wins, otherwise the Hook JSON field `transcript_path` is used. Distillation is deterministic, redacted, bounded and never changes the exit code; AGENT_MEMORY_CORPUS=0 disables it.",
+			"不带模式时启动一个分离的后台同步并立即返回，stdout 为空；这是自动 Hook 路径，尽力执行，不等待结果。`--wait` 在前台执行远端同步并报告结果。`--capture` 提交在 memctl 之外串行完成的编辑，然后启动后台同步；同时提供 `--wait` 时改为前台同步。Git 处于 merge、rebase、revert 或 cherry-pick 状态时拒绝 `--capture`。`--agy` 为 Antigravity Hook 输出 `{}`。所有模式在能取得会话日志路径时，还会把当前会话日志确定性蒸馏进本地会话摘要缓存：`--transcript` 优先，否则使用 Hook JSON 的 `transcript_path`。蒸馏是确定性、已脱敏、有界的，且从不改变退出码；`AGENT_MEMORY_CORPUS=0` 可关闭。",
 		),
 		Flags: []helpItem{
 			{Name: "--wait", Description: loc(
@@ -563,9 +572,14 @@ var helpCommandData = []helpCommand{
 			)},
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name for capture provenance.", "capture 溯源使用的 Agent 名称。")},
 			{Name: "--sid", Value: "ID", Description: loc("Session id for capture provenance.", "capture 溯源使用的会话 ID。")},
+			{Name: "--transcript", Value: "PATH", Description: loc(
+				"Absolute path of the host session log to distill into the local corpus cache. Takes precedence over the Hook JSON transcript_path.",
+				"要蒸馏进本地会话摘要缓存的宿主会话日志绝对路径。优先于 Hook JSON 中的 `transcript_path`。",
+			)},
 		},
 		Output: []localizedText{
 			loc("Default: empty stdout; failures are reported on stderr and still exit 0 for the Hook path.", "默认：stdout 为空；失败写入 stderr，Hook 路径仍返回 0。"),
+			loc("No digest is printed: the distilled session digest is written to $STATE/repos/<repoId>/cache/corpus/ and never leaves the machine except through the current agent's context in a later `dream --prepare`.", "不输出摘要：蒸馏结果写入 `$STATE/repos/<repoId>/cache/corpus/`，除后续 `dream --prepare` 经当前 Agent 上下文外不离开本机。"),
 			loc("--wait: branch, head, remote, local, reason, conflict and ahead/behind when available.", "`--wait`：输出 branch、head、remote、local、reason、conflict，以及可用时的 ahead/behind。"),
 			loc("--capture: transaction, commit, revision, changed and sync.", "`--capture`：输出 transaction、commit、revision、changed 和 sync。"),
 		},
@@ -586,7 +600,7 @@ var helpCommandData = []helpCommand{
 	},
 	{
 		Name:    "end",
-		Usage:   []string{"memctl end [--agent NAME] [--sid ID] [--stdin]"},
+		Usage:   []string{"memctl end [--agent NAME] [--sid ID] [--stdin] [--transcript PATH]"},
 		Summary: loc("Trigger session-end synchronization.", "触发会话结束同步。"),
 		Description: loc(
 			"SessionEnd Hook. Starts a detached background sync, consumes an optional bounded Hook payload and exits without waiting for Git or the network. It is idempotent, does not release the repository lock and does not mark a session as closed. Turn-level durability belongs to `sync`; `end` is for host session shutdown.",
@@ -594,8 +608,9 @@ var helpCommandData = []helpCommand{
 		),
 		Flags: []helpItem{
 			{Name: "--stdin", Description: loc("Consume at most 1 MiB of Hook JSON. Invalid JSON exits 2.", "消费最多 1 MiB 的 Hook JSON。JSON 无效时返回 2。")},
-			{Name: "--agent", Value: "NAME", Description: loc("Accepted for Hook symmetry; end does not write provenance.", "为保持 Hook 参数一致而接受；end 不写溯源信息。")},
-			{Name: "--sid", Value: "ID", Description: loc("Accepted for Hook symmetry; end does not write provenance.", "为保持 Hook 参数一致而接受；end 不写溯源信息。")},
+			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded in the session digest source tag and the session identity for capture provenance.", "会话摘要来源标签中的 Agent 名称，同时作为 capture 溯源的会话身份。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id recorded in the session digest source tag. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, then Hook JSON.", "会话摘要来源标签中的会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 和 Hook JSON。")},
+			{Name: "--transcript", Value: "PATH", Description: loc("Absolute path of the host session log to distill into the local corpus cache. Takes precedence over the Hook JSON transcript_path.", "要蒸馏进本地会话摘要缓存的宿主会话日志绝对路径。优先于 Hook JSON 中的 `transcript_path`。")},
 		},
 		Output: []localizedText{
 			loc("Empty stdout.", "stdout 为空。"),
@@ -609,6 +624,7 @@ var helpCommandData = []helpCommand{
 		},
 		Notes: []localizedText{
 			loc("A crash or SIGKILL can skip end. The next `start` or `sync` retries the sync.", "崩溃或 SIGKILL 可能跳过 end；下一次 `start` 或 `sync` 会重试同步。"),
+			loc("When a transcript path is available the session log is distilled into the local corpus cache before the detached sync starts. AGENT_MEMORY_CORPUS=0 disables it; a missing or unreadable log is skipped.", "能取得会话日志路径时，会先把会话日志蒸馏进本地会话摘要缓存，再启动分离同步。`AGENT_MEMORY_CORPUS=0` 可关闭；日志缺失或不可读时静默跳过。"),
 			loc("Do not use `end` to release locks or abort Git operations; it does neither.", "不要用 `end` 释放锁或中止 Git 操作；它两者都不做。"),
 		},
 		Related: []string{"sync", "start"},

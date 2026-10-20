@@ -343,6 +343,7 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	agy := false
 	agent := ""
 	sid := ""
+	transcript := ""
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -355,20 +356,25 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			useStdin = true
 		case arg == "--agy":
 			agy = true
-		case arg == "--agent" || arg == "--sid":
+		case arg == "--agent" || arg == "--sid" || arg == "--transcript":
 			if index+1 >= len(args) {
 				return usageError(stderr, "sync", arg+" requires a value")
 			}
 			index++
-			if arg == "--agent" {
+			switch arg {
+			case "--agent":
 				agent = args[index]
-			} else {
+			case "--sid":
 				sid = args[index]
+			default:
+				transcript = args[index]
 			}
 		case strings.HasPrefix(arg, "--agent="):
 			agent = strings.TrimPrefix(arg, "--agent=")
 		case strings.HasPrefix(arg, "--sid="):
 			sid = strings.TrimPrefix(arg, "--sid=")
+		case strings.HasPrefix(arg, "--transcript="):
+			transcript = strings.TrimPrefix(arg, "--transcript=")
 		default:
 			return usageError(stderr, "sync", fmt.Sprintf("unknown argument %q", arg))
 		}
@@ -382,6 +388,12 @@ func runSync(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return ExitUsageError
 		}
 		payload = input
+	}
+
+	// The local session digest is written before the remote path starts so a
+	// slow or failing synchronization never costs the turn's distillation.
+	if cfg, err := loadConfig(); err == nil {
+		collectCorpusFromHook(cfg, agent, sid, transcript, payload)
 	}
 
 	if !capture && !wait {
@@ -465,25 +477,50 @@ func runBackgroundSync(stdout, stderr io.Writer) int {
 // runEnd implements `end --agent NAME --sid ID --stdin`, the SessionEnd hook.
 func runEnd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	useStdin := false
+	agent := ""
+	sid := ""
+	transcript := ""
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "--stdin":
 			useStdin = true
-		case arg == "--agent" || arg == "--sid":
+		case arg == "--agent" || arg == "--sid" || arg == "--transcript":
 			if index+1 >= len(args) {
 				return usageError(stderr, "end", arg+" requires a value")
 			}
 			index++
-		case strings.HasPrefix(arg, "--agent=") || strings.HasPrefix(arg, "--sid="):
+			switch arg {
+			case "--agent":
+				agent = args[index]
+			case "--sid":
+				sid = args[index]
+			default:
+				transcript = args[index]
+			}
+		case strings.HasPrefix(arg, "--agent="):
+			agent = strings.TrimPrefix(arg, "--agent=")
+		case strings.HasPrefix(arg, "--sid="):
+			sid = strings.TrimPrefix(arg, "--sid=")
+		case strings.HasPrefix(arg, "--transcript="):
+			transcript = strings.TrimPrefix(arg, "--transcript=")
 		default:
 			return usageError(stderr, "end", fmt.Sprintf("unknown argument %q", arg))
 		}
 	}
+	var payload hookio.Input
 	if useStdin {
-		if code := drainHookStdin("end", stdin, stderr); code != ExitOK {
-			return code
+		input, err := hookio.ReadInput(stdin)
+		if err != nil {
+			// A malformed payload is a usage error, matching the other Hook
+			// commands. It still never blocks the host's shutdown path.
+			fmt.Fprintf(stderr, "memctl end: %v\n", err)
+			return ExitUsageError
 		}
+		payload = input
+	}
+	if cfg, err := loadConfig(); err == nil {
+		collectCorpusFromHook(cfg, agent, sid, transcript, payload)
 	}
 	return runBackgroundSync(stdout, stderr)
 }

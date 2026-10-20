@@ -33,10 +33,23 @@ const (
 // sessionIDKeys are the payload keys consumed in priority order.
 var sessionIDKeys = []string{"session_id", "sessionId", "sessionID", "conversationId"}
 
+// transcriptKeys are the payload keys that carry the host's session log path,
+// in priority order. They feed the local deterministic distillation of
+// docs/12-session-corpus-dreaming.md section 2.2.
+var transcriptKeys = []string{"transcript_path", "transcriptPath"}
+
+// assistantKeys are the payload keys that carry the host's final assistant
+// message for this turn.
+var assistantKeys = []string{"last_assistant_message", "lastAssistantMessage"}
+
 // Input is the session identity subset of a Hook payload.
 type Input struct {
 	// SID is the first non-empty session id found in the payload.
 	SID string
+	// TranscriptPath is the host's session log path, when the payload has one.
+	TranscriptPath string
+	// LastAssistantMessage is the host's final assistant text for this turn.
+	LastAssistantMessage string
 	// Present reports whether non-empty input was consumed.
 	Present bool
 }
@@ -63,6 +76,16 @@ func ReadInput(r io.Reader) (Input, error) {
 	}
 
 	in := Input{Present: true}
+	if value, err := firstStringField(fields, transcriptKeys); err != nil {
+		return Input{}, err
+	} else {
+		in.TranscriptPath = value
+	}
+	if value, err := firstStringField(fields, assistantKeys); err != nil {
+		return Input{}, err
+	} else {
+		in.LastAssistantMessage = value
+	}
 	for _, key := range sessionIDKeys {
 		raw, ok := fields[key]
 		if !ok || string(raw) == "null" {
@@ -80,6 +103,25 @@ func ReadInput(r io.Reader) (Input, error) {
 		break
 	}
 	return in, nil
+}
+
+// firstStringField returns the first non-empty string among the given keys. A
+// key of another type is a protocol error, matching the session id rule.
+func firstStringField(fields map[string]json.RawMessage, keys []string) (string, error) {
+	for _, key := range keys {
+		raw, ok := fields[key]
+		if !ok || string(raw) == "null" {
+			continue
+		}
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", memerr.New(memerr.InvalidArgument, "hook field %s must be a string", key)
+		}
+		if value != "" {
+			return value, nil
+		}
+	}
+	return "", nil
 }
 
 // ResolveSID returns the first non-empty session id among the explicit flag,

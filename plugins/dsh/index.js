@@ -9,7 +9,7 @@
  * docs/07-dsh-plugin.md.
  */
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import process from 'node:process'
@@ -103,6 +103,9 @@ export function createBridge(options = {}) {
         id,
         agent,
         bin,
+        // The host's own session record, when it exposes one. memctl distills
+        // it into a local digest on each sync; the plugin only passes the path.
+        transcript: null,
         context: '',
         contextDisposer: null,
         listenerDisposer: null,
@@ -118,6 +121,8 @@ export function createBridge(options = {}) {
         logMissingBinary()
         return
       }
+
+      state.transcript = resolveTranscript(agent, { env, home })
 
       // A compacted agent keeps its already-registered context snapshot. Do not
       // call start again; only the per-turn synchronization listener is new.
@@ -189,7 +194,7 @@ export function createBridge(options = {}) {
     }
     state.bin = bin
     state.syncRunning = true
-    runCommand(bin, ['sync', '--agent', 'dsh', '--sid', state.id], {
+    runCommand(bin, syncArgs(state), {
       timeoutMs: syncTimeoutMs,
       capture: false,
       onSpawn: (child) => {
@@ -258,7 +263,7 @@ export function createBridge(options = {}) {
     state.startChild = null
     killChild(state.syncChild)
     state.syncChild = null
-    if (spawnEnd && state.bin !== null) spawnEndProcess(state.bin, state.id)
+    if (spawnEnd && state.bin !== null) spawnEndProcess(state.bin, state)
   }
 
   function dispose() {
@@ -389,9 +394,10 @@ export function createBridge(options = {}) {
     })
   }
 
-  function spawnEndProcess(bin, id) {
+  function spawnEndProcess(bin, state) {
+    const id = state.id
     try {
-      const child = spawnImpl(bin, ['end', '--agent', 'dsh', '--sid', id], {
+      const child = spawnImpl(bin, syncArgs(state, 'end'), {
         shell: false,
         windowsHide: true,
         detached: true,
@@ -407,7 +413,14 @@ export function createBridge(options = {}) {
     }
   }
 
-  return { onCreated, onSessionEvent, onDisposed, dispose, resolveBinary }
+  return {
+    onCreated,
+    onSessionEvent,
+    onDisposed,
+    dispose,
+    resolveBinary,
+    transcriptOf: (agent, options = {}) => resolveTranscript(agent, { home, env, ...options }),
+  }
 }
 
 class Bridge {
@@ -442,6 +455,78 @@ export function apply(ctx) {
   ctx.effect(() => () => bridge.dispose())
   ctx.on('agent/created', ({ agent, source, signal }) => bridge.onCreated(agent, source, signal))
   ctx.on('agent/disposed', ({ agent }) => bridge.onDisposed(agent))
+}
+
+/**
+ * Build the `sync`/`end` argv for one session. The transcript path is passed
+ * only when the host exposes one, so a DSH version without it behaves exactly
+ * as before and `memctl` skips local distillation.
+ */
+export function syncArgs(state, command = 'sync') {
+  const args = [command, '--agent', 'dsh', '--sid', state.id]
+  if (typeof state.transcript === 'string' && state.transcript !== '') {
+    args.push('--transcript', state.transcript)
+  }
+  return args
+}
+
+/**
+ * Resolve the DSH session record that memctl should distill. The host keeps one
+ * directory per session under `<root>/<escaped cwd>/<session id>/`, and the
+ * record version is chosen by name so the highest available version wins.
+ * Everything here is best effort: a missing accessor or directory yields null
+ * and local distillation is simply skipped.
+ */
+export function resolveTranscript(agent, options = {}) {
+  const { readdir = readdirSync, exists = existsSync, root, env = process.env, home = homedir() } = options
+  try {
+    const sessionRoot = typeof root === 'string' ? root : sessionRootFor(env, home)
+    if (typeof sessionRoot !== 'string' || sessionRoot === '') return null
+    const directory = findSessionDirectory(sessionRoot, agent?.id, { readdir, exists })
+    if (directory === null) return null
+    const names = readdir(directory)
+    const candidates = names
+      .map((name) => ({ name, version: transcriptVersion(name) }))
+      .filter((entry) => entry.version >= 0)
+      .sort((left, right) => right.version - left.version)
+    if (candidates.length === 0) return null
+    return join(directory, candidates[0].name)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * sessionRoot is the DSH session store: an explicit override wins, then the
+ * host's own home directory. The escaped working directory between the root and
+ * the session id is not predictable from here, which is why the lookup scans
+ * one level of it instead of recomputing the escaping.
+ */
+function sessionRootFor(env, home) {
+  const override = env?.DSH_SESSIONS_DIR
+  if (typeof override === 'string' && override !== '') return override
+  const dshHome = env?.DSH_HOME
+  if (typeof dshHome === 'string' && dshHome !== '') return join(dshHome, 'sessions')
+  if (typeof home !== 'string' || home === '') return null
+  return join(home, '.dsh', 'sessions')
+}
+
+/** Locate the per-session directory under any escaped working directory. */
+function findSessionDirectory(root, id, { readdir, exists }) {
+  if (typeof id !== 'string' || id === '') return null
+  for (const name of readdir(root)) {
+    const candidate = join(root, name, id)
+    if (exists(candidate)) return candidate
+  }
+  return null
+}
+
+/** version is the N of session.vN.jsonl.zstd, or -1 for another file name. */
+function transcriptVersion(name) {
+  if (typeof name !== 'string') return -1
+  const match = /^session(?:\.v(\d+))?\.jsonl\.zstd$/.exec(name)
+  if (match === null) return -1
+  return match[1] === undefined ? 0 : Number(match[1])
 }
 
 function isChildAgent(agent) {

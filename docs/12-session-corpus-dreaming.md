@@ -1,6 +1,6 @@
 # 12. 跨会话新记忆提炼：本地当前 Agent 交互式整理方案
 
-> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`），`H-2a`–`H-4` 代码尚未实现。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`）；`H-2a` 本地会话蒸馏器已实现并验收（2026-10-20，`T100`），`H-2b`–`H-4` 代码尚未实现。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
@@ -55,10 +55,10 @@ flowchart TB
 
 | 宿主（`--agent`） | 实时采集路径获取（`sync`/`end`） | 存量多会话补扫目录（`dream --prepare`） | 提取源格式与关键字段 | 格式核对状态 |
 | --- | --- | --- | --- | --- |
-| `claude-code` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | `$HOME/.claude/projects/*/*.jsonl`（项目目录名是 cwd 的路径转义，反向还原为 `cwdBase`；文件名即 `sid`） | JSONL：提取用户文本消息、助手最终文本块，以及工具调用的名称、目标路径或命令名与退出状态 | 已核对 |
+| `claude-code` | Hook stdin `"transcript_path"` 或 `--transcript <path>`（`H-2a` 已实现，未接宿主 Hook 样例） | `$HOME/.claude/projects/*/*.jsonl`（项目目录名是 cwd 的路径转义，反向还原为 `cwdBase`；文件名即 `sid`） | JSONL：提取用户文本消息、助手最终文本块，以及工具调用的名称、目标路径或命令名与退出状态 | 已核对 |
 | `codex` | Hook stdin `"transcript_path"` 与 `"last_assistant_message"` 或 `--transcript <path>` | `$HOME/.codex/sessions/**/*.jsonl`（首行 `type: "session_meta"` 的 `payload.id` 与 `payload.cwd`） | JSON / JSONL：提取用户消息、工具调用摘要与 `last_assistant_message` | 已核对 |
-| `pi` | `memctl-pi` 通过 `ctx.sessionManager` 取得会话文件路径并传 `--transcript <path>` | `$HOME/.pi/agent/sessions/**/*.jsonl`（首行 `type: "session"` 的 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 | 已核对 |
-| `dsh` | `memctl-dsh` 定位当前 profile 下的会话文件并传 `--transcript <path>` | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（同目录可能有 `session.v3.jsonl.zstd` 与未分片的 `session.jsonl.zstd`，取版本号最高者） | JSONL（zstd 压缩）：首行 `type: "session"` 的 `id` 与 `cwd`；对话从 `user/message`（`data.content[].text`）、`assistant/message`（`data.message.content[]` 中 `type: "text"`）、`tool/call`（`data.name` 与 `data.arguments`）与 `tool/result`（`data.message.isError`）提取；`type: "reasoning"` 内容块丢弃 | 已核对，**zstd 压缩** |
+| `pi` | `memctl-pi` 通过 `ctx.sessionManager.getSessionFile()` 取得会话文件路径并传 `--transcript <path>`；宿主未提供该方法时不传路径 | `$HOME/.pi/agent/sessions/**/*.jsonl`（首行 `type: "session"` 的 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 | 已核对 |
+| `dsh` | `memctl-dsh` 在会话根下定位 `session-<sid>/` 目录并取最高版本记录传给 `--transcript <path>`；会话根依次取 `DSH_SESSIONS_DIR`、`$DSH_HOME/sessions`、`~/.dsh/sessions`，都不可用时插件不传路径 | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（同目录可能有 `session.v3.jsonl.zstd` 与未分片的 `session.jsonl.zstd`，取版本号最高者） | JSONL（zstd 压缩）：首行 `type: "session"` 的 `id` 与 `cwd`；对话从 `user/message`（`data.content[].text`）、`assistant/message`（`data.message.content[]` 中 `type: "text"`）、`tool/call`（`data.name` 与 `data.arguments`）与 `tool/result`（`data.message.isError`）提取；`type: "reasoning"` 内容块丢弃 | 已核对，**zstd 压缩** |
 | `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位 | `$HOME/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl`（目录名为 `sid`） | JSONL：提取 `type="USER_INPUT"` 与 `type="PLANNER_RESPONSE"` 的 `content`（跳过工具输出；样本中 `thinking` 不在同层） | 已核对 |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
 | `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 各自用户态会话日志目录（存在时扫描最近 14 天 `.jsonl`） | JSONL：提取用户文本、助手文本与工具签名 | 未核对格式，探测失败静默跳过 |
@@ -148,6 +148,15 @@ flowchart TB
 3. **可疑指令回合过滤**：复用 `doctor` 的 `SUSPICIOUS_INSTRUCTION` 检测模式（如要求忽略系统规则、外发数据或修改安全配置）；命中可疑模式的单个回合直接丢弃，不进入 `turns`。
 
 脱敏是确定性的模式匹配，不能保证穷尽所有凭据形态。`prepare` 因此在返回摘要的同时返回 `redactionNotice`，提示当前 Agent 与用户：摘要中仍可能存在未被模式覆盖的敏感文本。
+
+#### 5. 按实测补充的采集规则
+
+以下四条在 `H-2a` 实现时按本机会话样本补充，不改变 §2.2.1 的字段契约：
+
+- **回合按用户消息切分**：一个回合从一个用户消息开始，到下一条用户消息或日志结束为止。连续的用户消息（粘贴的文件、真正的问题、宿主的补充说明）合并进同一回合，避免产生只有工具调用、`user` 为空的回合。
+- **宿主的注入消息不算用户发言**：`dsh` 的 `user/message` 带 `data.source.kind`，只有 `user` 是用户键入的内容；`agent-instructions`、`runtime-context`、`skill-catalog`、`time-context`、`user-approval` 等由宿主注入，直接跳过。`codex` 与 `pi` 的同名消息按内容前缀识别（`# AGENTS.md instructions`、`Current runtime context.`、以 snake_case 标签开头的宿主事件等）。
+- **没有打开的回合时不记录**：在任何用户消息之前出现的助手文本与工具调用属于宿主初始化，无法归属到某个回合，直接丢弃。
+- **截断标记落在限额之内**：`MaxTurnTextBytes` 与 `MaxToolTextBytes` 把 `…` 计入上限，截断后的字段不超过限值本身。若一份摘要的全部回合都带纠正信号且仍超过 `MaxSessionDigestBytes`，采集按失败处理并静默跳过该会话，不写出超过限额的文件。
 
 ### 2.3 本地当前 Agent 交互式整理协议（`prepare` → `propose` → `apply`）
 
