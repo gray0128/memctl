@@ -1,6 +1,6 @@
 {
   "name": "memctl-pi",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Loads memctl memory at pi session start and synchronizes it after each agent run.",
   "repository": {
     "type": "git",
