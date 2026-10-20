@@ -13,6 +13,7 @@
 | E：DSH 专用插件 | `memctl-dsh` Host 插件、内嵌 tarball/目录、原生与旧插件探测、发布产物 | 插件单元测试、包清单、隔离 profile 安装与适配状态测试通过；真实会话注入未验证时如实记录 |
 | F：pi 专用插件 | `memctl-pi` 扩展、本地包目录、原生与旧路径探测、npm/本地分发 | 插件单元测试、包清单、隔离 pi 安装与适配状态矩阵通过；真实会话注入未验证时如实记录 |
 | G：GitHub Actions Dreaming | 远端分支触发、多步结构化整理 worker、4 家内置模型提供商、`--init-workflow` | `.github` 路径保护、`dream/req` 与 `dream/res` 分支协议、Step Guard 校验、幂等初始化与真实 GitHub Actions 验收通过 |
+| H：跨会话新记忆提炼 | 本地会话确定性蒸馏与脱敏缓存、`dream/req` 临时语料提交、阶段 A5 跨会话提炼与来源绑定守卫、`--no-corpus` | `.memctl-dream-corpus.json` 保护、正则脱敏与可疑指令过滤、阶段 A5 `sessionIndices` 绑定校验及消费闭环验收通过 |
 
 这些阶段是实现与开放顺序，不删除原定功能。每个平台、宿主及插件版本独立记录验证结果；某一组合失败不以关闭保护机制换取「支持」。以下小节定义全项目的完整实施顺序、前置依赖、交付边界与验收映射；实际执行进度、任务拆分与验证证据统一在 [STATUS.md](./STATUS.md) 维护。`A-1` 等是阶段步骤，`F01` 等是验收场景，两者不混用。
 
@@ -92,6 +93,17 @@
 | G-2：`.github` 边界、Worker 与远端分支编排 | G-1 | `internal/vault` 与 `internal/dream` 保护 `.github`；实现 4 个提供商适配器、三阶段结构化整理 worker（`dream --worker`）、`dream/req` 与 `dream/res` 分支编排；删除 Seatbelt 沙箱与本地 CLI runner 代码 | D01–D05、P01 的 `.github` 边界场景 |
 | G-3：CLI `--init-workflow`、帮助与 Web UI 适配 | G-2 | 实现 `memctl dream --init-workflow` 与内嵌工作流模板，更新 CLI 帮助（中英与 JSON）、`server` 就绪探针与 `DreamPanel.jsx` 提供商选择器 | D04、R06、UI 构建与 HTTP 联调 |
 | G-4：真实 GitHub Actions 端到端验证 | G-3；配置好 Secret 的私有 GitHub 记忆仓库 | 在真实私有 GitHub 记忆仓库触发 Actions 运行，完成生成、拉取、Diff 审阅与 `apply` 全链路验证并归档证据 | D01–D05 真实远端与模型端点验收 |
+
+### 阶段 H 的实施顺序
+
+阶段 H 由 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md) 定义，在阶段 G 的远端整理管线基础上补齐上游 Dreaming「跨原始会话日志自动提炼未记录新记忆」的能力。
+
+| 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
+| --- | --- | --- | --- |
+| H-1：方案与契约修订 | G-4 | 新增 `docs/12-session-corpus-dreaming.md`，修订 `docs/01`–`05`、`docs/11`、`docs/README.md` 与 `docs/STATUS.md`，确立本地确定性蒸馏、`dream/req` 临时语料提交、阶段 A5 提炼与来源绑定守卫契约；由 `T098` 完成 | 文档链接、锚点与契约一致性检查 |
+| H-2：本地会话蒸馏器与 Hook/插件接线 | H-1 | 实现 `internal/corpus`（各宿主 JSONL 解析、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存）；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；更新 `memctl-pi` 与 `memctl-dsh` 传递会话文件路径 | D06 单元测试与 CLI 集成测试 |
+| H-3：`dream/req` 语料打包与 Worker 阶段 A5 | H-2 | `internal/dream` 将 `.memctl-dream-corpus.json` 纳入 `protectedPath`；实现 `git commit-tree` 临时语料提交与 `--no-corpus`（含 HTTP `noCorpus`）；`worker.go` 实现阶段 A5（`DreamExtractOutput` Schema、Provenance Step Guard、`NEW_SESSION_MEMORY` 汇入阶段 B）与父提交基线还原；`ApplyDream` 成功后更新 `consumedBy` | D07、D03 单元测试与本地受控 Git 远端 + 模拟模型端点集成测试 |
+| H-4：CLI 帮助、UI 摘要统计展示与端到端验收 | H-3 | 更新中英与 JSON 帮助（`--transcript`、`--no-corpus`、`AGENT_MEMORY_CORPUS`）；UI「整理」视图展示 `sessionsScanned` 与 `newMemoriesExtracted` 及 `noCorpus` 开关；完成合成与真实仓库端到端验收 | D06、D07、R06、前端单测与端到端回归 |
 
 ### 阶段步骤的子任务切分
 
@@ -179,6 +191,8 @@
 | D03 | 结果分支父提交不匹配 `baseHead`，或包含删除 `MEMORY.md`、修改 `.github/**`/`.git/**`、路径逃逸、符号链接、超限 | 本地范围与父提交检查拒绝该结果，提案标为 `failed`，不修改主库，远端临时分支被清理 |
 | D04 | 同一提案连续 apply、应用中断后重试、`--init-workflow` 幂等初始化 | apply 返回同一提交或恢复状态，不重复提交；`--init-workflow` 写入并提交工作流文件，已最新时不产生空提交 |
 | D05 | `dream --worker` 对接模拟模型端点：静态候选提取、多步分批、非法 JSON 自动纠正重试、API 失败空提交回传、事件型条目保护 | 正确发送静态诊断与批次文件；单次非法 JSON 触发 1 次纠正重试后成功；API 失败推送 `status: "failed"` 空提交且密钥脱敏；本地轮询立即感知失败 |
+| D06 | Hook stdin 含 `transcript_path` / `last_assistant_message` 或传入 `--transcript`；日志含超长工具输出、各类 API Key/Token/密码、`<system-reminder>`、可疑提示词注入回合，或设置了 `AGENT_MEMORY_CORPUS=0` | 生成的 `SessionDigest` 大小 $\le 16\text{ KiB}$，所有凭据模式被替换为 `[REDACTED]`，系统块与可疑回合被剔除；`AGENT_MEMORY_CORPUS=0` 或日志文件缺失时不写缓存且命令退出码为 `0` |
+| D07 | 存在未消费 `SessionDigest` 时运行 `dream`：构造 `dream/req` 临时提交 → `--worker` 执行阶段 A5 提炼并校验 `sessionIndices` → 汇入阶段 B/C 生成 `dream/res` → 本地校验并 `ApplyDream`；以及模型返回越界 `sessionIndices`、伪造 `[source:]`、残留 `.memctl-dream-corpus.json` 或传入 `--no-corpus` | 正常路径产出的新条目精确携带对应会话的 `source` 与 `added` 日期，`dream/res` 父提交仍等于原始 `baseHead` 且不含 `.memctl-dream-corpus.json`，`apply` 成功后摘要标记 `consumedBy`；越界下标或伪造 `source` 被阶段 A5 Step Guard 拦截纠正；结果树若残留 `.memctl-dream-corpus.json` 被本地 `D03` 拒绝；`--no-corpus` 不上传语料 |
 | I01 | 支持版本安装两次、用户已有同类 Hook | 无重复项，不覆盖非本工具配置 |
 | I02 | 配置预览后用户修改、安装中断、格式不支持 | 基线冲突或保留可恢复现场；不全文件强制重序列化 |
 | I03 | dsh 插件安装/升级/卸载；原生与旧插件共存 | 原生存在时不写 `hooks.json`；共存时 `needs_attention`；隔离 profile 安装幂等；无安装脚本 |

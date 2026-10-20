@@ -14,7 +14,7 @@ memctl <subcommand> [flags] [-- command...]
 | `start` | `--agent NAME --sid ID --stdin --json --agy` | 尝试同步并输出指引、入口与状态；不捕获外部编辑；`--agy` 输出 Antigravity 的 `injectSteps` envelope |
 | `context` | 同 start，另有 `--once` | 按会话缓存同步成功与注入状态；默认每轮注入，`--once` 只控制正文重复输出 |
 | `pull` | `--agent NAME --sid ID --stdin --once` | 与 start 使用同一同步流程，保持 stdout 为空；保留名字但实际可补推本地提交 |
-| `sync` / `end` | `--agent NAME --sid ID --stdin` | 自动路径只尽力触发后台同步，stdout 为空；`sync --agy` 输出 `{}` 供 Antigravity Hook 使用 |
+| `sync` / `end` | `--agent NAME --sid ID --stdin --transcript PATH` | 自动路径尽力触发后台同步，并顺带将当前会话日志确定性蒸馏与脱敏写入本地缓存（`AGENT_MEMORY_CORPUS=0` 时跳过，见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)），stdout 为空；`sync --agy` 输出 `{}` 供 Antigravity Hook 使用 |
 | `sync` | 另有 `--wait --capture` | `--wait` 等待同步结果；`--capture` 显式接收串行外部编辑；可组合，两者都不适用于低延迟 Hook |
 | `tag` | `--agent NAME --sid ID` | 输出 `agent://<device>/<agent>/<sid>`；身份不能唯一确定时失败 |
 | `wrap` | `--agent NAME -- <cmd...>` | 运行前同步，向子进程传入会话环境，结束后尽力同步，透传退出码和信号语义 |
@@ -25,7 +25,7 @@ memctl <subcommand> [flags] [-- command...]
 | `recover` | `--status` 或 `--rollback` | 查看或恢复本工具未完成事务；不接管外部 Git 操作 |
 | `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、Dreaming 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
-| `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
+| `dream` | `--runner deepseek\|minimax\|openai\|anthropic [--no-corpus]` | 选择模型提供商即确认将受管记忆文本及本地未消费的脱敏会话摘要（`--no-corpus` 时跳过会话摘要）在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
 | `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
@@ -123,6 +123,7 @@ pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `
 | `AGENT_MEMORY_DIR` | `~/memory`；规范化为绝对路径后绑定仓库 |
 | `AGENT_MEMORY_STATE` | `~/.agent-memory`；仅覆盖运行状态根，不改变仓库锁位置 |
 | `AGENT_MEMORY_BACKGROUND` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时受管写入与自动 Hook 不派生后台同步 |
+| `AGENT_MEMORY_CORPUS` | 默认开启；设为 `0`、`false`、`off` 或 `no` 时 `sync`/`end` 不采集本地会话日志摘要，`dream` 也不读取会话摘要缓存 |
 | `AGENT_MEMORY_AGENT` | `unknown`；`--agent` 优先 |
 | `AGENT_MEMORY_DEVICE` | OS 主机名；探测失败使用 `unknown` 并提示 |
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
@@ -137,7 +138,7 @@ URI 每一段分别转义；会话缓存键对完整元组做摘要，不用有�
 
 ## 3. Hook 输入输出与时限
 
-只在显式 `--stdin` 时读取 stdin，避免手工调用等待输入。Hook JSON 的输入限额见接口文档；超限立即结束读取并关闭输入，不继续无界缓存。日志只记录错误类型，不记录 payload。
+只在显式 `--stdin` 时读取 stdin，避免手工调用等待输入。Hook JSON 的输入限额见接口文档；超限立即结束读取并关闭输入，不继续无界缓存。`hookio.ReadInput` 除提取会话 ID 外，还可选提取字符串字段 `transcript_path` 与 `last_assistant_message` 供 `sync`/`end` 的本地确定性蒸馏使用（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)）。日志只记录错误类型，不记录 payload。
 
 `start --json` 示例：
 
@@ -221,7 +222,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | 冲突解决 | 三方上下文、文本合并、删除选择、阶段进度与中止 | 「继续解决」可能进入下一提交；unsupported 类型提供人工入口，不称一键无损 |
 | 审计回滚 | Git 历史按本地日期分组的时间轴、Diff、来源标签、可疑内容提示；游标分页（每页 20 条，上一页/下一页与已访问页码），确认后 revert | 提交说明未记录来源时显示「未记录来源」；下一页只在服务端返回游标时可用；回滚失败展示恢复状态 |
 | 诊断 | 只读诊断按错误、告警、信息分组，展示问题位置与建议；对确定性修复执行 `doctor:fix` | 基线过期要求刷新后重试；无确定性修复规则时提示人工处理 |
-| 整理 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用生成并提示 `dream --init-workflow`；过期提案禁止应用 |
+| 整理 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、是否纳入本地未消费会话摘要（`noCorpus` 开关）、远端提案生成、扫描会话数与新提炼条目数展示、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用生成并提示 `dream --init-workflow`；过期提案禁止应用 |
 | 客户端接入 | `memctl mcp` 通道状态（可执行文件、版本、工具、不可用原因）与每个宿主的注册命令或手工步骤；adapter 探测、预览、安装 | MCP 不可用时说明二进制未响应 `mcp` 并保留注册动作供核对；配置成功与宿主验证分开；安装基线过期后重新探测预览 |
 
 图谱和条目编辑最终调用相同事务；「拆分」在同一事务内创建目标文件、从源文件移除该条目并保留其来源元数据，整体失败不能留下半套索引。拆分不自动修改入口文件：新文件在被条目链接指向之前按孤立文件显示。初版整理仅支持整份提案确认，符合流程文档中的应用边界。概览的指标卡片可键盘聚焦，按回车或空格触发跳转。

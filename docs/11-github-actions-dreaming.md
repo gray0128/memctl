@@ -1,6 +1,6 @@
 # 11. 基于 GitHub Actions 的 Dreaming 远端整理方案
 
-> 状态：`G-1`–`G-4` 已实现（2026-10-19，`T082`、`T083`、`T086`）。真实 GitHub Actions 与 DeepSeek 端点已完成一次端到端运行（运行 39226384745）；带实际文件变更的提案应用与其余三家提供商尚未在真实环境验证。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`G-1`–`G-4` 已实现（2026-10-19，`T082`、`T083`、`T086`）。真实 GitHub Actions 与 DeepSeek 端点已完成一次端到端运行（运行 39226384745）；带实际文件变更的提案应用与其余三家提供商尚未在真实环境验证。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵；跨原始会话日志自动提炼未记录新记忆的扩展方案（阶段 A5 与 `.memctl-dream-corpus.json` 传输协议）见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 

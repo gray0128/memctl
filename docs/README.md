@@ -21,6 +21,7 @@
 | [09. MCP 记忆工具](./09-mcp-memory-tools.md) | 受沙箱宿主下的写入通道：`memctl mcp` 子命令、工具契约、宿主注册与验收 |
 | [10. 记忆更新与过期](./10-memory-lifecycle.md) | 记忆分类、更新与删除规则、时间线边界、调研结论与后续验收要点 |
 | [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) | 基于 GitHub Actions 的远端整理架构、分支协议、多步结构化调用、内置提供商与验收 |
+| [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md) | 本地会话确定性蒸馏与脱敏缓存、`dream/req` 临时提交传输、阶段 A5 跨会话提炼、来源绑定守卫与验收 |
 | [开发状态](./STATUS.md) | 当前事实、任务总表与最近一轮完成记录 |
 
 同一规则只在表中对应文档定义，其他文档通过链接引用。流程变更需同步调整契约和验收项。

@@ -74,7 +74,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `FileDiff` | `path`, `additions`, `deletions`, `patch`, `binary` |
 | `DiagnosticIssue` | `code`, `severity`, `filePath?`, `lineNumber?`, `message`, `suggestion`, `autoFixable` |
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
-| `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `warnings`, `createdAt`, `appliedCommit?`, `error?` |
+| `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `sessionsScanned?`, `newMemoriesExtracted?`, `warnings`, `createdAt`, `appliedCommit?`, `error?` |
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
 | `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
 
@@ -145,7 +145,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `POST /api/v1/audit/{hash}/revert` | `{baseRevision}` | `MutationResult` |
 | `GET /api/v1/doctor` | 无 | `DoctorReport` |
 | `POST /api/v1/doctor:fix` | `{issueCodes, baseRevision}` | `{report, result}`；仅应用确定性修复 |
-| `POST /api/v1/dream:preview` | `{runner: "deepseek" \| "minimax" \| "openai" \| "anthropic", baseRevision?}` | 202、`{proposalId}`；`baseRevision` 可选，省略时服务端在锁内固定当前基线，提供时按预条件校验；远端未配置、未确认私有或缺少工作流文件时同步返回错误 |
+| `POST /api/v1/dream:preview` | `{runner: "deepseek" \| "minimax" \| "openai" \| "anthropic", baseRevision?, noCorpus?}` | 202、`{proposalId}`；`baseRevision` 可选，省略时服务端在锁内固定当前基线，提供时按预条件校验；`noCorpus` 为 `true` 时不打包本地未消费会话摘要；远端未配置、未确认私有或缺少工作流文件时同步返回错误 |
 | `GET /api/v1/dream/{proposalId}` | 无 | `DreamProposal` |
 | `POST /api/v1/dream:apply` | `{proposalId, patchHash}` | `MutationResult` |
 | `GET /api/v1/adapters` | 无 | `{adapters: AdapterStatus[]}`；只探测与预览，不写文件 |
