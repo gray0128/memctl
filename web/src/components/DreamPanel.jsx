@@ -5,11 +5,16 @@ import {
   canApply,
   canGenerate,
   changeSummary,
+  isLocalProposal,
   isTerminalProposal,
   previewFailureDisablesBackend,
+  proposalDetail,
   proposalStatusLabel,
+  readyHint,
+  runnerLabel,
   summarizeProposal,
 } from '../dreams.js'
+import { formatTimestamp } from '../time.js'
 
 const TONES = {
   ok: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
@@ -37,6 +42,30 @@ export function DreamPanel({ api, refreshKey }) {
   const [error, setError] = useState(null)
   const [backendUnavailable, setBackendUnavailable] = useState(false)
   const [reload, setReload] = useState(0)
+  const [listed, setListed] = useState([])
+  const [listError, setListError] = useState(null)
+
+  // The proposal table lists every persisted proposal, including the
+  // `local-agent` ones written by `memctl dream --propose` in the current agent
+  // session. Those are reviewable without a remote or the Actions workflow, so
+  // the list must not depend on the generation readiness flag. See
+  // docs/04-ui-and-cli-specification.md section 4.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .dreamList(20)
+      .then((result) => {
+        if (cancelled) return
+        setListed((result && result.proposals) || [])
+        setListError(null)
+      })
+      .catch((requestError) => {
+        if (!cancelled) setListError(requestError)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, refreshKey, reload])
 
   useEffect(() => {
     if (!proposalId) return undefined
@@ -107,6 +136,10 @@ export function DreamPanel({ api, refreshKey }) {
   function query() {
     const value = lookup.trim()
     if (!value) return
+    select(value)
+  }
+
+  function select(value) {
     setProposalId(value)
     setProposal(null)
     setError(null)
@@ -143,6 +176,77 @@ export function DreamPanel({ api, refreshKey }) {
       <p className="text-xs text-slate-500 dark:text-slate-400">
         选择模型提供商并发起整理：受管记忆文本将在仓库的 GitHub Actions 中发送给该提供商的 API，整理结果回传到本地并重新校验；必须经操作者人工审查后方可应用。
       </p>
+
+      {/* Persisted proposals, including the local-agent ones */}
+      <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold tracking-tight text-slate-700 dark:text-slate-200">
+            已保存提案
+            <span className="ml-1.5 font-normal text-slate-400 dark:text-slate-500">
+              {listed.length > 0 ? `${listed.length} 条` : ''}
+            </span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setReload((current) => current + 1)}
+            className="rounded-md border border-slate-300/80 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            刷新列表
+          </button>
+        </div>
+
+        {listError && (
+          <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300">
+            读取提案列表失败：{listError.message}
+          </p>
+        )}
+
+        {!listError && listed.length === 0 && (
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            尚无提案。可在当前 Agent 会话运行 `memctl dream --prepare` 与 `memctl dream --propose` 生成本地提案，或用上方提供商发起远端整理。
+          </p>
+        )}
+
+        {listed.length > 0 && (
+          <ul className="divide-y divide-slate-200/70 dark:divide-slate-800">
+            {listed.map((item) => (
+              <li key={item.proposalId}>
+                <button
+                  type="button"
+                  onClick={() => select(item.proposalId)}
+                  className={`flex w-full flex-col gap-0.5 rounded-lg px-2 py-1.5 text-left hover:bg-white dark:hover:bg-slate-900 ${
+                    item.proposalId === proposalId ? 'bg-white dark:bg-slate-900' : ''
+                  }`}
+                >
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                        STATUS_CONFIG[item.status] || STATUS_CONFIG.failed
+                      }`}
+                    >
+                      {proposalStatusLabel(item.status)}
+                    </span>
+                    {isLocalProposal(item) && (
+                      <span className="inline-flex rounded-full border border-violet-200/80 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/50 dark:text-violet-300">
+                        {runnerLabel(item.runner)}
+                      </span>
+                    )}
+                    <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                      {item.proposalId}
+                    </span>
+                    <span className="ml-auto text-[10px] text-slate-400 dark:text-slate-500">
+                      {formatTimestamp(item.createdAt)}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {proposalDetail(item)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* Control Strip */}
       <div className="flex flex-wrap items-center gap-2">

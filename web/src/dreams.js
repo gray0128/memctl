@@ -101,3 +101,41 @@ export function summarizeProposal(proposal) {
   }
   return parts.join(' · ')
 }
+
+// RUNNER_LABELS names the backend that produced a proposal. The four remote
+// providers are the `--runner` values of the GitHub Actions path;
+// `local-agent` is the proposal produced by `memctl dream --propose` inside the
+// current agent session. See docs/12-session-corpus-dreaming.md section 2.3.
+export const RUNNER_LABELS = {
+  'local-agent': '本地 Agent',
+  deepseek: 'DeepSeek',
+  minimax: 'MiniMax',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+}
+
+export function runnerLabel(runner) {
+  return RUNNER_LABELS[runner] || runner || '未知'
+}
+
+// isLocalProposal reports whether the proposal came from the local current-agent
+// path. Only that path records how many session digests were scanned and how
+// many new memories survived the provenance guard, so the view shows those
+// counters for local proposals only.
+export function isLocalProposal(proposal) {
+  return Boolean(proposal && proposal.runner === 'local-agent')
+}
+
+// proposalDetail renders the extra line of one listed proposal: the backend,
+// the local corpus counters and, when the review ended without a commit, the
+// failure reason. It never invents a count the server did not send.
+export function proposalDetail(proposal) {
+  if (!proposal) return ''
+  const parts = [runnerLabel(proposal.runner)]
+  if (isLocalProposal(proposal)) {
+    parts.push(`扫描 ${proposal.sessionsScanned || 0} 个会话`)
+    parts.push(`提炼 ${proposal.newMemoriesExtracted || 0} 条`)
+  }
+  if (proposal.error) parts.push(proposal.error)
+  return parts.join(' · ')
+}

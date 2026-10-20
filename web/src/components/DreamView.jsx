@@ -11,7 +11,7 @@ export function DreamView({ api, refreshKey }) {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">记忆整理</h1>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            在记忆仓库的 GitHub Actions 中生成整理提案，人工审查后确认应用
+            两个后端的提案在此汇总：GitHub Actions 远端整理，或当前 Agent 会话内的本地交互式整理；人工审查后确认应用
           </p>
         </div>
         <span className="text-xs text-slate-500 dark:text-slate-400">

@@ -104,7 +104,7 @@
 | H-2a：本地会话蒸馏器（已核对宿主；`T100`，已完成） | H-1 | 引入 `github.com/klauspost/compress/zstd` 并在 `go.mod` 固定版本；实现 `internal/corpus` 框架与四个已核对格式（`claude-code`、`codex`、`pi`、`dsh` 含 zstd 解码与解压产出上限），回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存与已消费摘要保留规则；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；`memctl-pi` 与 `memctl-dsh` 传递会话文件路径 | D06 中四个已核对宿主的单元测试与 CLI 集成测试 |
 | H-2b：存量多会话补扫与其余宿主探测（`T101`，已完成） | H-2a | 实现按项目预过滤的补扫（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`）；接入 `antigravity`；`commandcode`、`grok`、`opencode` 只做「探测失败静默跳过」，并在方案文档记录格式核对状态 | D06 的超限日志与项目优先场景 |
 | H-3：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具（`T102`，已完成） | H-2a、H-2b | `internal/dream` 实现本地基线固定路径（不依赖远端就绪检查）、`PrepareLocal`（补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数）、`ProposeLocal`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门与链接校验）、`ApplyDream` 的幂等消费写回与 `Store.List`；CLI 新增 `dream --prepare`、`dream --propose --stdin`、`dream --list`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`；`internal/server` 新增 `GET /api/v1/dream` | D07、D08 单元测试、MCP 协议测试与 CLI 集成测试 |
-| H-4：配套 Skill、CLI 帮助、UI 展示与端到端验收 | H-3（已完成） | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图通过 `GET /api/v1/dream` 列出提案并展示 `local-agent` 的 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | D06、D07、D08、R06、前端单测与真实宿主会话回归 |
+| H-4：配套 Skill、CLI 帮助、UI 展示与端到端验收（`T103`，已完成） | H-3（已完成） | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图通过 `GET /api/v1/dream` 列出提案并展示 `local-agent` 的 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | D06、D07、D08、R06、前端单测与真实宿主会话回归 |
 
 ### 阶段步骤的子任务切分
 

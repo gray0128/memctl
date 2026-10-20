@@ -136,6 +136,13 @@ export function createApi(options = {}) {
     // proposal until it is ready. Applying quotes the patchHash of the
     // reviewed proposal so a changed proposal can never be applied under a
     // stale hash. See docs/03-workflows-and-dataflows.md section 6.
+    //
+    // dreamList backs the proposal table of the 整理 view. It lists every
+    // persisted proposal, including the `local-agent` ones produced by
+    // `memctl dream --propose`, so a proposal from the current agent session is
+    // reviewable without a remote or the Actions workflow. See
+    // docs/04-ui-and-cli-specification.md section 4.
+    dreamList: (limit, signal) => request(`/api/v1/dream${buildQuery({ limit })}`, { signal }),
     dreamPreview: (runner, baseRevision) =>
       writeJSON('/api/v1/dream:preview', 'POST', { runner, baseRevision: baseRevision || '' }),
     dreamProposal: (proposalId, signal) =>

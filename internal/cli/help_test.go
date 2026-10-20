@@ -235,6 +235,51 @@ func TestHelpPagesCoverEveryCommand(t *testing.T) {
 	}
 }
 
+// TestDreamHelpDocumentsLocalModesCoversH4 keeps the dream page aligned
+// with the local current-agent path of docs/12-session-corpus-dreaming.md
+// section 2.3: a mode missing from the usage, flags, exit codes or examples
+// would leave the agent guessing instead of reading the contract.
+func TestDreamHelpDocumentsLocalModesCoversH4(t *testing.T) {
+	t.Setenv("MEMCTL_LANG", "en")
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"help", "dream"}, strings.NewReader(""), &stdout, &stderr, "v-test"); code != ExitOK {
+		t.Fatalf("help dream exit code = %d (stderr=%q)", code, stderr.String())
+	}
+	page := stdout.String()
+	for _, want := range []string{
+		"memctl dream --prepare",
+		"memctl dream --propose --stdin",
+		"memctl dream --list",
+		"--project KEY",
+		"--max-bytes N",
+		"--limit N",
+		"INVALID_ARGUMENT",
+		"DELETION_DEFERRED",
+		"DreamProposeInput",
+		"memctl dream --propose --stdin < proposal.json",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("dream help lacks %q:\n%s", want, page)
+		}
+	}
+	// The page must not claim the local path needs a remote or a model key.
+	if strings.Contains(page, "All modes require a confirmed private remote") {
+		t.Fatal("dream help claims every mode needs a remote")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	t.Setenv("MEMCTL_LANG", "zh")
+	if code := Run([]string{"help", "dream"}, strings.NewReader(""), &stdout, &stderr, "v-test"); code != ExitOK {
+		t.Fatalf("Chinese help dream exit code = %d (stderr=%q)", code, stderr.String())
+	}
+	for _, want := range []string{"本地当前 Agent 会话路径", "会话下标", "逐字比对", "不写主仓库"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("Chinese dream help lacks %q", want)
+		}
+	}
+}
+
 func TestHelpTextIsLocalized(t *testing.T) {
 	t.Setenv("MEMCTL_LANG", "en")
 	var stdout, stderr bytes.Buffer

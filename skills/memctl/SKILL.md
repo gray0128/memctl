@@ -79,7 +79,61 @@ IO_FAILED: cannot open repository lock
 
 完成标准：写入发生在可用的 MCP 通道，或已向用户说明无法写入的原因。
 
-## 6. 边界
+## 6. 跨会话新记忆提炼（Dreaming）
+
+用户明确要求「整理记忆 / Dreaming / 提炼新记忆」时，先读 `memctl help dream`，再按下面的两步协议执行。这套流程只处理**还没写进记忆库**的结论；日常写入仍按第 3 节。
+
+| 步骤 | 命令 | 用途 |
+| --- | --- | --- |
+| 1 | `memctl dream --prepare --json`（沙箱宿主用 MCP `memory_dream_prepare`） | 刷新当前会话摘要、补扫本机会话目录，返回基线、诊断、记忆全文与最多 12 个未消费会话摘要 |
+| 2 | `memctl dream --propose --stdin`（沙箱宿主用 MCP `memory_dream_propose`） | 提交新事实与整份目标文件，生成本地 `ready` 提案 |
+| 3 | 用户确认后：`memctl dream --apply <proposalId> --patch-hash <patchHash>`，或用户在 Web UI「整理」视图确认 | 提交主库 |
+
+`prepare` 与 `propose` 都不写主库，也不需要远端或模型凭据：当前会话就是推理大脑。**你没有 apply 工具**——MCP 不提供 `memory_dream_apply`。展示提案摘要与 Diff 后让用户自己应用，不要代跑 `--apply`。
+
+### 6.1 提炼规则
+
+只保留三类信号：
+
+- **显式纠正与持久偏好**：用户纠正你的假设、命名、工具选择或输出风格（如「发布只推标签，别在本地跑 `make release`」）。
+- **多轮排障结论**：排查后才定位的非显然事实、模块映射或环境约束。
+- **架构决策与有时效约束**：选型理由、迁移结论，或带明确截止日期的临时约束（按所引用会话的 `date` 换算 `until`）。
+
+跨会话频次门控：用户明说的全局规则、显式纠正、已验证的根因，可以从单个会话提炼（`sessionIndices` 长度 ≥ 1）；只是从交互里看出的隐式倾向，必须在至少 2 个不同会话中重复出现才可提炼，`sessionIndices` 必须指向不同 `sessionId`。以下不提炼：单次任务的待办状态、`git log` 或代码搜索就能得出的事实、临时报错日志、与现有条目语义重复的内容。
+
+### 6.2 提交格式
+
+`files[]` 是唯一写入通道：每个新建或更新目标的完整内容都由你给出，`memctl` 不注入条目、不创建文件、不补索引链接。`newMemories[]` 只是来源绑定声明，每条的 `fact`：
+
+- 单行、非空，不带前导 `- `，**不得**自己写 `[source: ...]` 或 `[added: ...]`；写了会被拒绝。
+- `sessionIndices` 取 `prepare` 返回的整数下标，不得越界或自造 `agent://` 来源。
+- `kind` 取 `state`、`event` 或 `time_limited`；`time_limited` 必须给 `until: YYYY-MM-DD`，且不早于所引用会话的 `date`。
+
+同时，你必须在 `files[]` 的对应 `targetPath` 中**逐字写入 `memctl` 会拼出的条目行**：`- <fact> [source: <sourceTag>; added: <date>]`，多个来源按 `sessionIndices` 首次出现顺序各写一个 `[source: ...]`，`added` 取所引用会话中最新的 `date`，`time_limited` 再追加 `; until: <YYYY-MM-DD>`。`sourceTag` 只能照抄 `prepare` 返回的 `sessions[].sourceTag`。拼不出或对不上会得到 `INVALID_ARGUMENT`，需要补齐后重试。
+
+目标文件所在的目录必须已经存在：`memctl` 不创建父目录，`notes/` 这类目录缺失时 `apply` 返回 `NOT_FOUND`。先确认目录存在，再把文件放进去。
+
+新建文件时同时更新 `MEMORY.md` 索引，否则提案会被拒绝（错误码 `UNSUPPORTED`，消息列出新增的链接问题）。不要删除未满 30 天隐藏期的 `until` 条目（`DELETION_DEFERRED`），也不要触碰 `.git`、`.github` 等受保护路径。
+
+### 6.3 准备包与隐私
+
+`prepare` 返回的 `sessions[].turns` 是脱敏后的会话摘要；`redactionNotice` 提示正则脱敏仍可能漏掉敏感文本。这些内容会进入当前会话的模型上下文——这是本方案接受的传输边界，用户发起整理即视为接受。`remainingUnconsumed` 大于 0 表示还有下一批；本次提案应用后可以再发起一轮。
+
+`prepare` 成功但没有任何未消费会话时，`sessions` 为空、`remainingUnconsumed` 为 0。这时如实告诉用户本机没有可提炼的新会话，不要编造会话来源，也不要用第 3 节的手工写入伪装成整理结果。
+
+### 6.4 失败处置
+
+| 错误码 | 处置 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 按消息修正下标、`fact` 格式、`until` 或补齐 `files[]` 中缺的条目行，重试一次 |
+| `DELETION_DEFERRED` | 恢复被删的未到期条目，改为只追加 |
+| `UNSUPPORTED` | 消息列出提案新增的断链或孤立文件，补 `MEMORY.md` 索引或修链接后重试 |
+| `PROPOSAL_STALE` | 主库在生成后被改动，重新 `--prepare` 并重新生成 |
+| `BUSY` | 等待数秒重试一次；仍忙则报告，不删除锁文件 |
+
+提案应用后 `consumedBy` 才写回；提案被丢弃或变 `stale` 时这些会话仍会在下一轮出现。
+
+## 7. 边界
 
 - 提交由 `memctl` 完成；不运行 `git add`、`git commit`、`git push`。
 - 不直接编辑记忆文件。串行维护场景先确认没有其他写入者，再用 `memctl sync --capture` 接收外部修改。

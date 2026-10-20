@@ -5,9 +5,12 @@ import {
   canGenerate,
   changeActionLabel,
   changeSummary,
+  isLocalProposal,
   isTerminalProposal,
   previewFailureDisablesBackend,
+  proposalDetail,
   proposalStatusLabel,
+  runnerLabel,
   RUNNERS,
   summarizeProposal,
 } from './dreams.js'
@@ -71,6 +74,31 @@ describe('dream helpers', () => {
 
   it('quotes the reviewed id and hash', () => {
     expect(applyPayload(ready)).toEqual({ proposalId: 'dp-abc', patchHash: 'sha256:abc' })
+  })
+
+  it('labels the backend and keeps the local corpus counters', () => {
+    expect(runnerLabel('local-agent')).toBe('本地 Agent')
+    expect(runnerLabel('deepseek')).toBe('DeepSeek')
+    expect(runnerLabel('')).toBe('未知')
+    // Only a local-agent proposal carries the scanned and extracted counters.
+    const local = { ...ready, runner: 'local-agent', sessionsScanned: 7, newMemoriesExtracted: 2 }
+    expect(isLocalProposal(local)).toBe(true)
+    expect(proposalDetail(local)).toBe('本地 Agent · 扫描 7 个会话 · 提炼 2 条')
+    // A remote proposal never claims counters it does not have.
+    expect(isLocalProposal({ ...ready, runner: 'openai' })).toBe(false)
+    expect(proposalDetail({ ...ready, runner: 'openai' })).toBe('OpenAI')
+    expect(proposalDetail(null)).toBe('')
+  })
+
+  it('shows a missing local counter as zero instead of dropping the line', () => {
+    const local = { ...ready, runner: 'local-agent' }
+    expect(proposalDetail(local)).toBe('本地 Agent · 扫描 0 个会话 · 提炼 0 条')
+  })
+
+  it('appends the failure reason to the backend line', () => {
+    expect(proposalDetail({ ...ready, runner: 'local-agent', error: 'INVALID_ARGUMENT' })).toBe(
+      '本地 Agent · 扫描 0 个会话 · 提炼 0 条 · INVALID_ARGUMENT',
+    )
   })
 
   it('summarizes the ordered change list and applied commit', () => {

@@ -100,3 +100,35 @@
   - 未在真实宿主会话内跑完整的 `prepare` → `propose` → `apply`：CLI 与 MCP 链路均由临时仓库与合成摘要覆盖，真实 DSH/pi 会话的端到端验收属 `H-4`。
   - `dream --prepare` 的补扫规模取决于本机真实存储；本轮测试用隔离 `HOME`，未复测 `T101` 的真实存储耗时。
   - `memory_dream_prepare`/`memory_dream_propose` 的 `tools/list` 描述与 JSON Schema 已实现，但 `H-4` 才更新中英帮助与 Skill 文案，二者尚未互相对齐审查。
+
+## T102：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具（`H-3`）
+
+- 目标与范围：完成阶段 H 的 `H-3`。新增 `internal/dream/local.go`（本地基线固定路径、`PrepareLocal` 的补扫触发与 `cwdKey` 优先排序、`--project` 过滤与同名歧义、`MaxCorpusSessions = 12` / `MaxCorpusBytes = 96 KiB` 分批与 `remainingUnconsumed`）、`prepare_state.go`（`cache/dream/prepare.json` 会话快照，供 `propose` 解析下标）、`propose.go`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门、链接校验、`local-agent` 提案与 `corpusDigests`）与 `consume.go`（提交后按摘要哈希幂等的消费写回）；`Store.List` 按 `createdAt` 倒序分页列举；`internal/corpus` 新增 `LocateSession`；CLI 新增 `dream --prepare`/`--propose --stdin`/`--list`；MCP 新增 `memory_dream_prepare`/`memory_dream_propose`（不注册 apply）；`internal/server` 新增 `GET /api/v1/dream`。不改动 `--runner`/`--worker` 远端路径；`H-4` 的 Skill、帮助文案与 UI 展示不在本轮。
+- 对应契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)、[02. 模型与契约](../02-domain-models-and-contracts.md#4-rest-契约)、[09. MCP 记忆工具](../09-mcp-memory-tools.md#44-工具集)、[05. 验收与交付](../05-validation-and-delivery.md#阶段-h-的实施顺序)。
+- 验证时间与环境：2026-10-20，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 验证检查：`go test ./internal/...` 全部通过（`internal/dream` 新增 15 个用例（含 `TestProposeLocalRefusesProvenanceViolationsCoversD07` 的 9 个子用例），`internal/mcp` 新增 6 项协议用例）；`tests/integration` 144 项按 `scripts/test-shards.txt` 四片运行全部通过（约 50 秒/片），新增 `TestH3PrepareWorksWithoutRemoteCoversD07`、`TestH3PrepareProjectFilterAndAmbiguityCoversD07`、`TestH3ProposeApplyConsumesSessionsCoversD07`、`TestH3ProposeRejectsMissingAssembledLineCoversD07`、`TestH3ApplySkipsChangedDigestCoversD08` 与 `TestH3DreamListRouteCoversD07`，`TestB1RoutesCoversA01` 与 `TestM01MCPHandshake` 同步更新；`go vet ./...` 与 `git diff --check` 通过；文档相对链接与锚点检查通过。
+- 遗留与下一步：真实宿主会话内的 `prepare` → `propose` → `apply` 端到端验收、中英帮助与 Skill 文案、UI「整理」视图的本地提案列表属 `H-4`；`memory_dream_prepare` 的补扫耗时未用本机真实存储复测。
+
+
+## T103：配套 Skill、CLI 帮助与 UI 提案列表（`H-4`）
+
+- 目标与范围：完成阶段 H 的 `H-4`。`skills/memctl/SKILL.md` 新增 §6「跨会话新记忆提炼」（两步协议、三类提炼信号与跨会话频次门控、`files[]` 的逐字条目行写法、父目录必须已存在、空批次与失败码处置），原「边界」改为 §7；`internal/cli/help_data.go` 的 `dream` 页补齐 `--prepare`/`--propose`/`--list` 三个模式与全部选项，新增 `Input` 段、错误码与示例，中英与 `help --json` 同源输出；`web/src` 新增 `api.dreamList`、`dreams.js` 的后端标签与本地计数器助手、`DreamPanel` 的已保存提案列表，并修复该视图缺失的 `readyHint` 导入。不改变 `--runner`/`--worker` 远端路径与任何写入契约；`propose` 不新增父目录前置校验（属既有契约，登记为后续任务）。
+- 契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)、[CLI 与 UI](../04-ui-and-cli-specification.md#4-web-ui)、[验收与交付](../05-validation-and-delivery.md#阶段-h-的实施顺序)。
+- 验证日期与环境：2026-10-20，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 交付：
+  1. Skill §6.1 把可提炼信号收敛为显式纠正与持久偏好、多轮排障结论、架构决策与有时效约束三类，并写明频次门控（隐式偏好需 ≥2 个不同会话）与四类禁止提炼内容。
+  2. Skill §6.2 说明 `files[]` 是唯一写入通道、`newMemories[]` 只是来源绑定，条目行必须逐字写入；补充「父目录必须已存在，否则 `apply` 返回 `NOT_FOUND`」——该约束来自 [架构与模块](../01-architecture-and-modules.md#32-文件边界)，此前未写入 Skill，真实端到端验收时因此多耗一轮。
+  3. Skill §6.3、§6.4 说明准备包会进入当前会话上下文、空批次不得编造来源，以及 `INVALID_ARGUMENT`、`DELETION_DEFERRED`、`UNSUPPORTED`、`PROPOSAL_STALE`、`BUSY` 的处置。
+  4. `dream` 帮助页列出八个互斥模式，补齐 `--prepare`/`--propose`/`--stdin`/`--project`/`--max-bytes`/`--agent`/`--sid`/`--list`/`--limit`/`--json` 的语义与模式限制，新增 `DreamProposeInput` 输入段、`INVALID_ARGUMENT`/`DELETION_DEFERRED` 退出码说明与五条注意事项（本地路径不需要模型 Key、准备包会进入会话上下文、守卫自行拼装 `source` 等）。
+  5. `web/src/api.js` 新增 `dreamList`；`dreams.js` 新增 `RUNNER_LABELS`、`runnerLabel`、`isLocalProposal`、`proposalDetail`；`DreamPanel.jsx` 在控制条之上展示已保存提案（状态徽标、`local-agent` 后端徽标、创建时间、`proposalDetail`），点击行即载入该提案的 Diff 与确认按钮；`DreamView.jsx` 的说明改为「两个后端的提案在此汇总」。
+- 验证：
+  - `go test ./internal/...` 全部通过；`internal/cli` 新增 `TestDreamHelpDocumentsLocalModesCoversH4`（八个模式、选项、`Input`、错误码、示例与中英关键词）。
+  - `tests/integration` 144 项按 `scripts/test-shards.txt` 四片运行全部通过（约 53–56 秒/片）。
+  - `vitest run`：17 个文件、100 项通过；`dreams.test.js` 新增后端标签与本地计数器用例，`api.test.js` 新增 `dreamList` 的路径与 `limit` 查询用例；`vite build` 通过。
+  - `go vet ./...` 与 `git diff --check` 通过；文档相对链接与锚点检查通过。
+  - 隔离端到端（临时 `HOME`、本地仓库、无远端与工作流文件）：两段 `claude-code` JSONL 被补扫入池，凭据替换为 `[REDACTED]`；三条守卫分别拒绝手写 `[source:]`、越界 `sessionIndices` 与缺少条目行的 `files[]`；`--propose` 产出 `sessionsScanned: 2`、`newMemoriesExtracted: 2` 的 `local-agent` 提案；`--apply` 提交并写回两个摘要，重复 apply 幂等；再次 `--prepare` 返回 0 个会话。
+  - 真实 `~/memory` 端到端：`--prepare` 2.8 秒补扫五个宿主目录，12 个会话入批、`remainingUnconsumed: 13`；`--propose` 产出 `dp-61e33676…`（`sessionsScanned: 12`、`newMemoriesExtracted: 2`）；`--apply` 提交 `ef0eaac` 并同步 `origin/main`，三条摘要写回 `consumedBy`；`GET /api/v1/dream` 在 `--readonly` 下返回该提案与计数器。本轮为该仓库产生的两条新记忆已进入 `~/memory/notes/memctl-cli-path-rules.md` 与新建的 `notes/memctl-skill-install.md`。
+- 未验证与遗留：
+  - Skill 的自动触发未验证：两轮端到端验收都由本会话手工执行 `--prepare`/`--propose`/`--apply`，没有让另一个 Agent 在「整理记忆」指令下自主完成。
+  - `propose` 不校验目标父目录是否存在，提案在 `apply` 时才以 `NOT_FOUND` 失败；符合「不创建父目录」的既有契约，已登记为后续任务。
+  - 提案列表只显示前 20 条，未提供分页控件；超过 20 条时需用 `memctl dream --list` 查看。

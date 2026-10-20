@@ -36,7 +36,7 @@ memctl <subcommand> [flags] [-- command...]
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
 
-同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`--project`、`--max-bytes`、`--agent`、`--sid` 只用于 `--prepare` 或 `--propose`，其中 `--project` 只用于 `--prepare`，`--limit` 只用于 `--list`；`install --status` 不写文件。
+同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`--project`、`--max-bytes`、`--agent`、`--sid` 只用于 `--prepare` 或 `--propose`，其中 `--project`、`--agent`、`--sid` 只在 `--prepare` 生效（与 `--propose` 同用时被忽略），`--limit` 只用于 `--list`；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，末尾附带 MCP 工具探测与各宿主注册命令，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 
@@ -223,7 +223,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | 冲突解决 | 三方上下文、文本合并、删除选择、阶段进度与中止 | 「继续解决」可能进入下一提交；unsupported 类型提供人工入口，不称一键无损 |
 | 审计回滚 | Git 历史按本地日期分组的时间轴、Diff、来源标签、可疑内容提示；游标分页（每页 20 条，上一页/下一页与已访问页码），确认后 revert | 提交说明未记录来源时显示「未记录来源」；下一页只在服务端返回游标时可用；回滚失败展示恢复状态 |
 | 诊断 | 只读诊断按错误、告警、信息分组，展示问题位置与建议；对确定性修复执行 `doctor:fix` | 基线过期要求刷新后重试；无确定性修复规则时提示人工处理 |
-| 整理 | 模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、本地提案列表（`GET /api/v1/dream`，含 `local-agent` 的扫描会话数与新提炼条目数）、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用远端生成并提示 `dream --init-workflow`，但不禁用本地提案的列举、审阅与应用；本地 Agent 生成的提案可直接审阅与应用；过期提案禁止应用 |
+| 整理 | 已保存提案列表（`GET /api/v1/dream`，按创建时间倒序，标出后端与状态；`local-agent` 提案另显示扫描会话数与新提炼条目数）、模型提供商选择（`deepseek`/`minimax`/`openai`/`anthropic`）、远端提案生成、固定 Diff 确认、状态查询 | 未配置确认远端或缺少 `.github/workflows/memctl-dream.yml` 时禁用远端生成并提示 `dream --init-workflow`，但不禁用本地提案的列举、审阅与应用；本地 Agent 生成的提案可直接审阅与应用；过期提案禁止应用 |
 | 客户端接入 | `memctl mcp` 通道状态（可执行文件、版本、工具、不可用原因）与每个宿主的注册命令或手工步骤；adapter 探测、预览、安装 | MCP 不可用时说明二进制未响应 `mcp` 并保留注册动作供核对；配置成功与宿主验证分开；安装基线过期后重新探测预览 |
 
 图谱和条目编辑最终调用相同事务；「拆分」在同一事务内创建目标文件、从源文件移除该条目并保留其来源元数据，整体失败不能留下半套索引。拆分不自动修改入口文件：新文件在被条目链接指向之前按孤立文件显示。初版整理仅支持整份提案确认，符合流程文档中的应用边界。概览的指标卡片可键盘聚焦，按回车或空格触发跳转。
@@ -232,7 +232,7 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 
 来源链接只对明确允许的 `https` 等安全协议提供导航；`agent://` 默认提供复制，不任意唤起外部程序。来源 URI 在列表中截断显示，悬停时给出完整值。代码、Markdown 原始 HTML、Diff、文件名和来源字段按不可信文本渲染。可疑词扫描只显示线索，不把 `curl`、SQL 或 URL 本身当成恶意结论。
 
-整理与客户端接入是两个独立视图：整理只承载 Dreaming 提案，客户端接入承载 MCP 通道与 adapter 安装，审查提案时不必同时处理宿主配置。客户端接入的 MCP 面板只调用 `GET /api/v1/mcp`，展示探测到的可执行文件、版本、工具列表和每个宿主的注册动作；注册由宿主自己的命令完成，界面只提供复制，不运行 `mcp add`，也不写宿主配置。
+整理与客户端接入是两个独立视图：整理只承载 Dreaming 提案，客户端接入承载 MCP 通道与 adapter 安装，审查提案时不必同时处理宿主配置。整理视图的提案列表不依赖远端就绪状态：`local-agent` 提案在没有确认远端、没有 `.github/workflows/memctl-dream.yml` 时同样列出、审阅与应用；列表读取失败只影响列表本身，不改变生成能力的状态。客户端接入的 MCP 面板只调用 `GET /api/v1/mcp`，展示探测到的可执行文件、版本、工具列表和每个宿主的注册动作；注册由宿主自己的命令完成，界面只提供复制，不运行 `mcp add`，也不写宿主配置。
 
 客户端接入的 adapter 面板只调用 `GET /api/v1/adapters` 与 `POST /api/v1/adapters/{agent}/install`：先展示探测状态与安装计划，操作者确认后以预览中每个已存在目标文件的 `currentRevision` 作为 `expectedConfigRevisions` 提交安装；`REVISION_MISMATCH` 时保留预览并要求重新探测，未探测到宿主或需要人工补丁时不在界面上声称已支持。存在待恢复的中断安装时，预览标记 `pendingRecovery`，安装请求会先恢复现场再继续。只读模式下安装入口禁用，并依赖服务端 `READ_ONLY` 拦截。
 

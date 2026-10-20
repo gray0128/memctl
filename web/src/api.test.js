@@ -184,4 +184,19 @@ describe('createApi', () => {
     expect(calls[2].init.method).toBe('POST')
     expect(JSON.parse(calls[2].init.body)).toEqual({ proposalId: 'dp-1', patchHash: 'sha256:patch' })
   })
+
+  it('lists persisted Dreaming proposals with an optional limit', async () => {
+    const calls = []
+    const fetchImpl = async (path) => {
+      calls.push({ path })
+      return { ok: true, status: 200, json: async () => ({ proposals: [] }) }
+    }
+    const api = createApi({ token: 'secret', fetchImpl })
+
+    await api.dreamList()
+    expect(calls[0].path).toBe('/api/v1/dream')
+
+    await api.dreamList(20)
+    expect(calls[1].path).toBe('/api/v1/dream?limit=20')
+  })
 })
