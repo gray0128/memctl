@@ -237,6 +237,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/mcp", s.handleMCPStatus)
 	s.mux.HandleFunc("POST /api/v1/dream:preview", s.handleDreamPreview)
 	s.mux.HandleFunc("POST /api/v1/dream:apply", s.handleDreamApply)
+	s.mux.HandleFunc("GET /api/v1/dream", s.handleDreamList)
 	s.mux.HandleFunc("GET /api/v1/dream/{proposalId}", s.handleDreamProposal)
 	s.mux.HandleFunc("POST /api/v1/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/v1/conflict", s.handleConflict)

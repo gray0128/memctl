@@ -2,11 +2,19 @@ package app
 
 import (
 	"context"
+	"os"
 
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/dream"
 	"github.com/gray0128/memctl/internal/git"
 )
+
+// suspiciousMatcher adapts the doctor prompt-injection detector to the corpus
+// and Dreaming screening callbacks, so the phrase list has one owner.
+func suspiciousMatcher() func(string) bool {
+	return func(text string) bool { return len(doctor.SuspiciousPhrases(text)) > 0 }
+}
 
 // Dreaming is the explicit, user-triggered memory-organization workflow of
 // docs/03-workflows-and-dataflows.md section 6. The application service only
@@ -120,4 +128,43 @@ func (a *App) InitDreamWorkflow(ctx context.Context, version string) (dream.Init
 // DreamWorker runs the GitHub Actions worker against the checked-out baseline.
 func (a *App) DreamWorker(ctx context.Context, requestRef, baseHead string) (dream.WorkerRunResult, error) {
 	return a.dreamService().Worker(ctx, requestRef, baseHead)
+}
+
+// LocalDreaming is the local current-agent interactive path of
+// docs/12-session-corpus-dreaming.md section 2.3: prepare fixes a local baseline
+// and returns the memory files, the static diagnosis and the unconsumed session
+// digests; propose validates the structured candidates and persists a
+// `local-agent` proposal. Neither entry point requires a remote or the managed
+// Actions workflow, and neither writes the main repository.
+
+// DreamPrepareLocal returns the bundle the current agent organizes from. The
+// caller identity refreshes its own session digest first and the store sweep
+// adds the recent sessions of the project.
+func (a *App) DreamPrepareLocal(ctx context.Context, req dream.PrepareRequest) (dream.DreamPrepareBundle, error) {
+	service := a.dreamService()
+	service.SuspiciousMatcher = suspiciousMatcher()
+	service.SessionWroteMemory = a.sessionWroteMemory
+	if req.Cwd == "" {
+		req.Cwd = a.cfg.RepoPath
+		if dir, err := os.Getwd(); err == nil {
+			req.Cwd = dir
+		}
+	}
+	return service.PrepareLocal(ctx, req)
+}
+
+// DreamProposeLocal validates one structured proposal input and persists it.
+func (a *App) DreamProposeLocal(ctx context.Context, input dream.DreamProposeInput) (dream.ProposeResult, error) {
+	service := a.dreamService()
+	service.SuspiciousMatcher = suspiciousMatcher()
+	return service.ProposeLocal(ctx, input)
+}
+
+// DreamList returns the persisted proposals in createdAt order descending. The
+// internal apply input and the corpus digests stay on disk.
+func (a *App) DreamList(ctx context.Context, limit int) ([]dream.Proposal, error) {
+	// A scan is read-only and needs no repository precondition beyond the
+	// configured state root, so a repository with an unfinished transaction can
+	// still list the proposals that were already generated.
+	return a.dreamService().List(limit), nil
 }

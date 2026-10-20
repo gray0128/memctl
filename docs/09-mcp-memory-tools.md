@@ -102,7 +102,7 @@ Agent（模型）
 | `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` |
 | `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content` | `transaction`、`commit`、`revision`、`sync` |
-| `memory_dream_prepare` | 触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） |
+| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） |
 | `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并与 `files[]` 逐字比对后持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） |
 
 不提供 `memory_dream_apply`：MCP 场景下无法区分「用户已审阅」与「Agent 自行决定应用」，应用提案只保留 CLI `dream --apply` 与 Web UI「整理」视图两个用户入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#32-禁止项)）。

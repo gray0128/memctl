@@ -135,6 +135,9 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 	if err := service.MarkApplied(ctx, proposalID, result.Commit); err != nil {
 		return result, err
 	}
+	// The commit is the documented precondition of the consumption write-back:
+	// only now may the digests a local proposal cited be marked as mined.
+	a.consumeDreamCorpus(ctx, service, proposalID, &result)
 	// Best-effort cleanup of the completed transaction record the apply kept
 	// for reconciliation. It does not block on a concurrent background sync.
 	a.clearDreamRecords(ctx, proposalID)
@@ -151,7 +154,11 @@ func (a *App) repeatedDreamApply(ctx context.Context, service *dream.Service, pr
 			"the patch hash does not match proposal %s", proposal.ProposalID)
 	}
 	a.clearDreamRecords(ctx, proposal.ProposalID)
-	return dreamAppliedResult(proposal, a.cachedSyncState()), nil
+	result := dreamAppliedResult(proposal, a.cachedSyncState())
+	// A repeated apply still completes an interrupted write-back before
+	// returning the original commit; an already consumed digest is untouched.
+	a.consumeDreamCorpus(ctx, service, proposal.ProposalID, &result)
+	return result, nil
 }
 
 // appliedDreamResult re-reads a proposal after a lost status transition and
@@ -195,6 +202,24 @@ func (a *App) clearDreamRecords(ctx context.Context, proposalID string) {
 		if record.ProposalID == proposalID && record.Completed {
 			_ = session.store.Delete(record.ID)
 		}
+	}
+}
+
+// consumeDreamCorpus writes consumedBy/consumedRevision for the digests of a
+// local proposal. It is best effort: a failure is reported as a warning on the
+// result because the commit already happened and cannot be undone, and the next
+// apply retries the write-back. See docs/12-session-corpus-dreaming.md section
+// 2.3 step 4.
+func (a *App) consumeDreamCorpus(ctx context.Context, service *dream.Service, proposalID string, result *MutationResult) {
+	consume, err := service.ConsumeCorpusDigests(proposalID)
+	if err != nil {
+		result.Warnings = append(result.Warnings,
+			"the session digests were not marked as consumed: "+err.Error())
+		return
+	}
+	for _, skipped := range consume.Skipped {
+		result.Warnings = append(result.Warnings,
+			"a session digest changed or disappeared after the proposal was built and was not marked as consumed: "+skipped)
 	}
 }
 

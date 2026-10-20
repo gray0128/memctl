@@ -107,7 +107,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 		return runEntries(rest, stdout, stderr)
 
 	case "dream":
-		return runDream(rest, stdout, stderr, version)
+		return runDream(rest, stdin, stdout, stderr, version)
 
 	case "install":
 		return runInstall(rest, stdout, stderr)

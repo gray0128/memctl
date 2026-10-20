@@ -68,7 +68,7 @@ flowchart TB
 
 `repoId` 是规范化绝对根路径的 SHA-256，用于本机状态分区，不是跨设备身份。路径移动后重新建立本机状态，不自动沿用原会话缓存。仓库互斥锁固定在该仓库实际 Git 目录下的 `memctl.lock`，不受 `AGENT_MEMORY_STATE` 覆盖影响；同一仓库选择不同状态目录不能绕过互斥。
 
-可重建的会话、脱敏会话摘要（`corpus/`）、索引和同步摘要保存在 `$STATE/repos/<repoId>/cache/`；待审阅提案保存在同级 `proposals/`，不作为缓存自动清除。待恢复事务、冲突阶段快照、Git 操作所有权和远端授权记录保存在实际 Git 目录的 `memctl/`，不能因切换状态目录而绕过或丢失。运行目录仅当前用户可读写；Windows 使用等效 ACL。
+可重建的会话、脱敏会话摘要（`corpus/`）、最近一次本地 `prepare` 的会话快照（`dream/prepare.json`）、索引和同步摘要保存在 `$STATE/repos/<repoId>/cache/`；待审阅提案保存在同级 `proposals/`，不作为缓存自动清除。待恢复事务、冲突阶段快照、Git 操作所有权和远端授权记录保存在实际 Git 目录的 `memctl/`，不能因切换状态目录而绕过或丢失。运行目录仅当前用户可读写；Windows 使用等效 ACL。
 
 ### 3.2 文件边界
 
@@ -113,7 +113,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/state`、`lock` | 仓库身份 → 状态、恢复记录、锁 | 原子状态写入和内核锁；PID 仅供诊断，不能决定锁是否仍有效 |
 | `internal/doctor` | vault 快照 → 诊断和修复计划 | 默认只读；修复计划交 app 提交 |
 | `internal/corpus` | 宿主会话日志路径或 payload、会话身份、当前项目 → 脱敏 `SessionDigest` 缓存 | 纯确定性提取用户/助手文本与工具签名，剔除大输出并正则脱敏凭据，写入 `$STATE/repos/<repoId>/cache/corpus/`；0 次模型调用，失败静默跳过，不阻塞 Hook；格式未核对的宿主必须静默跳过而不是猜测字段。存量补扫入口 `Backfill` 按项目预过滤本机各宿主会话目录（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`），只补齐缓存，不做项目筛选与分批（属 `internal/dream`） |
-| `internal/dream` | 固定基线、未消费会话摘要或模型提供商 → 提案；worker 模式执行远端多步整理 | 支持两条提案生成路径：1) 本地当前 Agent 交互式整理（`prepare`/`propose`，本地基线固定不校验远端前置条件，由 Go 代码执行 `sessionIndices` 来源绑定守卫与生命周期校验）；2) 既有 GitHub Actions 远端整理（`dream/req`、`dream/res` 与 `--worker`）；共用提案持久化与 `ApplyDream` 提交闭环 |
+| `internal/dream` | 固定基线、未消费会话摘要或模型提供商 → 提案；worker 模式执行远端多步整理 | 支持两条提案生成路径：1) 本地当前 Agent 交互式整理（`prepare`/`propose`，本地基线固定不校验远端前置条件，`prepare` 把会话列表写成快照供 `propose` 解析下标，由 Go 代码执行 `sessionIndices` 来源绑定守卫、30 天删除闸门与链接校验）；2) 既有 GitHub Actions 远端整理（`dream/req`、`dream/res` 与 `--worker`）；共用提案持久化、列举与 `ApplyDream` 提交闭环，本地提案的消费写回按摘要内容哈希幂等执行 |
 | `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
 | `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装、MCP 通道状态 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复；MCP 状态复用 `internal/mcp` 的探测与注册表 |
 | `internal/update` | 当前版本与平台 → 下载、校验与替换结果 | 只请求固定的 GitHub Releases 地址；校验 SHA-256 后同目录原子替换，不执行下载的二进制，不自动重启 |

@@ -74,6 +74,10 @@ type MutationResult struct {
 	Commit        string   `json:"commit,omitempty"`
 	ChangedFiles  []string `json:"changedFiles"`
 	SyncState     string   `json:"syncState"`
+	// Warnings reports best-effort post-commit work that did not complete, for
+	// example a session digest that changed before it could be marked as
+	// consumed by an applied local proposal. It never signals a failed commit.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // transactionTrailer identifies a commit created by one local transaction.

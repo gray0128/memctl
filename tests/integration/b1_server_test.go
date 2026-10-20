@@ -184,6 +184,7 @@ func TestB1RoutesCoversA01(t *testing.T) {
 		{"/api/v1/audit", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		{"/api/v1/doctor", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		{"/api/v1/mcp", func(status int) { mustStatus(t, status, http.StatusOK) }},
+		{"/api/v1/dream", func(status int) { mustStatus(t, status, http.StatusOK) }},
 		// No conflict is captured in this fixture, so the route answers 204.
 		{"/api/v1/conflict", func(status int) { mustStatus(t, status, http.StatusNoContent) }},
 	}

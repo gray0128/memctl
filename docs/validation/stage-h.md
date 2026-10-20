@@ -75,3 +75,28 @@
   - `commandcode`、`grok` 的日志字段结构仍未核对，与 `opencode` 一样不进入补扫；新增宿主支持前必须先在本机核对样本并更新 `docs/12` 的宿主表。
   - `antigravity` 的项目判定依赖会话中出现过 `run_command`；没有执行命令的会话无法归属项目，会被跳过。这是 `H-2b` 接受的限制，`docs/12` 宿主表已记录。
   - `dream --prepare` 的补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数属 `H-3`。
+
+## T102：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具（`H-3`）
+
+- 目标与范围：实现 `H-3`——`internal/dream` 的本地基线固定路径（不调用远端就绪检查）、`PrepareLocal`（刷新当前会话、补扫触发、`cwdKey` 优先、`--project` 过滤与 `remainingUnconsumed`）、`ProposeLocal`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门、链接校验、`local-agent` 提案持久化与 `corpusDigests`）、`ApplyDream` 的幂等消费写回与 `Store.List`；CLI 新增 `dream --prepare`/`--propose --stdin`/`--list`；MCP 新增 `memory_dream_prepare`/`memory_dream_propose`（不注册 apply）；`internal/server` 新增 `GET /api/v1/dream`。不改动 `--runner`/`--worker` 远端路径，`H-4` 的 Skill、帮助文案与 UI 展示不在本轮。
+- 契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)、[模型与契约](../02-domain-models-and-contracts.md#4-rest-契约)、[MCP 记忆工具](../09-mcp-memory-tools.md#44-工具集)、[架构与模块](../01-architecture-and-modules.md#4-模块职责)。
+- 验证日期与环境：2026-10-20，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 交付：
+  1. `internal/dream/local.go`：`fixLocalBaseline` 只要求仓库可读、工作树干净、无未完成事务或冲突、无进行中的 Git 操作，明确不检查远端、不检查 `.github/workflows/memctl-dream.yml`。`PrepareLocal` 先刷新带稳定 `agent`/`sid` 的当前会话摘要，再调用 `corpus.Backfill` 与 `cache.Prune`；`selectSessions` 只取 `consumedBy == ""` 且 `turns` 非空的摘要，默认先排当前 `cwdKey` 再排其他项目，均按 `updatedAt` 倒序。`--project` 接受 `cwdBase` 或完整 `cwdKey`，同名歧义返回 `INVALID_ARGUMENT` 并列出候选 `cwdKey`。分批受 `MaxCorpusSessions = 12` 与 `MaxCorpusBytes = 96 KiB` 约束，字节预算只截断后续会话，不产生空批次；被截断的会话计入 `remainingUnconsumed`。
+  2. `internal/corpus/session.go`：`LocateSession` 按 `agent`/`sid`/`cwd` 定位单个已存在的会话日志（`claude-code` 直接命中文件、`pi` 按文件名匹配、`dsh` 取最高版本、`antigravity` 固定路径、`codex` 在 14 天窗口内比对 `session_meta`），用于 `prepare` 刷新调用会话自身。
+  3. `internal/dream/prepare_state.go`：`prepare` 把本次会话列表与每份摘要的内容哈希写入 `$STATE/repos/<repoId>/cache/dream/prepare.json`；`propose` 按该快照解析 `sessionIndices`，不从当前目录重新推导列表——重新推导会在选择顺序变化时把引用指到别的会话上。快照只含会话元数据与摘要修订，不含记忆全文，位于可重建缓存下，写入失败不作为 `prepare` 的失败。
+  4. `internal/dream/propose.go`：`newMemories` 上限 30，`sessionIndices` 非空且每个下标在快照范围内；`fact` 必须单行、无 `[source:`/`[added:`、再次经过 `corpus.Clean`/`corpus.Redact` 与可疑指令检查，清洗导致内容变化时写入 `warnings`；`time_limited` 的 `until` 必须是 `YYYY-MM-DD` 且不早于所引用会话的最新 `date`；归一化重复候选自动跳过并豁免 `files[]` 比对。按首次出现顺序去重拼装 `- <fact> [source: <tag1>; source: <tag2>; added: <latestDate>]`（含可选 `; until:`），与 `files[]` 目标内容逐字比对，缺失即 `INVALID_ARGUMENT`。`files[]` 是唯一写入通道，Go 不注入条目、不创建文件、不补索引链接；`protectedPath` 与删除 `MEMORY.md` 复用远端路径的校验；未满 30 天隐藏期的 `until` 条目被删除返回 `DELETION_DEFERRED`；新引入的断链或歧义链接被拒绝。提案以 `runner: "local-agent"`、`status: "ready"` 持久化，附 `sessionsScanned`、`newMemoriesExtracted` 与 `corpusDigests{file, revision}`。
+  5. `internal/dream/consume.go`：`ConsumeCorpusDigests` 只在 apply 提交成功后由 `app.ApplyDream` 调用，按提案记录重算每个摘要的内容哈希；一致才写 `consumedBy`/`consumedRevision`，不一致或文件消失则跳过并追加到提案 `warnings`。已消费项保持不变，重复调用幂等。`corpusDigests` 只记录被 `newMemories[].sessionIndices` 实际引用的摘要，批次中未被引用的会话不会因同批而被标为已消费。
+  6. `internal/dream/store.go` 新增 `Store.List(limit)`：按 `createdAt` 倒序、以提案 ID 作稳定 tie-break，上限 200、默认 50，不返回内部 `planned` 与 `corpusDigests`。
+  7. `internal/app`：`DreamPrepareLocal`/`DreamProposeLocal`/`DreamList` 组合入口；`ApplyDream` 在成功提交与幂等重放两条路径都执行消费写回，跳过项写入 `MutationResult.warnings`；会话 trailer 扫描从 `internal/cli` 移到 `internal/app/dreamcorpus.go`，供 CLI 与 app 共用。
+  8. CLI `dream --prepare`（`--project`、`--max-bytes`、`--agent`、`--sid`、`--json`）、`dream --propose --stdin`（stdin 上限 8 MiB，拒绝未知字段）、`dream --list`（`--limit`）。八种模式互斥，模式外参数返回用法错误。
+  9. MCP 新增 `memory_dream_prepare` 与 `memory_dream_propose`，参数与返回结构与文档一致；`memory_dream_apply` 不注册。`memory_dream_prepare` 把宿主会话身份传给服务，`propose` 不提供任何文件写入能力，只持久化提案。
+  10. `GET /api/v1/dream?limit=` 按 `createdAt` 倒序返回 `{proposals}`，空结果为 `[]`，只读路由在 `--readonly` 下可用，响应不含 `planned`。
+- 验证：
+  - `go test ./internal/...` 全部通过。`internal/dream` 新增 15 个用例：`TestPrepareLocalNeedsNoRemoteCoversD07`、`TestPrepareLocalRanksCurrentProjectFirstCoversD07`、`TestPrepareLocalRefusesAmbiguousProjectCoversD07`、`TestPrepareLocalRefusesDirtyRepository`、`TestProposeLocalAssemblesMultiSessionSourceCoversD07`、`TestProposeLocalRefusesProvenanceViolationsCoversD07`（9 个子用例）、`TestProposeLocalSkipsDuplicateFactCoversD07`、`TestProposeLocalTimeLimitedUntilCoversD07`、`TestProposeLocalRefusesPrematureExpiredDeletionCoversD07`、`TestProposeLocalRefusesNewDanglingLinkCoversD07`、`TestConsumeCorpusDigestsIsReentrantCoversD08`、`TestConsumeSkipsChangedDigestCoversD08`、`TestProposeLocalRequiresPrepareSnapshotsCoversD07`、`TestDreamListOrdersByCreatedAt` 与 `TestBundleJSONShape`（共 15 项，其中 `TestProposeLocalRefusesProvenanceViolationsCoversD07` 含 9 个子用例）；`internal/mcp` 新增 6 项协议用例（工具注册与无 apply、会话身份传递、契约错误映射、结构化输入、必需基线与错误类型）。
+  - `tests/integration` 144 项按 `scripts/test-shards.txt` 四片运行全部通过（约 50 秒/片），新增 6 项：`TestH3PrepareWorksWithoutRemoteCoversD07`、`TestH3PrepareProjectFilterAndAmbiguityCoversD07`、`TestH3ProposeApplyConsumesSessionsCoversD07`、`TestH3ProposeRejectsMissingAssembledLineCoversD07`（3 个子用例）、`TestH3ApplySkipsChangedDigestCoversD08` 与 `TestH3DreamListRouteCoversD07`；`TestB1RoutesCoversA01` 增加 `GET /api/v1/dream` 路由、`TestM01MCPHandshake` 更新为 5 个工具。
+  - `go vet ./...` 与 `git diff --check` 通过；`scripts/test-shards.txt` 按全量 `-v` 实测耗时用同一贪心算法重新生成。
+- 未验证与遗留：
+  - 未在真实宿主会话内跑完整的 `prepare` → `propose` → `apply`：CLI 与 MCP 链路均由临时仓库与合成摘要覆盖，真实 DSH/pi 会话的端到端验收属 `H-4`。
+  - `dream --prepare` 的补扫规模取决于本机真实存储；本轮测试用隔离 `HOME`，未复测 `T101` 的真实存储耗时。
+  - `memory_dream_prepare`/`memory_dream_propose` 的 `tools/list` 描述与 JSON Schema 已实现，但 `H-4` 才更新中英帮助与 Skill 文案，二者尚未互相对齐审查。

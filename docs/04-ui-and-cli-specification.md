@@ -26,7 +26,7 @@ memctl <subcommand> [flags] [-- command...]
 | `ui` | `--port 18420 --no-open --readonly` | 启动本地 UI；`--readonly` 在服务端禁止全部 POST/PUT/PATCH/DELETE，包括 sync、Dreaming 与安装 |
 | `doctor` | `--json --fix` | 默认只读诊断；`--fix` 在当前基线上执行支持的确定性修复，不自动消除矛盾事实 |
 | `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
-| `dream` | `--prepare [--project KEY] [--max-bytes N] [--json]`、`--propose --stdin` 或 `--list` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 触发本机存量多会话补扫，按当前项目（或 `--project` 指定项目）优先输出当前基线、静态诊断与最多 12 个未消费 `SessionDigest[]`（默认累计 96 KiB）；`--propose --stdin` 校验 Agent 提交的结构化整理结果并拼装真实会话 `source`，生成本地 `ready` 提案；`--list` 按创建时间倒序列出已持久化提案；三者都不写主库，且都不要求已配置远端或工作流文件 |
+| `dream` | `--prepare [--project KEY] [--max-bytes N] [--agent NAME] [--sid ID] [--json]`、`--propose --stdin` 或 `--list [--limit N]` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 先刷新带稳定 `--agent`/`--sid` 的当前会话摘要并触发本机存量多会话补扫，按当前项目（或 `--project` 指定的 `cwdBase`/`cwdKey`）优先输出当前基线、静态诊断与最多 12 个未消费 `SessionDigest[]`（默认累计 96 KiB），并把该批会话写成 `cache/dream/prepare.json` 快照；`--propose --stdin` 按该快照校验 Agent 提交的结构化整理结果、拼装真实会话 `source` 并生成本地 `ready` 提案；`--list` 按创建时间倒序列出已持久化提案（默认 50 条，最多 200）；三者都不写主库，且都不要求已配置远端或工作流文件 |
 | `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型，成功后将关联 `SessionDigest` 标记为已消费）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
@@ -36,7 +36,7 @@ memctl <subcommand> [flags] [-- command...]
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
 
-同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`install --status` 不写文件。
+同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`--project`、`--max-bytes`、`--agent`、`--sid` 只用于 `--prepare` 或 `--propose`，其中 `--project` 只用于 `--prepare`，`--limit` 只用于 `--list`；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，末尾附带 MCP 工具探测与各宿主注册命令，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 

@@ -7,21 +7,38 @@ import (
 	"testing"
 
 	"github.com/gray0128/memctl/internal/app"
+	"github.com/gray0128/memctl/internal/dream"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
 
 // fakeService records calls and returns scripted results.
 type fakeService struct {
-	readResult   vault.FileRead
-	readErr      error
-	applyResult  app.MutationResult
-	applyErrs    []error
-	reads        []string
-	writes       []app.MutationRequest
-	entryPage    app.EntryPage
-	entryErr     error
-	entryQueries []app.EntryQuery
+	readResult    vault.FileRead
+	readErr       error
+	applyResult   app.MutationResult
+	applyErrs     []error
+	reads         []string
+	writes        []app.MutationRequest
+	entryPage     app.EntryPage
+	entryErr      error
+	entryQueries  []app.EntryQuery
+	prepareResult dream.DreamPrepareBundle
+	prepareErr    error
+	prepareReqs   []dream.PrepareRequest
+	proposeResult dream.ProposeResult
+	proposeErr    error
+	proposeInputs []dream.DreamProposeInput
+}
+
+func (f *fakeService) DreamPrepareLocal(_ context.Context, req dream.PrepareRequest) (dream.DreamPrepareBundle, error) {
+	f.prepareReqs = append(f.prepareReqs, req)
+	return f.prepareResult, f.prepareErr
+}
+
+func (f *fakeService) DreamProposeLocal(_ context.Context, input dream.DreamProposeInput) (dream.ProposeResult, error) {
+	f.proposeInputs = append(f.proposeInputs, input)
+	return f.proposeResult, f.proposeErr
 }
 
 func (f *fakeService) ListEntries(_ context.Context, query app.EntryQuery) (app.EntryPage, error) {
@@ -49,16 +66,27 @@ func newTestServer(service Service) *Server {
 }
 
 // TestM02ToolsList covers M02: exactly the documented memory tools, with
-// schemas.
+// schemas. Stage H adds the two local Dreaming tools and no apply tool.
 func TestM02ToolsList(t *testing.T) {
 	server := newTestServer(&fakeService{})
 	tools := server.Tools()
-	if len(tools) != 3 {
-		t.Fatalf("want 3 tools, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("want 5 tools, got %d", len(tools))
 	}
-	names := []string{tools[0].Name, tools[1].Name, tools[2].Name}
-	if names[0] != "memory_read" || names[1] != "memory_entries" || names[2] != "memory_write" {
-		t.Fatalf("unexpected tool names %v", names)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write"}
+	for index, name := range want {
+		if names[index] != name {
+			t.Fatalf("tool %d = %q, want %q (all: %v)", index, names[index], name, names)
+		}
+	}
+	for _, tool := range tools {
+		if tool.Name == "memory_dream_apply" {
+			t.Fatal("an apply tool must never be registered over MCP")
+		}
 	}
 	for _, tool := range tools {
 		if tool.Description == "" {
@@ -72,7 +100,7 @@ func TestM02ToolsList(t *testing.T) {
 			t.Errorf("%s schema type = %v", tool.Name, schema["type"])
 		}
 	}
-	if got := ToolNames(); len(got) != 3 {
+	if got := ToolNames(); len(got) != 5 {
 		t.Fatalf("ToolNames() = %v", got)
 	}
 }

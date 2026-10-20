@@ -2,24 +2,27 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 )
 
-// runDream implements the five mutually exclusive modes of
+// runDream implements the eight mutually exclusive modes of
 // docs/04-ui-and-cli-specification.md section 1: generate (--runner), show,
-// apply, install the Actions workflow (--init-workflow) and the internal Actions
-// entry point (--worker). Generating never writes the main repository; applying
-// commits one already-reviewed proposal through the managed transaction. See
-// docs/11-github-actions-dreaming.md sections 2.1 and 2.5.
-func runDream(args []string, stdout, stderr io.Writer, version string) int {
+// apply, install the Actions workflow (--init-workflow), the internal Actions
+// entry point (--worker), and the local current-agent path (--prepare,
+// --propose, --list) of docs/12-session-corpus-dreaming.md section 2.3. None of
+// them writes the main repository before an explicit apply.
+func runDream(args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
 	runner := ""
 	show := ""
 	apply := ""
@@ -28,6 +31,14 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 	worker := false
 	workerRef := ""
 	baseHead := ""
+	prepare := false
+	propose := false
+	list := false
+	project := ""
+	maxBytes := 0
+	listLimit := 0
+	agentFlag := ""
+	sidFlag := ""
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		next := func(flag string) (string, bool) {
@@ -79,6 +90,56 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 				return ExitUsageError
 			}
 			baseHead = value
+		case arg == "--prepare":
+			prepare = true
+		case arg == "--propose":
+			propose = true
+		case arg == "--list":
+			list = true
+		case arg == "--stdin":
+			// The propose input always comes from stdin; the flag exists so
+			// the documented command line is explicit and a bare `--propose`
+			// is not mistaken for a prompt.
+		case arg == "--project":
+			value, ok := next("--project")
+			if !ok {
+				return ExitUsageError
+			}
+			project = value
+		case arg == "--max-bytes":
+			value, ok := next("--max-bytes")
+			if !ok {
+				return ExitUsageError
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed <= 0 {
+				return usageError(stderr, "dream", "--max-bytes requires a positive integer")
+			}
+			maxBytes = parsed
+		case arg == "--agent":
+			value, ok := next("--agent")
+			if !ok {
+				return ExitUsageError
+			}
+			agentFlag = value
+		case arg == "--sid":
+			value, ok := next("--sid")
+			if !ok {
+				return ExitUsageError
+			}
+			sidFlag = value
+		case arg == "--limit":
+			value, ok := next("--limit")
+			if !ok {
+				return ExitUsageError
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed <= 0 {
+				return usageError(stderr, "dream", "--limit requires a positive integer")
+			}
+			listLimit = parsed
+		case arg == "--json":
+			// Every mode already prints JSON; the flag documents the intent.
 		default:
 			return usageError(stderr, "dream", fmt.Sprintf("unknown argument %q", arg))
 		}
@@ -90,20 +151,30 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 			modes++
 		}
 	}
-	if initWorkflow {
-		modes++
-	}
-	if worker {
-		modes++
+	for _, value := range []bool{initWorkflow, worker, prepare, propose, list} {
+		if value {
+			modes++
+		}
 	}
 	if modes != 1 {
-		return usageError(stderr, "dream", "exactly one of --runner, --show, --apply, --init-workflow or --worker is required")
+		return usageError(stderr, "dream",
+			"exactly one of --runner, --show, --apply, --init-workflow, --worker, --prepare, --propose or --list is required")
 	}
 	if patchHash != "" && apply == "" {
 		return usageError(stderr, "dream", "--patch-hash requires --apply")
 	}
 	if (workerRef != "" || baseHead != "") && !worker {
 		return usageError(stderr, "dream", "--ref and --base-head are only valid with --worker")
+	}
+	if (project != "" || maxBytes != 0 || agentFlag != "" || sidFlag != "") && !prepare && !propose {
+		return usageError(stderr, "dream",
+			"--project, --max-bytes, --agent and --sid are only valid with --prepare or --propose")
+	}
+	if project != "" && propose {
+		return usageError(stderr, "dream", "--project is only valid with --prepare")
+	}
+	if listLimit != 0 && !list {
+		return usageError(stderr, "dream", "--limit is only valid with --list")
 	}
 
 	cfg, err := loadConfig()
@@ -116,6 +187,9 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 	// proposal) records the same provenance as a managed write, so the audit
 	// view never shows it as unattributed.
 	service.SetCommitSource(app.CommitSource(os.Getenv))
+	if cfg.BackgroundSync {
+		service.EnableBackgroundSync()
+	}
 	ctx := context.Background()
 
 	switch {
@@ -138,6 +212,48 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 			return fail(stderr, "dream", err)
 		}
 		if err := encodeJSON(stdout, result); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
+	case prepare:
+		bundle, err := service.DreamPrepareLocal(ctx, dream.PrepareRequest{
+			Project:  project,
+			Device:   hookio.ResolveDevice(os.Getenv),
+			Agent:    hookio.ResolveAgent(agentFlag, os.Getenv),
+			SID:      hookio.ResolveSID(sidFlag, os.Getenv, hookio.Input{}),
+			MaxBytes: maxBytes,
+		})
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if err := encodeJSON(stdout, bundle); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
+	case propose:
+		var input dream.DreamProposeInput
+		decoder := json.NewDecoder(io.LimitReader(stdin, proposeInputBytes))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			return fail(stderr, "dream", fmt.Errorf("INVALID_ARGUMENT: cannot decode the proposal from stdin: %w", err))
+		}
+		result, err := service.DreamProposeLocal(ctx, input)
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if err := encodeJSON(stdout, result); err != nil {
+			return fail(stderr, "dream", err)
+		}
+		return ExitOK
+	case list:
+		proposals, err := service.DreamList(ctx, listLimit)
+		if err != nil {
+			return fail(stderr, "dream", err)
+		}
+		if proposals == nil {
+			proposals = []dream.Proposal{}
+		}
+		if err := encodeJSON(stdout, map[string]any{"proposals": proposals}); err != nil {
 			return fail(stderr, "dream", err)
 		}
 		return ExitOK
@@ -194,6 +310,11 @@ func runDream(args []string, stdout, stderr io.Writer, version string) int {
 		return ExitOK
 	}
 }
+
+// proposeInputBytes bounds the structured proposal read from stdin. The
+// documented request limit is 8 MiB; the proposal carries whole memory files,
+// so it uses the same bound as every other JSON request.
+const proposeInputBytes = 8 << 20
 
 // workerRepository resolves the repository the Actions worker must operate on.
 // The worker is pointed at the checked-out workspace via GITHUB_WORKSPACE, and

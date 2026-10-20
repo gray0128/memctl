@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/gray0128/memctl/internal/memerr"
@@ -24,6 +25,10 @@ type record struct {
 	// Planned holds the exact apply input of every create or update change. It
 	// is internal to the apply workflow and never returned to a client.
 	Planned map[string]plannedFile `json:"planned,omitempty"`
+	// CorpusDigests holds the digest files a local-agent proposal consumed
+	// from. It is written by the local propose path and read back by the apply
+	// write-back; the remote path leaves it empty.
+	CorpusDigests []CorpusDigest `json:"corpusDigests,omitempty"`
 }
 
 // Store persists proposals under $STATE/repos/<repoId>/proposals. Proposals are
@@ -77,6 +82,46 @@ func (s *Store) Load(id string) (record, error) {
 		value.ProposalID = id
 	}
 	return value, nil
+}
+
+// List returns every readable proposal, ordered by createdAt descending with
+// the proposal id as the tie-breaker so one page is stable across calls. The
+// internal apply input is not part of the returned records; unreadable files are
+// skipped exactly like the corpus cache does. limit bounds the returned page; a
+// non-positive value applies DefaultListLimit.
+func (s *Store) List(limit int) []Proposal {
+	if limit <= 0 {
+		limit = DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		limit = MaxListLimit
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil
+	}
+	values := make([]Proposal, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		value, err := s.Load(id)
+		if err != nil {
+			continue
+		}
+		values = append(values, value.Proposal)
+	}
+	sort.SliceStable(values, func(i, j int) bool {
+		if values[i].CreatedAt != values[j].CreatedAt {
+			return values[i].CreatedAt > values[j].CreatedAt
+		}
+		return values[i].ProposalID < values[j].ProposalID
+	})
+	if len(values) > limit {
+		values = values[:limit]
+	}
+	return values
 }
 
 // writeFileAtomic writes data to a temporary file in dir, flushes it and

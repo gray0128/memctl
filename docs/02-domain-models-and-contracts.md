@@ -54,7 +54,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `ConflictState` | `conflictId`, `repoId`, `baseRevision`, `originalHead`, `expectedHead`, `upstreamHead`, `replayCommit`, `indexRevision`, `operationId?`, `phase`, `files`, `detectedAt` |
 | `ConflictFile` | `path`, `kind`, `base`, `onto`, `replayed` |
 | `ConflictSide` | `exists`, `blobId?`, `mode?`, `content?` |
-| `MutationResult` | `transactionId`, `revision`, `commit?`, `changedFiles`, `syncState` |
+| `MutationResult` | `transactionId`, `revision`, `commit?`, `changedFiles`, `syncState`, `warnings?`；`warnings` 只描述提交之后尽力而为的工作（如本地提案的会话摘要写回被跳过），不表示提交失败 |
 
 `localState` 为 `clean | external_changes | operation_active | recovery_required`。`remoteState` 为 `local_only | pending | running | synced | conflict | failed`。本地提交成功和远端推送成功是两件事；`synced` 只描述最后一次确认时刻，不表示远端从此不再变化。`aheadCount` 与 `behindCount` 在没有上游时为 `null`，不用 `0` 表示未知。
 
@@ -104,7 +104,8 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `app.Revert` | 提交 hash、仓库基线 → `MutationResult` | 验证父提交数，失败保留恢复信息 |
 | `dream.Preview` | 模型提供商（`runner`）、固定基线 → 提案 ID | 触发远端 GitHub Actions 整理并拉取校验结果树；确认前不修改主仓库 |
 | `dream.PrepareLocal` | 项目过滤键、字节预算 → `DreamPrepareBundle` | 本地固定基线并返回记忆全文、静态诊断与未消费 `SessionDigest[]`；不校验远端或工作流前置条件 |
-| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 校验 `sessionIndices` 并拼装真实 `source`，与 `files[]` 逐字比对后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
+| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 按 `prepare` 快照校验 `sessionIndices` 并拼装真实 `source`，与 `files[]` 逐字比对、执行 30 天删除闸门与链接校验后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
+| `dream.Store.List` | 分页上限 → `DreamProposal[]` | 按 `createdAt` 倒序列举已持久化提案；不返回内部应用输入 `planned` 与 `corpusDigests` |
 | `adapters.Plan` / `adapters.Apply` | 探测环境、agent → 安装计划 / 安装结果 | 每配置路径独立锁与基线校验；无法安全合并时给人工补丁，不写文件 |
 | `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案后执行受管事务 |
 | `lock.Acquire` | context、资源键 → release 或错误 | 仓库操作使用同一锁；非重入 |

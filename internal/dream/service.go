@@ -67,6 +67,15 @@ type Service struct {
 	// provider named by the request branch, which the worker uses when no
 	// override is configured.
 	NewProvider func(providerID string) (Provider, error)
+	// SuspiciousMatcher reports whether a text carries a prompt-injection
+	// pattern. ProposeLocal screens every candidate fact through it; the CLI
+	// installs the same doctor phrase list the corpus collector uses.
+	SuspiciousMatcher func(string) bool
+	// SessionWroteMemory reports whether a session already produced a commit
+	// carrying its trailer. The local prepare path records the answer on the
+	// bundle so the current agent can weigh an already-mined session lower. A
+	// nil callback records false.
+	SessionWroteMemory func(sid string) bool
 
 	store      *Store
 	instanceID string
@@ -204,6 +213,13 @@ func (s *Service) Run(ctx context.Context, proposalID string) (Proposal, error) 
 		return value.Proposal, err
 	}
 	return value.Proposal, nil
+}
+
+// List returns the persisted proposals in createdAt order descending. The
+// internal apply input and the recorded corpus digests are not part of the
+// returned records.
+func (s *Service) List(limit int) []Proposal {
+	return s.store.List(limit)
 }
 
 // Load returns one stored proposal. A generating record that no longer has an
@@ -444,19 +460,11 @@ func (s *Service) now() string {
 // into an in-memory baseline. See docs/03-workflows-and-dataflows.md section 6
 // step 1 and docs/11-github-actions-dreaming.md section 2.1 step 1.
 func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (base *baseline, head, revision string, err error) {
-	if err := git.Available(); err != nil {
-		return nil, "", "", err
-	}
-	gitDir, err := git.GitDir(ctx, s.Source.RepoPath)
+	unlock, ctx, err := s.lockCleanRepository(ctx, "generating a proposal", true)
 	if err != nil {
 		return nil, "", "", err
 	}
-	held, err := lock.Acquire(ctx, gitDir)
-	if err != nil {
-		return nil, "", "", err
-	}
-	defer held.Release()
-	ctx = git.WithInheritedFile(ctx, held.File())
+	defer unlock()
 
 	if code, reason := s.backendStatus(ctx); code != "" {
 		if code == BackendNotReadyUnapproved {
@@ -466,43 +474,6 @@ func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (bas
 			return nil, "", "", memerr.New(memerr.Unsupported, "%s", reason)
 		}
 		return nil, "", "", memerr.New(memerr.NoRepo, "%s", reason)
-	}
-
-	store := state.OpenStore(gitDir)
-	if conflict, ok, err := store.LoadConflict(); err != nil {
-		return nil, "", "", err
-	} else if ok {
-		return nil, "", "", memerr.New(memerr.OperationActive,
-			"conflict %s is awaiting resolution; resolve it before generating a proposal", conflict.ConflictID)
-	}
-	if _, err := os.Lstat(filepath.Join(s.Source.RepoPath, vault.EntryPointName)); err != nil {
-		return nil, "", "", memerr.New(memerr.NoRepo,
-			"%s has no %s; run memctl init", s.Source.RepoPath, vault.EntryPointName)
-	}
-	if pending, err := store.Pending(); err != nil {
-		return nil, "", "", err
-	} else if len(pending) > 0 {
-		return nil, "", "", memerr.New(memerr.RecoveryRequired,
-			"transaction %s is unfinished; run `memctl recover --status` before generating a proposal", pending[0].ID)
-	}
-	repoState, err := git.Inspect(ctx, s.Source.RepoPath)
-	if err != nil {
-		return nil, "", "", err
-	}
-	switch {
-	case repoState.IndexLocked:
-		return nil, "", "", memerr.New(memerr.Busy, "another Git process is writing the index (.git/index.lock exists)")
-	case repoState.Active():
-		return nil, "", "", memerr.New(memerr.OperationActive,
-			"a Git operation or unmerged index is active; Dreaming requires a clean repository")
-	}
-	status, err := git.StatusPorcelain(ctx, s.Source.RepoPath)
-	if err != nil {
-		return nil, "", "", err
-	}
-	if status != "" {
-		return nil, "", "", memerr.New(memerr.ExternalChanges,
-			"the repository has staged, unstaged or untracked changes; commit or capture them before generating a proposal")
 	}
 
 	root, err := vault.OpenRoot(s.Source.RepoPath)
@@ -527,6 +498,80 @@ func (s *Service) fixBaseline(ctx context.Context, expectedRevision string) (bas
 	}
 	base.head = head
 	return base, head, revision, nil
+}
+
+// lockCleanRepository takes the repository lock and proves the documented
+// preconditions every proposal path shares: the entry file exists, no conflict
+// or unfinished transaction is pending, no Git operation is active and the work
+// tree is clean. The returned context carries the inherited lock descriptor, and
+// the caller must release the lock through the returned function.
+//
+// The two proposal paths differ only in what they check next: the Actions path
+// additionally needs a backend ready for a remote run, while the local path never
+// asks for it.
+func (s *Service) lockCleanRepository(ctx context.Context, action string, requireEntry bool) (func(), context.Context, error) {
+	if err := git.Available(); err != nil {
+		return nil, ctx, err
+	}
+	gitDir, err := git.GitDir(ctx, s.Source.RepoPath)
+	if err != nil {
+		return nil, ctx, err
+	}
+	held, err := lock.Acquire(ctx, gitDir)
+	if err != nil {
+		return nil, ctx, err
+	}
+	unlock := func() { _ = held.Release() }
+	ctx = git.WithInheritedFile(ctx, held.File())
+	if requireEntry {
+		if _, err := os.Lstat(filepath.Join(s.Source.RepoPath, vault.EntryPointName)); err != nil {
+			unlock()
+			return nil, ctx, memerr.New(memerr.NoRepo,
+				"%s has no %s; run memctl init", s.Source.RepoPath, vault.EntryPointName)
+		}
+	}
+	store := state.OpenStore(gitDir)
+	if conflict, ok, err := store.LoadConflict(); err != nil {
+		unlock()
+		return nil, ctx, err
+	} else if ok {
+		unlock()
+		return nil, ctx, memerr.New(memerr.OperationActive,
+			"conflict %s is awaiting resolution; resolve it before %s", conflict.ConflictID, action)
+	}
+	if pending, err := store.Pending(); err != nil {
+		unlock()
+		return nil, ctx, err
+	} else if len(pending) > 0 {
+		unlock()
+		return nil, ctx, memerr.New(memerr.RecoveryRequired,
+			"transaction %s is unfinished; run `memctl recover --status` before %s", pending[0].ID, action)
+	}
+	repoState, err := git.Inspect(ctx, s.Source.RepoPath)
+	if err != nil {
+		unlock()
+		return nil, ctx, err
+	}
+	switch {
+	case repoState.IndexLocked:
+		unlock()
+		return nil, ctx, memerr.New(memerr.Busy, "another Git process is writing the index (.git/index.lock exists)")
+	case repoState.Active():
+		unlock()
+		return nil, ctx, memerr.New(memerr.OperationActive,
+			"a Git operation or unmerged index is active; Dreaming requires a clean repository")
+	}
+	status, err := git.StatusPorcelain(ctx, s.Source.RepoPath)
+	if err != nil {
+		unlock()
+		return nil, ctx, err
+	}
+	if status != "" {
+		unlock()
+		return nil, ctx, memerr.New(memerr.ExternalChanges,
+			"the repository has staged, unstaged or untracked changes; commit or capture them before %s", action)
+	}
+	return unlock, ctx, nil
 }
 
 // unknownProvider is the shared unknown-provider rejection.

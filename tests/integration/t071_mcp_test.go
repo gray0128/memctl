@@ -114,9 +114,16 @@ func TestM01MCPHandshake(t *testing.T) {
 	if err := json.Unmarshal(responses[1].Result, &list); err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(list.Tools) != 3 || list.Tools[0].Name != "memory_read" ||
-		list.Tools[1].Name != "memory_entries" || list.Tools[2].Name != "memory_write" {
+	// Stage H added the two local Dreaming tools. Apply is never exposed over
+	// MCP: it must stay a user-initiated CLI or Web UI action.
+	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write"}
+	if len(list.Tools) != len(want) {
 		t.Fatalf("unexpected tool list %+v", list.Tools)
+	}
+	for index, name := range want {
+		if list.Tools[index].Name != name {
+			t.Fatalf("tool %d = %q, want %q (all: %+v)", index, list.Tools[index].Name, name, list.Tools)
+		}
 	}
 }
 

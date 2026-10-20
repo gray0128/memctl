@@ -43,6 +43,11 @@ const (
 	// proposal. A larger diff is replaced by a truncation notice; the ordered
 	// change list remains authoritative.
 	MaxPatchBytes = 4 << 20
+	// DefaultListLimit is the page size of a proposal listing without an
+	// explicit limit.
+	DefaultListLimit = 50
+	// MaxListLimit bounds one proposal listing page.
+	MaxListLimit = 200
 )
 
 // Change is one ordered entry of a proposal. Path uses `/` separators and is
@@ -57,23 +62,42 @@ type Change struct {
 	Patch           string `json:"patch,omitempty"`
 }
 
+// RunnerLocal names the local current-agent整理 path: the proposal was
+// produced from SessionDigest material inside the owning agent session, with no
+// remote model call. See docs/12-session-corpus-dreaming.md section 2.3.
+const RunnerLocal = "local-agent"
+
 // Proposal is the DreamProposal of docs/02-domain-models-and-contracts.md
 // section 2.3. It is persisted under $STATE/repos/<repoId>/proposals and stays
 // queryable after the generating process exits.
 type Proposal struct {
-	ProposalID    string   `json:"proposalId"`
-	RepoID        string   `json:"repoId"`
-	BaseRevision  string   `json:"baseRevision"`
-	BaseHead      string   `json:"baseHead"`
-	Runner        string   `json:"runner"`
-	Status        string   `json:"status"`
-	PatchHash     string   `json:"patchHash,omitempty"`
-	Diff          string   `json:"diff,omitempty"`
-	Changes       []Change `json:"changes,omitempty"`
-	Warnings      []string `json:"warnings"`
-	CreatedAt     string   `json:"createdAt"`
-	AppliedCommit string   `json:"appliedCommit,omitempty"`
-	Error         string   `json:"error,omitempty"`
+	ProposalID   string   `json:"proposalId"`
+	RepoID       string   `json:"repoId"`
+	BaseRevision string   `json:"baseRevision"`
+	BaseHead     string   `json:"baseHead"`
+	Runner       string   `json:"runner"`
+	Status       string   `json:"status"`
+	PatchHash    string   `json:"patchHash,omitempty"`
+	Diff         string   `json:"diff,omitempty"`
+	Changes      []Change `json:"changes,omitempty"`
+	// SessionsScanned and NewMemoriesExtracted are only recorded for a
+	// local-agent proposal: how many unconsumed digests the bundle carried and
+	// how many candidates survived the provenance guard.
+	SessionsScanned      int      `json:"sessionsScanned,omitempty"`
+	NewMemoriesExtracted int      `json:"newMemoriesExtracted,omitempty"`
+	Warnings             []string `json:"warnings"`
+	CreatedAt            string   `json:"createdAt"`
+	AppliedCommit        string   `json:"appliedCommit,omitempty"`
+	Error                string   `json:"error,omitempty"`
+}
+
+// CorpusDigest binds one SessionDigest file to the content hash read at
+// prepare time. The apply path recomputes it before writing consumedBy, so a
+// digest that was re-distilled in between is never marked as consumed by a
+// proposal that saw different material.
+type CorpusDigest struct {
+	File     string `json:"file"`
+	Revision string `json:"revision"`
 }
 
 // Source identifies the repository and state root the service operates on.

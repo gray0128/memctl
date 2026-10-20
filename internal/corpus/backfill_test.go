@@ -537,3 +537,38 @@ func TestBackfillDSHStoreIsReadable(t *testing.T) {
 		t.Fatal("the DSH session was not collected")
 	}
 }
+
+// TestLocateSessionFindsKnownSessionCoversD07 covers the lookup `dream
+// --prepare` uses to refresh the calling session before the sweep: every host
+// store is found by agent and session id, and an unknown or missing session is
+// reported as empty instead of guessing a path.
+func TestLocateSessionFindsKnownSessionCoversD07(t *testing.T) {
+	cwd := "/work/memctl"
+	home := t.TempDir()
+	claudePath := writeClaudeSession(t, home, cwd, "claude-session", "记住：发布只推标签")
+	piPath := writePiSession(t, home, cwd, "pi-session", "以后都用 pnpm")
+	dshPath := writeDSHSession(t, home, cwd, "dsh-session", "DSH 的 MCP 客户端随应用内置")
+	codexPath := writeCodexSession(t, home, cwd, "codex-session", "不要用 make release 发布")
+	agyPath := writeAntigravitySession(t, home, cwd, "agy-session", "以后审查报告统一用中文")
+
+	cases := []struct {
+		agent string
+		sid   string
+		want  string
+	}{
+		{"claude-code", "claude-session", claudePath},
+		{"pi", "pi-session", piPath},
+		{"dsh", "dsh-session", dshPath},
+		{"codex", "codex-session", codexPath},
+		{"antigravity", "agy-session", agyPath},
+		{"claude-code", "unknown", ""},
+		{"commandcode", "any", ""},
+		{"claude-code", "", ""},
+	}
+	for _, testCase := range cases {
+		got := LocateSession(testCase.agent, testCase.sid, cwd, home)
+		if got != testCase.want {
+			t.Errorf("LocateSession(%q, %q) = %q, want %q", testCase.agent, testCase.sid, got, testCase.want)
+		}
+	}
+}

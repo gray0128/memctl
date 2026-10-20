@@ -1,16 +1,14 @@
 package cli
 
 import (
-	"context"
 	"os"
-	"strings"
 	"time"
 
+	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/corpus"
 	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/dream"
-	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/hookio"
 )
 
@@ -56,35 +54,11 @@ func collectCorpus(cfg config.Config, agent, sid, transcript, cwd string) {
 	// lower: a session that already recorded memories rarely has more to
 	// extract. The check is read-only and bounded, and a failure leaves the
 	// flag false rather than claiming the session wrote nothing.
-	if sessionWroteMemory(cfg, digest.SessionID) {
+	if app.SessionWroteMemoryFor(cfg, digest.SessionID) {
 		digest.WroteMemoryInSess = true
 		_ = cache.Save(digest)
 	}
 }
-
-// sessionWroteMemory reports whether a commit reachable from HEAD carries a
-// `Session: <sid>` trailer for this session. It reads a bounded page of the
-// log and never writes the repository.
-func sessionWroteMemory(cfg config.Config, sid string) bool {
-	if sid == "" {
-		return false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	commits, err := git.Log(ctx, cfg.RepoPath, writeSessionScanLimit, "")
-	if err != nil {
-		return false
-	}
-	for _, commit := range commits {
-		if strings.Contains(commit.Body, "Session: "+sid) {
-			return true
-		}
-	}
-	return false
-}
-
-// writeSessionScanLimit bounds how far back the trailer scan reads.
-const writeSessionScanLimit = 50
 
 // collectCorpusFromHook is the Hook form: the transcript path comes from the
 // payload unless --transcript supplied one. The agent and session id use the
