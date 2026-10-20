@@ -32,6 +32,7 @@ CLI dream --runner <provider>          POST /api/v1/dream:preview
   ③ GitHub Actions 临时虚拟机执行（memctl dream --worker）
      检出 baseHead → 立即删除远端 dream/req/<proposalId>/<provider>
      阶段 A：vault + doctor 静态扫描，识别膨胀索引、断链、孤立文件与过期 until
+             （过期条目区分「仍在 30 天隐藏期」与「隐藏期已满、可删除」）
      阶段 B：按主题分批发起结构化模型调用（JSON Schema + 代码级单步守卫）
      阶段 C：对齐 MEMORY.md 入口索引，以 baseHead 为父提交创建结果提交
              （提交正文附带结构化运行元数据 JSON）

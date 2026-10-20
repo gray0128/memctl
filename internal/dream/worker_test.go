@@ -373,6 +373,44 @@ func TestProviderErrorsAreTargeted(t *testing.T) {
 	}
 }
 
+// TestStaticFindingsReportsHiddenPeriod covers the EXPIRED_ENTRY candidate used
+// by the model prompt: an entry past its `until` but still inside the 30-day
+// hidden period says so, and one whose period is over says deletion is allowed.
+func TestStaticFindingsReportsHiddenPeriod(t *testing.T) {
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	files := &fileSet{files: map[string][]byte{
+		"MEMORY.md": []byte("# Memory\n\n## Index\n\n- [[topic]]\n"),
+		"topic.md": []byte("# Topic\n\n" +
+			"- recent [until: 2026-10-15; source: test; added: 2026-10-01]\n" +
+			"- old [until: 2026-08-01; source: test; added: 2026-07-01]\n" +
+			"- active [until: 2026-12-01; source: test; added: 2026-10-01]\n"),
+	}}
+
+	var expired []staticFinding
+	for _, finding := range staticFindings(files, now) {
+		if finding.Code == "EXPIRED_ENTRY" {
+			expired = append(expired, finding)
+		}
+	}
+	if len(expired) != 2 {
+		t.Fatalf("EXPIRED_ENTRY findings = %d, want only the two past dates: %+v", len(expired), expired)
+	}
+	for _, finding := range expired {
+		switch finding.Line {
+		case 3:
+			if !strings.Contains(finding.Message, "still inside the hidden period, keep it") {
+				t.Errorf("recent entry message = %q", finding.Message)
+			}
+		case 4:
+			if !strings.Contains(finding.Message, "the hidden period is over, deleting it is allowed") {
+				t.Errorf("old entry message = %q", finding.Message)
+			}
+		default:
+			t.Errorf("unexpected EXPIRED_ENTRY line %d", finding.Line)
+		}
+	}
+}
+
 func TestWorkerRejectsWrongBaseline(t *testing.T) {
 	repo, _ := workerRepo(t)
 	service := workerService(t, repo, &fakeProvider{})
