@@ -26,7 +26,8 @@
   8. 项目过滤键由 `cwdBase` 改为 `cwdKey`，同名克隆不再互相污染；`--project` 传名称时按唯一性判定，歧义返回 `INVALID_ARGUMENT`。
   9. `files[]` 成为唯一写入通道，`newMemories[]` 只做来源绑定并与 `files[]` 逐字比对；Go 不再注入条目或补索引链接。
   10. 消费写回改为按摘要哈希幂等：`consumedRevision` 记录消费时的内容哈希，`apply` 时哈希不符的项跳过并列入 `warnings`；已消费摘要不再因 TTL 被清理。
-  11. 按本机实测更正宿主日志路径与格式：`dsh` 为 `~/.dsh/sessions/<转义目录>/session-<sid>/session.v4.jsonl.zstd`（zstd 压缩，需引入 zlib 之外的依赖或由插件解压）；`opencode` 无 `.jsonl` 日志，标记为未支持；`claude-code` 从项目目录名还原 `cwdBase`；补齐 `codex`、`pi`、`antigravity` 的字段层级。
+  11. 按本机实测更正宿主日志路径与格式：`dsh` 为 `~/.dsh/sessions/<转义目录>/session-<sid>/session.v4.jsonl.zstd`（zstd 压缩）；`opencode` 无 `.jsonl` 日志，标记为未支持；`claude-code` 从项目目录名还原 `cwdBase`；补齐 `codex`、`pi`、`antigravity` 与 `dsh` 的字段层级（`user/message`、`assistant/message`、`tool/call`、`tool/result`）。
   12. 阶段计划拆分为 `H-2a`（四个已核对宿主）与 `H-2b`（存量补扫与其余宿主探测），并新增 `D08`（摘要变化与写回中断）验收场景。
-- 验证：`git diff --check` 无空白或冲突标记错误；`docs/*.md` 与根 `README.md` 相对路径链接及标题锚点核对全部可达；`docs/12` 的宿主路径与格式对照本机 `~/.dsh`、`~/.claude`、`~/.codex`、`~/.pi`、`~/.gemini/antigravity` 实测样本核对；全库检索确认不再有 `memory_dream_apply`、`20 个会话`、`200 行`、`20 个未消费` 等旧表述。
-- 未验证与遗留：`dsh` 会话日志的解码路径（引入 `klauspost/compress/zstd` 或由插件解压）尚未定案，列入 `H-2a` 实现前决策；`D08` 依赖 `H-3` 的消费写回实现。
+  13. `dsh` 的 zstd 解码定为引入 `github.com/klauspost/compress/zstd`（v1.20.3，纯 Go、无 cgo、BSD-3-Clause），由 `internal/corpus` 直接解码，不由插件代劳；同时明确解码器固定单协程、`MaxBackfillFileBytes` 按解压产出计算、解码失败静默跳过，并在 [架构与模块](../01-architecture-and-modules.md#技术依赖) 的技术依赖表登记该库。
+- 验证：`git diff --check` 无空白或冲突标记错误；`docs/*.md` 与根 `README.md` 相对路径链接及标题锚点核对全部可达；`docs/12` 的宿主路径与格式对照本机 `~/.dsh`、`~/.claude`、`~/.codex`、`~/.pi`、`~/.gemini/antigravity` 实测样本核对；用 `github.com/klauspost/compress/zstd` v1.20.3 实际解码本机 `session.v4.jsonl.zstd` 样本（4 行与 4013 行两例）验证事件类型与字段层级；全库检索确认不再有 `memory_dream_apply`、`20 个会话`、`200 行`、`20 个未消费` 等旧表述。
+- 未验证与遗留：zstd 依赖未提交到 `go.mod`，随 `H-2a` 引入；`D08` 依赖 `H-3` 的消费写回实现。

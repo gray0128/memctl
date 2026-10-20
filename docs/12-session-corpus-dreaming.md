@@ -58,12 +58,19 @@ flowchart TB
 | `claude-code` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | `$HOME/.claude/projects/*/*.jsonl`（项目目录名是 cwd 的路径转义，反向还原为 `cwdBase`；文件名即 `sid`） | JSONL：提取用户文本消息、助手最终文本块，以及工具调用的名称、目标路径或命令名与退出状态 | 已核对 |
 | `codex` | Hook stdin `"transcript_path"` 与 `"last_assistant_message"` 或 `--transcript <path>` | `$HOME/.codex/sessions/**/*.jsonl`（首行 `type: "session_meta"` 的 `payload.id` 与 `payload.cwd`） | JSON / JSONL：提取用户消息、工具调用摘要与 `last_assistant_message` | 已核对 |
 | `pi` | `memctl-pi` 通过 `ctx.sessionManager` 取得会话文件路径并传 `--transcript <path>` | `$HOME/.pi/agent/sessions/**/*.jsonl`（首行 `type: "session"` 的 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 | 已核对 |
-| `dsh` | `memctl-dsh` 定位当前 profile 下的会话文件并传 `--transcript <path>` | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（另有 `session.v3` 与未分片的 `session.jsonl.zstd`） | 会话记录：首行 `type: "session"` 的 `id` 与 `cwd`；提取 `user`/`assistant` 事件文本 | 已核对，**zstd 压缩** |
+| `dsh` | `memctl-dsh` 定位当前 profile 下的会话文件并传 `--transcript <path>` | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（同目录可能有 `session.v3.jsonl.zstd` 与未分片的 `session.jsonl.zstd`，取版本号最高者） | JSONL（zstd 压缩）：首行 `type: "session"` 的 `id` 与 `cwd`；对话从 `user/message`（`data.content[].text`）、`assistant/message`（`data.message.content[]` 中 `type: "text"`）、`tool/call`（`data.name` 与 `data.arguments`）与 `tool/result`（`data.message.isError`）提取；`type: "reasoning"` 内容块丢弃 | 已核对，**zstd 压缩** |
 | `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位 | `$HOME/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl`（目录名为 `sid`） | JSONL：提取 `type="USER_INPUT"` 与 `type="PLANNER_RESPONSE"` 的 `content`（跳过工具输出；样本中 `thinking` 不在同层） | 已核对 |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
 | `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 各自用户态会话日志目录（存在时扫描最近 14 天 `.jsonl`） | JSONL：提取用户文本、助手文本与工具签名 | 未核对格式，探测失败静默跳过 |
 
-`dsh` 的会话记录是 zstd 压缩流。标准库不提供 zstd，`H-2a` 需要引入 `github.com/klauspost/compress/zstd`（纯 Go、无 cgo），或改由 `memctl-dsh` 插件解压后经 `--transcript` 传入明文副本。前者的代价是一个新依赖，后者的代价是插件必须能定位并解压文件；`H-2a` 在实现前二选一并记录取舍，不得同时保留两条路径。
+`dsh` 的会话记录是 zstd 压缩流，标准库不提供 zstd 解码。`H-2a` 因此引入 `github.com/klauspost/compress/zstd`（v1.20.3，纯 Go、无 cgo，BSD-3-Clause），由 `internal/corpus` 直接解码，不由 `memctl-dsh` 插件代劳：会话文件存在 `v3`、`v4` 与未分片三种形态，选择高版本、定位目录与判断可读性都要读取首行元数据，这些逻辑放在 Go 侧只有一处实现；放进插件则要在 Node 侧再实现一遍同样的版本选择，并让插件为每次 `sync` 多传一份明文副本。
+
+接入约束：
+
+- 用 `zstd.NewReader(file, zstd.WithDecoderConcurrency(1))` 流式解码，把解码器固定在单协程，避免默认按 `GOMAXPROCS` 分配解码缓冲；逐行扫描的 buffer 上限设为 `MaxBackfillFileBytes`。
+- **大小上限按解压后字节数计算**：zstd 流不能像明文 JSONL 那样「只读文件尾部」，压缩文件超限时也不能跳过尾部解码。因此 `MaxBackfillFileBytes` 约束的是解码产出的字节数，达到上限即停止解码并标记 `truncated: true`。
+- 解码失败（文件正在写入、流被截断）按「读取失败静默跳过」处理，不重试、不阻塞宿主。
+- 该依赖进入 `go.mod` 的 `require` 列表，并经由 `scripts/release.sh` 的 `go list -m all` 自动收录进 `THIRD_PARTY_LICENSES.txt`；`CGO_ENABLED=0` 的交叉编译不受影响。
 
 #### 2. 存量补扫的选择顺序与预算
 
@@ -71,7 +78,7 @@ flowchart TB
 
 1. **目录级预过滤**：能直接从目录名还原 `cwd` 的宿主（`claude-code`、`dsh`、`pi`）先只保留当前项目对应的目录；其余宿主必须在解析到首行元数据后立即判定 `cwd`，不匹配即关闭文件，不再读取后续内容。
 2. **按 `mtime` 倒序**：在过滤后的候选集合内按文件修改时间倒序处理。
-3. **有界读取**：单文件读取上限 `MaxBackfillFileBytes = 8 MiB`，超过时只读取文件尾部（会话结束部分）并标记 `truncated: true`；累计解析文件数上限 `MaxBackfillFilesPerRun = 50`。
+3. **有界读取**：单文件解码产出上限 `MaxBackfillFileBytes = 8 MiB`；明文 JSONL 超过上限时只保留尾部（会话结束部分），zstd 流则从头部顺序解码并在达到上限时停止，两者都标记 `truncated: true`。累计解析文件数上限 `MaxBackfillFilesPerRun = 50`。
 4. **时间预算**：单次补扫的墙钟预算 `BackfillBudget = 5 s`。超预算时停止解析并保留已完成的摘要，不视为失败。
 
 `MaxBackfillFilesPerRun` 与 `BackfillBudget` 都只约束补扫；实时采集的单次预算是 `200 ms`（§3.2 第 1 条）。两者是不同的调用路径，不能互相替代。
@@ -352,7 +359,7 @@ flowchart TB
 | 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
 | --- | --- | --- | --- |
 | `H-1`：方案与契约修订（`T098`，本轮） | `G-4` | 新增 `docs/12-session-corpus-dreaming.md`，同步修订 `docs/01`–`05`、`docs/09`、`docs/README.md` 与 `docs/STATUS.md`；不改动已实现的 GitHub Actions Dreaming 功能 | 文档链接、锚点与跨文档契约一致性检查 |
-| `H-2a`：本地会话蒸馏器（已验证宿主） | `H-1` | 实现 `internal/corpus` 框架与四个已核对格式（`claude-code`、`codex`、`pi`、`dsh` 含 zstd 解码）、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存与消费保留规则；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；`memctl-pi`、`memctl-dsh` 传递会话文件路径 | `D06` 中四个已核对宿主的单元测试与 CLI 集成测试 |
+| `H-2a`：本地会话蒸馏器（已核对宿主） | `H-1` | 引入 `github.com/klauspost/compress/zstd` 并在 `go.mod` 固定版本；实现 `internal/corpus` 框架与四个已核对格式（`claude-code`、`codex`、`pi`、`dsh` 含 zstd 解码与解压产出上限）、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存与消费保留规则；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；`memctl-pi`、`memctl-dsh` 传递会话文件路径 | `D06` 中四个已核对宿主的单元测试与 CLI 集成测试 |
 | `H-2b`：存量多会话补扫与其余宿主探测 | `H-2a` | 实现按项目预过滤的补扫（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`）；接入 `antigravity`；`commandcode`、`grok`、`opencode` 只做「探测失败静默跳过」，并在本文档记录格式核对状态 | `D06` 其余场景（超限日志、无关项目不挤占配额） |
 | `H-3`：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具 | `H-2a`、`H-2b` | `internal/dream` 实现本地基线固定路径（不依赖远端就绪检查）、`PrepareLocal`（补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数）与 `ProposeLocal`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门、链接校验、`runner: "local-agent"` 提案持久化）、`ApplyDream` 的幂等消费写回与 `Store.List`；CLI 新增 `dream --prepare`、`dream --propose --stdin`、`dream --list`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`；`internal/server` 新增 `GET /api/v1/dream` | `D07`、`D08` 单元测试、MCP 协议测试与 CLI 集成测试 |
 | `H-4`：配套 Skill、CLI 帮助、UI 展示与端到端验收 | `H-3` | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图通过 `GET /api/v1/dream` 列出提案并展示 `local-agent` 的 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | `D06`、`D07`、`D08`、`R06`、前端单测与真实宿主会话回归 |

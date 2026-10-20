@@ -233,6 +233,7 @@ memctl/
 | 锁 | `golang.org/x/sys`（`unix.Flock` / `windows.LockFileEx`） | Unix/Windows 分别测试；锁文件描述符可被子进程继承，父进程被强杀后锁不早于 Git 子进程释放；不删除并重建正在使用的锁文件 |
 | Markdown | `goldmark` 或保留字节区间的行级解析 | 优先无损定点修改，不整体重排文档；链接扩展需独立测试 |
 | 监听 | `fsnotify` | macOS 为 kqueue 等平台后端；递归目录监听由应用维护，不假设库自动递归 |
+| 会话日志解码 | `github.com/klauspost/compress/zstd` | 只用于读取 `dsh` 的 `.jsonl.zstd` 会话记录；纯 Go、无 cgo，解码器固定在单协程；解压产出受 `MaxBackfillFileBytes` 约束 |
 | 前端 | Preact、Vite、Tailwind CSS | 只在构建期需要 Node.js；运行时资产全部内嵌 |
 | 图谱与 Diff | Cytoscape.js、Diff2Html | 按需加载，测量实际 bundle；渲染遵循不可信内容处理 |
 | 宿主配置 | JSON / JSONC / YAML / TOML 的格式专用解析 | 按宿主版本选择；不能用 `encoding/json` 宣称保留 JSONC 注释 |
