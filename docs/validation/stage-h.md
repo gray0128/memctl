@@ -54,3 +54,24 @@
   - 存量多会话补扫（`MaxBackfillFilesPerRun`、`BackfillBudget`、项目预过滤）与 `antigravity` 接入属 `H-2b`。
   - `memctl-dsh` 的会话记录定位按本机 `~/.dsh/sessions/<转义目录>/session-<sid>/` 结构实现并用插件单测覆盖，未在真实 DSH 会话中复验。
   - `codex` 的 `last_assistant_message` 只在日志缺少助手文本时作为回退，未在真实受限会话中单独验证。
+
+## T101：存量多会话补扫与 antigravity 接入（`H-2b`）
+
+- 目标与范围：实现 `H-2b`——`internal/corpus` 的存量多会话补扫（目录级项目预过滤、`mtime` 倒序、`MaxBackfillFilesPerRun = 50`、`MaxBackfillFileBytes = 8 MiB`、`BackfillBudget = 5 s`、14 天窗口、已入池按 `(agent, sid)` 跳过、预算切断的日志不写缓存）与 `antigravity` 解析器；`commandcode`、`grok`、`opencode` 只做静默跳过。不新增 CLI 子命令：补扫入口 `corpus.Backfill` 只作为库函数供 `H-3` 的 `dream --prepare` 调用。
+- 契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#2-存量补扫的选择顺序与预算)、[架构与模块](../01-architecture-and-modules.md#4-模块职责)、[验收与交付](../05-validation-and-delivery.md#阶段-h-的实施顺序)。
+- 验证日期与环境：2026-10-20，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 交付：
+  1. `internal/corpus/backfill.go`：`Backfill`、`BackfillRequest` 与 `BackfillResult`；目录级预过滤按宿主分别实现——`claude-code`、`pi` 按转义目录名收窄，`dsh` 按 `~XXXX` 转义目录名定位并取最高版本记录，`codex` 读 `session_meta` 行、`antigravity` 读 `run_command` 的 `args.Cwd`，不匹配即关闭文件且不进入候选集。候选按 `mtime` 倒序，`mtime` 超出 `CorpusStateTTL` 的第一项结束整轮。
+  2. 预算与限额：`budgetReader` 在墙钟预算耗尽时用哨兵错误终止读取，被切断的日志不写缓存，避免不完整摘要被下一轮当作已入池；`TimedOut` 只在预算触发时为 `true`，达到 `MaxBackfillFilesPerRun` 不算超时。`MaxBackfillFilesPerRun` 只统计蒸馏成摘要的日志；`codex` 与 `antigravity` 的项目嗅探是有界元数据读取，受时间预算约束而不占该配额。初版把嗅探也计入配额，用本机真实存储复核时 50 条其他项目的 codex rollout 直接耗尽上限、一个会话都补不进来，因此改为按文档口径只对解析计数。补扫复用 `openSessionStream`，共享 `MaxBackfillFileBytes` 的尾部窗口与 zstd 解压产出上限。
+  3. `antigravity` 解析器（`internal/corpus/antigravity.go`）：`USER_INPUT` 只取 `source = "USER_EXPLICIT"` 记录的 `<USER_REQUEST>` 正文，剥离同记录内的 `<ADDITIONAL_METADATA>` 与 `<USER_SETTINGS_CHANGE>`；`PLANNER_RESPONSE` 取 `content` 与 `tool_calls[].args` 的命令/路径签名，同层 `thinking` 丢弃；其余记录类型不进入摘要。会话没有元数据行，工作目录从 `run_command` 的 `args.Cwd` 反推。
+  4. `AGENT_MEMORY_CORPUS=0` 同时关闭补扫；`Backfill` 在缓存为空、`Cwd` 为空或未启用时直接返回零结果。
+  5. `commandcode`、`grok`、`opencode` 不进入发现流程：前者目录存在但字段结构未核对，后者会话在 SQLite 中。`docs/12` 的宿主表按此更新「格式核对状态」列。
+- 验证：
+  - `go test ./internal/...` 全部通过。`internal/corpus` 新增 13 个用例：`TestBackfillCollectsCurrentProjectCoversD06`、`TestBackfillSkipsOtherProjectsCoversD06`、`TestBackfillKeepsConsumedDigestsCoversD06`、`TestBackfillMarksOversizedLogTruncatedCoversD06`、`TestBackfillStopsAtFileLimitCoversD06`、`TestBackfillStopsAtBudgetCoversD06`、`TestBackfillDisabledCoversD06`、`TestBackfillSkipsStaleSessions`、`TestBackfillRecordsWroteMemory`、`TestBackfillIsIdempotent`、`TestAntigravityDigestCoversD06`、`TestEscapeStoreNames` 与 `TestBackfillDSHStoreIsReadable`；`TestUnknownHostIsSkippedCoversD06` 的清单移除 `antigravity`。
+  - `tests/integration` 138 项按 `scripts/test-shards.txt` 四片运行全部通过（约 52–55 秒/片），新增 `TestD06BackfillScansHistoryCoversD06`；`scripts/test-shards.txt` 用全量 `-v` 运行的实测耗时按同一贪心算法重新生成。
+  - 用本机真实存储复核补扫：`~/.claude`、`~/.pi`、`~/.dsh`、`~/.codex`、`~/.gemini/antigravity` 五个目录在 1.8 秒内收集 25 个 memctl 会话并跳过 298 条其他项目日志；`dsh`、`antigravity`、`pi` 的会话均按 `cwdBase = memctl` 入池，超限日志标记 `truncated`。
+  - `go vet ./...` 与 `git diff --check` 通过；`docs` 相对链接与锚点检查通过。
+- 未验证与遗留：
+  - `commandcode`、`grok` 的日志字段结构仍未核对，与 `opencode` 一样不进入补扫；新增宿主支持前必须先在本机核对样本并更新 `docs/12` 的宿主表。
+  - `antigravity` 的项目判定依赖会话中出现过 `run_command`；没有执行命令的会话无法归属项目，会被跳过。这是 `H-2b` 接受的限制，`docs/12` 宿主表已记录。
+  - `dream --prepare` 的补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数属 `H-3`。

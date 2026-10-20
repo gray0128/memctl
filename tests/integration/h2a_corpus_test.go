@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -417,4 +418,167 @@ func TestD06WroteMemoryFlagCoversD06(t *testing.T) {
 	if digest := readDigest(t, home, "pi", "sid-quiet"); digest.WroteMemoryInSess {
 		t.Fatal("a session without a trailer was marked as having written memory")
 	}
+}
+
+// TestD06BackfillScansHistoryCoversD06 drives the backfill sweep as the library
+// entry `H-3` will call: the current project's historical sessions of every
+// verified host enter the pool, a sibling clone and an unrelated project do
+// not, and a log above the per-file limit is still stored bounded and marked
+// truncated.
+func TestD06BackfillScansHistoryCoversD06(t *testing.T) {
+	cwd := filepath.Join(t.TempDir(), "memctl")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	now := time.Now()
+
+	// Claude Code keys its store by the escaped working directory.
+	claudeDir := filepath.Join(home, ".claude", "projects", claudeProjectName(cwd))
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	claudeLog := `{"type":"user","timestamp":"2026-10-20T01:00:00Z","cwd":"` + cwd + `","sessionId":"history-claude","message":{"role":"user","content":"不要本地跑 make release"}}` + "\n" +
+		`{"type":"assistant","timestamp":"2026-10-20T01:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"收到。"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "history-claude.jsonl"), []byte(claudeLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A Codex rollout of another project shares the store and must be skipped
+	// from its session_meta line.
+	codexDir := filepath.Join(home, ".codex", "sessions", "2026", "10", "20")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	otherCodex := `{"type":"session_meta","payload":{"id":"other-codex","cwd":"/somewhere/else"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"unrelated"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(codexDir, "rollout-other.jsonl"), []byte(otherCodex), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A DSH record for a sibling clone with the same basename: only the cwdKey
+	// separates the two clones.
+	sibling := filepath.Join(t.TempDir(), "memctl")
+	dshDir := filepath.Join(home, ".dsh", "sessions", dshStoreName(sibling), "session-sibling")
+	if err := os.MkdirAll(dshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	siblingLog := `{"type":"session","version":4,"id":"session-sibling","cwd":"` + sibling + `"}` + "\n" +
+		`{"type":"user/message","time":1792371962934,"data":{"source":{"kind":"user"},"content":[{"type":"text","text":"另一个克隆的内容"}]}}` + "\n"
+	encoded, err := zstdCompress([]byte(siblingLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dshDir, "session.v4.jsonl.zstd"), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// An Antigravity transcript of the current project: its cwd lives in a
+	// run_command argument.
+	agyDir := filepath.Join(home, ".gemini", "antigravity", "brain", "history-agy", ".system_generated", "logs")
+	if err := os.MkdirAll(agyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agyLog := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-10-20T04:00:00Z","content":"<USER_REQUEST>\n以后审查报告统一用中文\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnow\n</ADDITIONAL_METADATA>"}` + "\n" +
+		`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-10-20T04:00:01Z","content":"已记下。","tool_calls":[{"name":"run_command","args":{"CommandLine":"\"go build ./...\"","Cwd":"\"` + cwd + `\""}}]}` + "\n"
+	if err := os.WriteFile(filepath.Join(agyDir, "transcript.jsonl"), []byte(agyLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pi session far above the per-file limit: it must still be stored under
+	// the digest cap and marked truncated.
+	piDir := filepath.Join(home, ".pi", "agent", "sessions", "--"+strings.Trim(strings.ReplaceAll(cwd, "/", "-"), "-")+"--")
+	if err := os.MkdirAll(piDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var big strings.Builder
+	big.WriteString(`{"type":"session","version":3,"id":"history-big","cwd":"` + cwd + `"}` + "\n")
+	for index := 0; index < 12000; index++ {
+		big.WriteString(`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"` +
+			strings.Repeat("填充文本", 60) + `"}]}}` + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(piDir, "2026-10-20T02-00-00-000Z_history-big.jsonl"), []byte(big.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := corpus.OpenCache(filepath.Join(home, ".agent-memory"), config.RepoID(filepath.Join(home, "memory")))
+	result := corpus.Backfill(cache, corpus.BackfillRequest{
+		Cwd:    cwd,
+		Device: deviceName(),
+		Home:   home,
+		Now:    func() time.Time { return now },
+	})
+	if result.Collected != 3 {
+		t.Fatalf("collected = %d, want the three current-project sessions (%+v)", result.Collected, result)
+	}
+	if result.SkippedProject == 0 {
+		t.Fatal("the sibling clone and the unrelated rollout were not skipped")
+	}
+	if _, ok := cache.Load("claude-code", "history-claude"); !ok {
+		t.Fatal("the claude-code history was not collected")
+	}
+	if _, ok := cache.Load("antigravity", "history-agy"); !ok {
+		t.Fatal("the antigravity history was not collected")
+	}
+	if _, ok := cache.Load("codex", "other-codex"); ok {
+		t.Fatal("a rollout of another project was collected")
+	}
+	if _, ok := cache.Load("dsh", "session-sibling"); ok {
+		t.Fatal("a sibling clone's session was collected")
+	}
+	digest, ok := cache.Load("pi", "history-big")
+	if !ok {
+		t.Fatal("the oversized session was not collected")
+	}
+	if !digest.Truncated {
+		t.Fatal("an oversized log must be marked truncated")
+	}
+	info, err := os.Stat(cache.Path("pi", "history-big"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > corpus.MaxSessionDigestBytes {
+		t.Fatalf("digest = %d bytes, over %d", info.Size(), corpus.MaxSessionDigestBytes)
+	}
+
+	// AGENT_MEMORY_CORPUS=0 disables the sweep without an error.
+	t.Setenv(corpus.EnvCorpus, "0")
+	disabled := corpus.Backfill(cache, corpus.BackfillRequest{Cwd: cwd, Device: deviceName(), Home: home})
+	if disabled.Collected != 0 || disabled.Files != 0 {
+		t.Fatalf("a disabled sweep did work: %+v", disabled)
+	}
+}
+
+// claudeProjectName is the store directory Claude Code uses for one working
+// directory.
+func claudeProjectName(cwd string) string {
+	var builder strings.Builder
+	for _, char := range cwd {
+		switch char {
+		case '/', '\\', '_', ' ':
+			builder.WriteByte('-')
+		default:
+			builder.WriteRune(char)
+		}
+	}
+	return builder.String()
+}
+
+// dshStoreName is the DSH session store directory for one working directory.
+func dshStoreName(cwd string) string {
+	var builder strings.Builder
+	builder.WriteString("--")
+	for _, char := range strings.TrimPrefix(cwd, "/") {
+		switch {
+		case char == '/':
+			builder.WriteByte('-')
+		case char == '_' || char == '-' || char >= '0' && char <= '9' ||
+			char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z':
+			builder.WriteRune(char)
+		default:
+			builder.WriteString(fmt.Sprintf("~%04X", char))
+		}
+	}
+	builder.WriteString("--")
+	return builder.String()
 }

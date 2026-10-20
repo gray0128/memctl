@@ -1,6 +1,7 @@
 package corpus
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,4 +45,21 @@ func writeZstd(t *testing.T, content string) string {
 		t.Fatalf("file close: %v", err)
 	}
 	return path
+}
+
+// compressZstd encodes content as one zstd frame.
+func compressZstd(content []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer, err := zstd.NewWriter(&buffer, zstd.WithEncoderConcurrency(1))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(content); err != nil {
+		writer.Close()
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }

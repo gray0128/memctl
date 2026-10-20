@@ -278,3 +278,34 @@ func looksLikeInjectedContext(text string) bool {
 	}
 	return false
 }
+
+// codexMetaLines bounds the scan that reads a rollout's session_meta line. The
+// record is the first line of a rollout; the bound only protects the scan from
+// a file whose first lines are not JSON.
+const codexMetaLines = 5
+
+// sniffCodex reads a Codex rollout's session id and working directory from its
+// session_meta line and stops there, so a rollout of another project is closed
+// after a handful of records instead of being decoded in full.
+func sniffCodex(r io.Reader) (string, string) {
+	scanner := newLineScanner(r)
+	for line := 0; line < codexMetaLines && scanner.scan(); line++ {
+		value, ok := decodeLine(scanner.text())
+		if !ok {
+			continue
+		}
+		if stringField(value, "type") != "session_meta" {
+			continue
+		}
+		payload, ok := objectField(value, "payload")
+		if !ok {
+			continue
+		}
+		sid := stringField(payload, "id")
+		if sid == "" {
+			sid = stringField(payload, "session_id")
+		}
+		return stringField(payload, "cwd"), sid
+	}
+	return "", ""
+}

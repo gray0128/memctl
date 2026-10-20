@@ -219,7 +219,7 @@ func TestDSHCorruptStreamIsSkippedCoversD06(t *testing.T) {
 // TestUnknownHostIsSkippedCoversD06 checks that a host whose format was not
 // verified produces nothing rather than a guess.
 func TestUnknownHostIsSkippedCoversD06(t *testing.T) {
-	for _, agent := range []string{"opencode", "antigravity", "commandcode", "grok", "unknown-host"} {
+	for _, agent := range []string{"opencode", "commandcode", "grok", "unknown-host"} {
 		if Supports(agent) {
 			t.Fatalf("%s must not be parsed in this step", agent)
 		}

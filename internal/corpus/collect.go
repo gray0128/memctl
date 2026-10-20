@@ -52,6 +52,7 @@ var parsers = map[string]parseFunc{
 	"codex":       parseCodex,
 	"pi":          parsePi,
 	"dsh":         parseDSH,
+	"antigravity": parseAntigravity,
 }
 
 // Supports reports whether the host's log format is implemented.
