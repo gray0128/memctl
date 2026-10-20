@@ -289,12 +289,14 @@ export function createBridge(options = {}) {
     if (result.error !== undefined) throw result.error
     if (result.timedOut) throw new Error(`memctl start timed out after ${startTimeoutMs} ms`)
     if (result.overflow) throw new Error(`memctl start output exceeded ${maxStartBytes} bytes`)
-    if (result.code !== 0) {
-      throw new Error(`memctl start exited with ${result.code ?? result.signal}: ${tail(result.stderr)}`)
-    }
 
     const output = result.stdout.trim()
-    if (output === '') return ''
+    if (output === '') {
+      if (result.code !== 0) {
+        throw new Error(`memctl start exited with ${result.code ?? result.signal}: ${tail(result.stderr)}`)
+      }
+      return ''
+    }
     let payload
     try {
       payload = JSON.parse(output)
@@ -304,6 +306,12 @@ export function createBridge(options = {}) {
     const context = payload?.hookSpecificOutput?.additionalContext
     if (typeof context !== 'string') {
       throw new Error('memctl start returned no hookSpecificOutput.additionalContext')
+    }
+    // A failed start may still carry a usable envelope: an explicit (non-hook)
+    // start exits 1 when the remote sync fails, but the memory body is already
+    // on stdout. Keep the context and report the synchronization error.
+    if (result.code !== 0) {
+      warn(`session ${state.id} start exited with ${result.code ?? result.signal}; keeping the returned context: ${tail(result.stderr)}`)
     }
     return context
   }

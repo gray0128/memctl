@@ -119,11 +119,27 @@ test('subagents are skipped entirely', async () => {
   assert.equal(agent.contexts.length, 0)
 })
 
-test('start failure logs and leaves the session usable', async () => {
+test('a non-zero start with a valid envelope keeps the context and logs the error', async () => {
+  const warnings = []
+  const { spawn } = scriptedSpawn([
+    { stdout: startPayload('[agent-memory] partial'), stderr: 'memctl start: IO_FAILED: remote=', code: 1 },
+  ])
+  const bridge = bridgeWith(spawn, { logger: { warn: (message) => warnings.push(message) } })
+  const agent = fakeAgent('session-partial')
+
+  await bridge.onCreated(agent, 'startup')
+
+  assert.equal(agent.contexts.length, 1)
+  assert.equal(agent.contexts[0].text(), '[agent-memory] partial')
+  assert.equal(typeof agent.listeners['session/event'], 'function')
+  assert.ok(warnings.some((message) => message.includes('exited with 1')))
+})
+
+test('a non-zero start without an envelope is still reported as a failure', async () => {
   const warnings = []
   const { spawn, calls } = scriptedSpawn([{ stdout: '', stderr: 'NO_REPO', code: 1 }])
   const bridge = bridgeWith(spawn, { logger: { warn: (message) => warnings.push(message) } })
-  const agent = fakeAgent('session-2')
+  const agent = fakeAgent('session-partial-empty')
 
   await bridge.onCreated(agent, 'startup')
 

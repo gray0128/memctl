@@ -180,3 +180,14 @@
 - npm 发布与桌面升级补充（2026-10-20）：用户完成二次认证，`memctl-dsh@0.5.2` 已发布（registry `latest` 为 `0.5.2`，shasum `f9b8e15f9f5724de4369e04e9a77d91caee5933b`，8 个运行时文件），`0.0.0-stage` 占位版本已清理，`versions` 只剩 `0.5.1`、`0.5.2`，staged 队列为空。本机 `desktop` profile 通过 `dsh plugin --profile desktop add memctl-dsh@0.5.2` 从 `0.5.1` 升级到 `0.5.2`；`dsh plugin --profile desktop why memctl-dsh` 输出 `memctl-dsh@0.5.2`，profile 的 `dependencies` 与 `bundles` 一致，`node_modules/memctl-dsh/package.json` 的 `version` 为 `0.5.2`，`install --status` 返回 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.2`。`pi` 保持 `plugin@0.5.2`，`mcp: serving … (v0.9.0)`。
 - 关于产物目录：`~/.agent-memory/dsh/` 只有 `memctl-dsh-0.5.2.tgz` 而没有 `0.5.1`，符合 `EnsureTarball` 只写当前版本的行为；`0.5.1` 期间走 npm 通道，未生成过该 tarball。
 - 仍未做：`0.5.2` 的真实 DSH 会话（注入、`turn/end` 同步、收尾）未重新验证，升级只确认了包版本与适配器状态；绝对目录界面安装仍属未验证项。
+
+## T096：`memctl-dsh@0.5.2` 复验与 `0.5.3` 修复
+
+- 目标与范围：在本机 `desktop` 真实会话与隔离 profile 上复验 `memctl-dsh@0.5.2` 的上下文注入、`turn/end` 同步与收尾；对发现的问题只做最小修复，并同步 `07`、`README` 与台账。不改变 `memctl` 二进制的行为，不发布新版本。
+- 契约：[dsh 专用插件](../07-dsh-plugin.md)、[CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令)、[开发状态](../STATUS.md)。
+- 验证日期与环境：2026-10-20，macOS arm64，DSH 0.2.1-rc.2，`memctl v0.9.0`；真实会话 `session-36d9fbd5-6157-402c-ae1b-085ac3475e11`（`desktop` profile），隔离 profile 使用临时 `DSH_HOME` 与临时记忆仓库。
+- 复验结论：真实会话第 2 轮 `runtime-context` 快照（`seq=253`）含 `memctl:memory`，文本以 `[agent-memory] repo=/Users/libo/memory sync=ok` 开头；第 1 轮（`seq=10`）缺失，原因是该会话 `start` 在 02:26:25Z 遇到远端不可达并以退出码 `1` 结束，插件丢弃了整个 envelope。隔离 profile 中远端已确认私有时记录 `start` → `sync` → `end`，同步缓存为 `synced`。
+- 修复：`plugins/dsh/index.js` 的 `execStart` 先解析 stdout，仅在 envelope 缺失或非法时把非零退出当作失败；合法 envelope 保留上下文并记录警告，与 `plugins/pi` 的既有语义一致。新增单元测试「非零退出 + 合法 envelope 保留上下文」，原失败路径测试改为「非零退出且无 envelope」。版本升到 `0.5.3`。
+- 验证：插件 Node 测试 15 项通过；`go test ./plugins/dsh/...` 与 `go test ./...`（`tests/integration` 216 秒）通过；`dsh plugin add` 安装 `memctl-dsh-0.5.3.tgz` 后，A/B 对照显示 `0.5.2` 在 `start` 退出 `1` 时无 `memctl:memory`，`0.5.3` 有；`start` 退出 `0` 时两者一致。临时插桩副本确认 `turn/end` 触发 `sync`、headless 卸载时在途 `sync` 被终止并由 detached `end` 完成最终同步。
+- 未验证与遗留：`0.5.3` 未发布（npm `latest` 与 Release 仍为 `0.5.2`）；慢启动时首轮 `turn/end` 不触发 `sync`，由收尾 `end` 兜底，把监听器提前的尝试未得到预期结果且原因未定位，已回退；`agent/disposed` 仍只由单元测试覆盖。
+- 下一步：决定 `0.5.3` 是否发布；若发布，先用真实 `desktop` 会话复验升级后的版本。证据见 [T096 验证记录](./t096-dsh-plugin-0-5-2-verification.md)。
