@@ -130,7 +130,7 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_dream_propose",
-			Description: "Validate the current agent's structured organization and persist a ready local-agent DreamProposal. Every new memory cites integer sessionIndices; memctl assembles the authoritative [source: ...; added: ...] suffix and requires each assembled line to appear verbatim in files[]. It never writes the memory repository: review the diff and apply through memctl dream --apply or the Web UI.",
+			Description: "Validate the current agent's structured organization and persist a ready local-agent DreamProposal. Every new memory cites integer sessionIndices; memctl assembles the authoritative [source: ...; added: ...] suffix and requires each assembled line to appear verbatim in files[]. It also refuses a target whose parent directory does not exist (NOT_FOUND) and any newly introduced dangling link or unreachable file (UNSUPPORTED), because memctl never creates directory structure or index links. It never writes the memory repository: review the diff and apply through memctl dream --apply or the Web UI.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

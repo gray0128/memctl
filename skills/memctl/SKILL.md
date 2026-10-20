@@ -111,9 +111,9 @@ IO_FAILED: cannot open repository lock
 
 同时，你必须在 `files[]` 的对应 `targetPath` 中**逐字写入 `memctl` 会拼出的条目行**：`- <fact> [source: <sourceTag>; added: <date>]`，多个来源按 `sessionIndices` 首次出现顺序各写一个 `[source: ...]`，`added` 取所引用会话中最新的 `date`，`time_limited` 再追加 `; until: <YYYY-MM-DD>`。`sourceTag` 只能照抄 `prepare` 返回的 `sessions[].sourceTag`。拼不出或对不上会得到 `INVALID_ARGUMENT`，需要补齐后重试。
 
-目标文件所在的目录必须已经存在：`memctl` 不创建父目录，`notes/` 这类目录缺失时 `apply` 返回 `NOT_FOUND`。先确认目录存在，再把文件放进去。
+目标文件所在的目录必须已经存在：`memctl` 不创建父目录。`propose` 会按目标文件的父目录校验基线，`notes/` 这类目录缺失时直接返回 `NOT_FOUND` 并列出缺失目录，提案不落盘；先让目录存在，再把它写进 `files[]`。
 
-新建文件时同时更新 `MEMORY.md` 索引，否则提案会被拒绝（错误码 `UNSUPPORTED`，消息列出新增的链接问题）。不要删除未满 30 天隐藏期的 `until` 条目（`DELETION_DEFERRED`），也不要触碰 `.git`、`.github` 等受保护路径。
+新建文件时同时更新 `MEMORY.md` 索引：`propose` 会拒绝新出现的断链与不可达文件，错误码 `UNSUPPORTED`，消息列出链接问题或 `ORPHAN_FILE <path>`。不要删除未满 30 天隐藏期的 `until` 条目（`DELETION_DEFERRED`），也不要触碰 `.git`、`.github` 等受保护路径。`MEMORY.md` 超过 100 行不会阻断生成，提案 `warnings` 会给出提示。
 
 ### 6.3 准备包与隐私
 
@@ -127,7 +127,8 @@ IO_FAILED: cannot open repository lock
 | --- | --- |
 | `INVALID_ARGUMENT` | 按消息修正下标、`fact` 格式、`until` 或补齐 `files[]` 中缺的条目行，重试一次 |
 | `DELETION_DEFERRED` | 恢复被删的未到期条目，改为只追加 |
-| `UNSUPPORTED` | 消息列出提案新增的断链或孤立文件，补 `MEMORY.md` 索引或修链接后重试 |
+| `UNSUPPORTED` | 消息列出提案新增的断链或不可达文件，补 `MEMORY.md` 索引或修链接后重试 |
+| `NOT_FOUND` | 目标文件的父目录不在基线中，先在仓库里创建该目录并重新 `--prepare` |
 | `PROPOSAL_STALE` | 主库在生成后被改动，重新 `--prepare` 并重新生成 |
 | `BUSY` | 等待数秒重试一次；仍忙则报告，不删除锁文件 |
 

@@ -143,6 +143,53 @@ func (r *Root) ListManaged() ([]string, error) {
 	return paths, nil
 }
 
+// ListDirs returns every root-relative directory of the managed repository,
+// sorted, with the same exclusions as ListManaged. It lets a caller that
+// already holds the lock prove a target's parent exists while it is planning a
+// write: memctl never creates directory structure, so a plan into a missing
+// directory would only fail later, inside the transaction.
+func (r *Root) ListDirs() ([]string, error) {
+	var dirs []string
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		handle, err := r.root.Open(dir)
+		if err != nil {
+			return memerr.Wrap(memerr.IOFailed, err, "cannot list %q", dir)
+		}
+		entries, err := handle.ReadDir(-1)
+		handle.Close()
+		if err != nil {
+			return memerr.Wrap(memerr.IOFailed, err, "cannot list %q", dir)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.EqualFold(name, ".git") || strings.EqualFold(name, ".github") {
+				continue
+			}
+			if strings.HasSuffix(name, memctlTempSuffix) || strings.HasSuffix(name, memctlMoveSuffix) {
+				continue
+			}
+			if entry.Type()&fs.ModeSymlink != 0 || !entry.IsDir() {
+				continue
+			}
+			rel := name
+			if dir != "." {
+				rel = dir + "/" + name
+			}
+			dirs = append(dirs, rel)
+			if err := walk(rel); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk("."); err != nil {
+		return nil, err
+	}
+	sort.Strings(dirs)
+	return dirs, nil
+}
+
 // WriteAtomic replaces or creates one managed file: it writes and flushes a
 // temporary file in the target directory, then renames it over the target. The
 // parent directories must already exist; memctl does not invent directory

@@ -24,6 +24,12 @@ type baselineFile struct {
 type baseline struct {
 	head  string
 	files map[string]baselineFile
+	// dirs holds every managed directory of the baseline, so a proposal can be
+	// refused while it is still a proposal when one of its targets sits under a
+	// directory that does not exist. memctl never creates directory structure
+	// while holding the repository lock. See
+	// docs/01-architecture-and-modules.md section 3.2.
+	dirs map[string]bool
 	// skipped records managed files that are not exported (binary assets,
 	// oversized assets, Git/host configuration). A proposed change to a
 	// skipped path is rejected instead of silently clobbering it.
@@ -40,9 +46,17 @@ func exportBaseline(root *vault.Root) (*baseline, error) {
 	if err != nil {
 		return nil, err
 	}
+	dirs, err := root.ListDirs()
+	if err != nil {
+		return nil, err
+	}
 	base := &baseline{
 		files:   make(map[string]baselineFile, len(paths)),
+		dirs:    make(map[string]bool, len(dirs)),
 		skipped: make(map[string]bool),
+	}
+	for _, dir := range dirs {
+		base.dirs[dir] = true
 	}
 	for _, rel := range paths {
 		if protectedPath(rel) {

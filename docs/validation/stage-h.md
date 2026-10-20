@@ -132,3 +132,21 @@
   - Skill 的自动触发未验证：两轮端到端验收都由本会话手工执行 `--prepare`/`--propose`/`--apply`，没有让另一个 Agent 在「整理记忆」指令下自主完成。
   - `propose` 不校验目标父目录是否存在，提案在 `apply` 时才以 `NOT_FOUND` 失败；符合「不创建父目录」的既有契约，已登记为后续任务。
   - 提案列表只显示前 20 条，未提供分页控件；超过 20 条时需用 `memctl dream --list` 查看。
+
+## T104：`propose` 结构守卫（父目录、孤立文件与索引膨胀，`H-4` 补遗）
+
+- 目标与范围：补齐 `docs/12` §2.3 步骤 3 中三处「文档已写、实现未跟上」的守卫。`propose` 在生成提案前按固定基线校验 `files[]`：目标文件的父目录不存在时返回 `NOT_FOUND` 并列出缺失目录（此前只到 `apply` 才失败）、新出现的不可达文件与断链一并返回 `UNSUPPORTED`、`MEMORY.md` 超过 `EntryBloatLines` 时向提案 `warnings` 追加提示而不阻断。不改动 `--runner`/`--worker` 远端路径、`apply` 语义与任何写入契约。
+- 对应契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)、[01. 架构与模块](../01-architecture-and-modules.md#32-文件边界)、[04. CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令)、[05. 验收与交付](../05-validation-and-delivery.md#阶段-h-的实施顺序)、[09. MCP 记忆工具](../09-mcp-memory-tools.md#44-工具集)。
+- 验证时间与环境：2026-10-20，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 交付：
+  1. `internal/vault/write.go` 新增 `Root.ListDirs`：按与 `ListManaged` 相同的排除规则列出受管目录，跳过 `.git`、`.github`、临时文件与符号链接。
+  2. `internal/dream/export.go` 的 `baseline` 新增 `dirs` 集合并由 `exportBaseline` 填充，使父目录判定使用与 `apply` 相同的锁定基线。
+  3. `internal/dream/propose.go` 新增 `verifyParentDirs`（只检查基线中不存在、且父目录不在 `dirs` 中的目标，返回 `NOT_FOUND`）、把 `verifyTargetLinks` 扩展为结构守卫（链接问题加新增不可达文件，返回 `UNSUPPORTED` 并标注 `ORPHAN_FILE <path>`），并在 `buildChanges` 之后按结果树的 `MEMORY.md` 行数追加膨胀警告。
+  4. 文档与文案：`docs/12` §2.3 步骤 3、步骤 2 的守卫说明与 `D07` 验收、`docs/04` 的 `dream --propose` 行、`docs/05` 的 `D07` 行、`docs/09` 与 MCP 工具描述、`skills/memctl/SKILL.md` §6.2/§6.4、`memctl help dream` 的注意事项与中英测试一并更新。
+- 验证：
+  - `go test ./internal/... -count=1` 全部通过。新增用例：`TestProposeLocalRefusesMissingParentDirCoversD07`（拒绝后补齐目录再通过）、`TestProposeLocalRefusesNewOrphanCoversD07`（新文件被拒、基线已有的孤立文件不阻断无关提案）、`TestProposeLocalWarnsOnEntryBloatCoversD07`（超阈值追加警告、短文件不警告）与 `internal/vault` 的 `TestListDirsSkipsGitAndSymlinks`。
+  - `tests/integration` 全量 144 项通过（`go test ./tests/integration -count=1 -v`，185 个 `--- PASS` 含子用例）；`TestH3ProposeRejectsMissingAssembledLineCoversD07` 扩为五个子用例并按各守卫的错误码断言；`TestH3ApplySkipsChangedDigestCoversD08` 的提案补上 `MEMORY.md` 索引，以符合新的结构守卫。
+  - `go vet ./...`、`gofmt` 与 `git diff --check` 通过；`scripts/test-shards.txt` 与全量用例名单比对无增删，无需重新生成。
+- 未验证与遗留：
+  - 本轮未在真实宿主会话内重跑 `prepare` → `propose` → `apply`；三条守卫由隔离单元测试与真实二进制集成测试覆盖。
+  - `stage-h.md` 存在两节 `T102` 重复，属 `T102` 与 `T103` 归档时的既有重复，本轮未合并。

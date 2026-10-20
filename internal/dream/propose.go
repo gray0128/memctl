@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -64,9 +65,14 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 		return ProposeResult{}, err
 	}
 	// The remaining lifecycle guards of docs/12 section 2.3 step 3 reuse the
-	// code the Actions worker applies: an expired entry still inside its 30-day
-	// hidden period is never deleted, and a newly introduced dangling or
-	// ambiguous link is refused instead of becoming a warning.
+	// code the Actions worker applies: a target under a directory that does not
+	// exist is refused while it is still a proposal, an expired entry still
+	// inside its 30-day hidden period is never deleted, and a newly introduced
+	// dangling link, ambiguous link or orphan file is refused instead of
+	// becoming a warning.
+	if err := verifyParentDirs(base, targets); err != nil {
+		return ProposeResult{}, err
+	}
 	if err := verifyDeleteWindow(base, targets, s.timeNow()); err != nil {
 		return ProposeResult{}, err
 	}
@@ -83,6 +89,14 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 	}
 	warnings = append(warnings, changeWarnings...)
 	warnings = append(warnings, input.Warnings...)
+	// The entry file is injected into every session, so a proposal that leaves
+	// it above the documented hint threshold carries that hint as a warning. It
+	// never blocks generation. See docs/12-session-corpus-dreaming.md section
+	// 2.3 step 3.
+	if entry, ok := targets[vault.EntryPointName]; ok && len(vault.ParseFile(vault.EntryPointName, "", entry.content).Lines) > EntryBloatLines {
+		warnings = append(warnings, fmt.Sprintf(
+			"%s has more than %d lines; group topics into linked files", vault.EntryPointName, EntryBloatLines))
+	}
 
 	id, err := newID("dp")
 	if err != nil {
@@ -302,25 +316,97 @@ func verifyDeleteWindow(base *baseline, targets map[string]workFile, now time.Ti
 		joinLimited(deferred, 3))
 }
 
-// verifyTargetLinks refuses a proposal that introduces a link problem the
-// baseline did not have. A problem the repository already had is not this
-// proposal's job to fix and never blocks it.
+// verifyParentDirs refuses a proposal that creates or updates a file under a
+// directory the baseline does not contain. memctl never creates directory
+// structure while holding the repository lock, so such a proposal would pass
+// review and only fail inside the apply transaction with NOT_FOUND. The check
+// compares against the fixed baseline, which is the same tree the apply
+// revalidates. See docs/01-architecture-and-modules.md section 3.2.
+func verifyParentDirs(base *baseline, targets map[string]workFile) error {
+	var missing []string
+	paths := make([]string, 0, len(targets))
+	for rel := range targets {
+		paths = append(paths, rel)
+	}
+	sort.Strings(paths)
+	for _, rel := range paths {
+		if _, existed := base.files[rel]; existed {
+			continue
+		}
+		parent := path.Dir(rel)
+		if parent == "." || base.dirs[parent] {
+			continue
+		}
+		missing = append(missing, rel+" (needs "+parent+"/)")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return memerr.New(memerr.NotFound,
+		"%d target file(s) sit under a directory that does not exist: %s; memctl does not create directories, so create the directory first",
+		len(missing), joinLimited(missing, 3))
+}
+
+// verifyTargetLinks refuses a proposal that introduces a link problem or an
+// orphan file the baseline did not have. A problem the repository already had is
+// not this proposal's job to fix and never blocks it. Orphans are checked here
+// too because docs/12 section 2.3 step 3 names both: a topic file that is not
+// reachable from MEMORY.md would be invisible to every read surface.
 func verifyTargetLinks(base *baseline, targets map[string]workFile) error {
-	known := problemSet(&fileSet{files: baselineTree(base)})
-	current := problemSet(&fileSet{files: targetTree(targets)})
+	before := baselineTree(base)
+	after := targetTree(targets)
+	known := problemSet(&fileSet{files: before})
+	current := problemSet(&fileSet{files: after})
 	var introduced []string
 	for key := range current {
 		if !known[key] {
 			introduced = append(introduced, key)
 		}
 	}
+	introduced = append(introduced, introducedOrphans(before, after)...)
 	if len(introduced) == 0 {
 		return nil
 	}
 	sort.Strings(introduced)
 	return memerr.New(memerr.Unsupported,
-		"the proposal introduces %d link problem(s): %s; add the [[target]] index links or restore the resolved files (INVALID_LINK)",
+		"the proposal introduces %d structural problem(s): %s; add the [[target]] index links or restore the resolved files (INVALID_LINK, ORPHAN_FILE)",
 		len(introduced), joinLimited(introduced, 3))
+}
+
+// introducedOrphans lists the topic files the proposal leaves unreachable from
+// the entry file. A file is an introduced orphan when it is new, or when it was
+// reachable in the baseline and the proposal disconnects it. A file the baseline
+// already had orphaned is not this proposal's job to fix.
+func introducedOrphans(before, after map[string][]byte) []string {
+	wasReachable := reachableSet(before)
+	nowReachable := reachableSet(after)
+	var orphans []string
+	for rel := range after {
+		if rel == vault.EntryPointName || nowReachable[rel] {
+			continue
+		}
+		if _, existed := before[rel]; existed && !wasReachable[rel] {
+			continue
+		}
+		orphans = append(orphans, "ORPHAN_FILE "+rel)
+	}
+	return orphans
+}
+
+// reachableSet reports the files reachable from the entry file of one tree.
+func reachableSet(files map[string][]byte) map[string]bool {
+	paths := make([]string, 0, len(files))
+	for rel := range files {
+		paths = append(paths, rel)
+	}
+	sort.Strings(paths)
+	index := vault.NewLinkIndex(paths)
+	parsed := make(map[string]*vault.ParsedFile, len(paths))
+	for _, rel := range paths {
+		value := vault.ParseFile(rel, "", files[rel])
+		parsed[rel] = &value
+	}
+	return reachablePaths(parsed, index)
 }
 
 // joinLimited joins up to limit items and appends a count of the rest, so a

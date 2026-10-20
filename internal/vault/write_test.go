@@ -77,6 +77,34 @@ func TestListManagedSkipsAtomicTempFiles(t *testing.T) {
 	}
 }
 
+// TestListDirsSkipsGitAndSymlinks covers the baseline directory listing used by
+// the parent-directory guard of docs/12 section 2.3: only real managed
+// directories are reported, and Git's own directories never are.
+func TestListDirsSkipsGitAndSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"notes", "notes/deep", ".git/objects", ".github/workflows"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(dir, "notes"), filepath.Join(dir, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	root, err := OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	defer root.Close()
+
+	dirs, err := root.ListDirs()
+	if err != nil {
+		t.Fatalf("ListDirs: %v", err)
+	}
+	if len(dirs) != 2 || dirs[0] != "notes" || dirs[1] != "notes/deep" {
+		t.Fatalf("ListDirs = %v, want [notes notes/deep]", dirs)
+	}
+}
+
 // TestRevisionWithLengthDistinguishesTruncatedAssets covers P3-1: when only the
 // bounded prefix of a large asset is hashed, the exact length must still change
 // the digest.

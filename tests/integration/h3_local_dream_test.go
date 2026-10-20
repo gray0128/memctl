@@ -361,11 +361,18 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签")
+	// The parent-directory guard needs notes/ to exist for every case that is
+	// not testing the guard itself.
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o700); err != nil {
+		t.Fatalf("create notes: %v", err)
+	}
 	bundle := runPrepare(t, bin, home, project)
+	line := "- 发布只推标签 [source: " + bundle.Sessions[0].SourceTag + "; added: 2026-10-20]"
 
 	cases := []struct {
 		name     string
 		input    map[string]any
+		code     string
 		contains string
 	}{
 		{
@@ -382,6 +389,7 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 					{"path": "notes/release.md", "action": "create", "content": "# Release\n- 发布只推标签\n"},
 				},
 			},
+			code:     "INVALID_ARGUMENT",
 			contains: "does not contain the assembled entry line",
 		},
 		{
@@ -398,6 +406,7 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 					{"path": "notes/release.md", "action": "create", "content": "# Release\n"},
 				},
 			},
+			code:     "INVALID_ARGUMENT",
 			contains: "sessionIndices contains 9",
 		},
 		{
@@ -414,7 +423,46 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 					{"path": "notes/release.md", "action": "create", "content": "# Release\n"},
 				},
 			},
+			code:     "INVALID_ARGUMENT",
 			contains: "must not carry source or added metadata",
+		},
+		{
+			// memctl never creates directory structure, so a proposal is
+			// refused while it is still a proposal instead of failing in apply.
+			name: "missing parent directory",
+			input: map[string]any{
+				"newMemories": []map[string]any{{
+					"kind":           "state",
+					"targetPath":     "archive/release.md",
+					"fact":           "发布只推标签",
+					"sessionIndices": []int{0},
+					"rationale":      "test",
+				}},
+				"files": []map[string]any{
+					{"path": "archive/release.md", "action": "create", "content": "# Release\n" + line + "\n"},
+				},
+			},
+			code:     "NOT_FOUND",
+			contains: "archive/",
+		},
+		{
+			// A topic file that is never linked from MEMORY.md would be
+			// invisible to every read surface.
+			name: "orphan topic file",
+			input: map[string]any{
+				"newMemories": []map[string]any{{
+					"kind":           "state",
+					"targetPath":     "notes/release.md",
+					"fact":           "发布只推标签",
+					"sessionIndices": []int{0},
+					"rationale":      "test",
+				}},
+				"files": []map[string]any{
+					{"path": "notes/release.md", "action": "create", "content": "# Release\n" + line + "\n"},
+				},
+			},
+			code:     "UNSUPPORTED",
+			contains: "ORPHAN_FILE notes/release.md",
 		},
 	}
 	for _, testCase := range cases {
@@ -429,8 +477,8 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 			if result.code == 0 {
 				t.Fatalf("proposal accepted: %s", result.stdout)
 			}
-			if !strings.Contains(result.stderr, "INVALID_ARGUMENT") || !strings.Contains(result.stderr, testCase.contains) {
-				t.Fatalf("stderr = %s, want INVALID_ARGUMENT and %q", result.stderr, testCase.contains)
+			if !strings.Contains(result.stderr, testCase.code) || !strings.Contains(result.stderr, testCase.contains) {
+				t.Fatalf("stderr = %s, want %s and %q", result.stderr, testCase.code, testCase.contains)
 			}
 		})
 	}
@@ -471,6 +519,11 @@ func TestH3ApplySkipsChangedDigestCoversD08(t *testing.T) {
 			"rationale":      "test",
 		}},
 		"files": []map[string]any{
+			{
+				"path":    "MEMORY.md",
+				"action":  "update",
+				"content": bundle.fileContent("MEMORY.md") + "- [[notes/release]] — 发布规则\n",
+			},
 			{"path": "notes/release.md", "action": "create", "content": "# Release\n" + line + "\n"},
 		},
 	}

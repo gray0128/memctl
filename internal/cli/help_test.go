@@ -257,6 +257,9 @@ func TestDreamHelpDocumentsLocalModesCoversH4(t *testing.T) {
 		"DELETION_DEFERRED",
 		"DreamProposeInput",
 		"memctl dream --propose --stdin < proposal.json",
+		"NOT_FOUND",
+		"UNSUPPORTED",
+		"MEMORY.md",
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("dream help lacks %q:\n%s", want, page)
@@ -273,7 +276,7 @@ func TestDreamHelpDocumentsLocalModesCoversH4(t *testing.T) {
 	if code := Run([]string{"help", "dream"}, strings.NewReader(""), &stdout, &stderr, "v-test"); code != ExitOK {
 		t.Fatalf("Chinese help dream exit code = %d (stderr=%q)", code, stderr.String())
 	}
-	for _, want := range []string{"本地当前 Agent 会话路径", "会话下标", "逐字比对", "不写主仓库"} {
+	for _, want := range []string{"本地当前 Agent 会话路径", "会话下标", "逐字比对", "不写主仓库", "父目录", "不可达文件", "超过 100 行"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("Chinese dream help lacks %q", want)
 		}

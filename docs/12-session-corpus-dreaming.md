@@ -168,7 +168,7 @@ flowchart TB
 
 Skill 只描述流程与判定规则，不复述参数表：检索与阅读时机、三类可提炼信号与频次门控、`files[]` 的逐字写法、失败码处置都写在该 Skill，命令、选项、输入输出与退出码以 `memctl help dream` 为准。两处边界由 Skill 明确承担，因为它们都属于「Agent 必须在提交前知道」的规则：
 
-- 目标文件所在的父目录必须已存在。`memctl` 不在持锁期间创建目录结构（见 [架构与模块](./01-architecture-and-modules.md#32-文件边界)），缺失时 `apply` 返回 `NOT_FOUND`。
+- 目标文件所在的父目录必须已存在。`memctl` 不在持锁期间创建目录结构（见 [架构与模块](./01-architecture-and-modules.md#32-文件边界)）。该约束由 `propose` 在生成提案前校验：`files[]` 中任一目标文件的父目录不在基线里时返回 `NOT_FOUND` 并列出缺失目录，提案不落盘；`apply` 仍在事务内重复校验同一约束。
 - MCP 不提供 `memory_dream_apply`。提案生成后由 Skill 展示摘要与 Diff，应用只能来自用户的 CLI 或 UI 操作。
 
 #### 步骤 1：准备整理上下文（`memctl dream --prepare [--project KEY] [--max-bytes N] --json` / MCP `memory_dream_prepare`）
@@ -255,7 +255,7 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
    提案的最终文件内容只由 `files[]` 给出，`newMemories[]` 是**来源绑定声明**，不参与文件拼装。Go 侧按下列规则处理后做一致性校验：
 
    - 每条 `newMemories[].fact` 拼装出的条目行（`- <fact> [source: ...; added: ...]`，含可选的 `; until: ...`）必须**逐字出现在** `files[]` 中 `targetPath` 的目标内容里（目标文件不存在时，视为该文件必须由 `files[]` 创建）。未出现即返回 `INVALID_ARGUMENT`，提示补齐 `files[]`。
-   - Go 不向 `files[]` 注入条目、不自动创建文件、不自动补 `[[targetPath]]` 索引链接。索引是否齐全由 §2.3 步骤 3 的断链与孤立文件校验判定，缺失时返回 `INVALID_LINK` 或 `ORPHAN_FILE` 结构错误，由当前 Agent 修正后重试。
+   - Go 不向 `files[]` 注入条目、不自动创建文件、不自动补 `[[targetPath]]` 索引链接。索引是否齐全由 §2.3 步骤 3 的断链与孤立文件校验判定：新出现的断链或不可达文件使 `propose` 返回 `UNSUPPORTED`，消息列出链接问题与 `ORPHAN_FILE <path>`，由当前 Agent 修正后重试。
    - 由此保证 `patchHash` 只取决于 `files[]`：同一份 `files[]` 无论 `newMemories[]` 顺序如何，产出的提案内容与哈希完全一致。
 4. **结构化输入（`DreamProposeInput`）**：
    Agent 在 `files[]` 中的新条目行必须严格照抄 Go 会拼出的形式：`- <fact> [source: <sourceTag>; added: <date>]`，其中 `sourceTag` 只能取 `prepare` 返回的 `sessions[].sourceTag`，`date` 只能取所引用会话中最新 `date`（`time_limited` 另加 `; until: <YYYY-MM-DD>`）。Agent 不得编造 `agent://`、`https://` 或其他来源，也不得省略 `added`；`newMemories[].fact` 不带前导 `- `。Go 按同样规则重新拼装后逐字比对，不一致即拒绝。
@@ -301,9 +301,10 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
    - 按 `sessionIndices` 首次出现的顺序去重，提取对应的真实 `sessions[i].sourceTag`，取所引用会话中最新的 `date` 作为 `added` 日期。
    - 由 Go 代码生成标准条目行：`- <fact> [source: <tag1>; source: <tag2>; added: <latestDate>]`（含 `until` 时追加 `; until: <YYYY-MM-DD>`），并按 §2.3 步骤 2 第 3 条与 `files[]` 逐字比对。
 3. **文件修订与生命周期守卫**：
-   - 对完整的 `files[]` 结果树，复用远端整理路径既有的不可信输入校验：拒绝 `.git`/`.github` 等 `protectedPath`、拒绝删除 `MEMORY.md`、校验未满 30 天隐藏期的 `until` 条目未被删除（违者返回 `DELETION_DEFERRED`）、校验不存在新的断链或孤立文件。
+   - 对完整的 `files[]` 结果树，复用远端整理路径既有的不可信输入校验：拒绝 `.git`/`.github` 等 `protectedPath`、拒绝删除 `MEMORY.md`、校验未满 30 天隐藏期的 `until` 条目未被删除（违者返回 `DELETION_DEFERRED`）。
+   - 父目录、断链与孤立文件按基线比对，只拒绝本次提案**新增**的问题：任一新建或更新的目标文件位于基线中不存在的目录时返回 `NOT_FOUND` 并列出缺失目录；结果树中新增的 `INVALID_LINK`/`MISSING_LINK`/`AMBIGUOUS_LINK` 或新出现且不可从 `MEMORY.md` 到达的文件返回 `UNSUPPORTED`，消息分别标注链接问题与 `ORPHAN_FILE <path>`。基线中已存在的问题不由本次提案负责，不阻断生成；因此新建主题文件时必须同时在同一份 `files[]` 中补 `MEMORY.md` 的 `[[target]]` 索引链接。
    - **事件型条目的保护不在 Go 侧校验**：解析器没有条目类型字段，`worker` 的 Step Guard 同样只校验路径、格式与链接。本方案沿用这一现状，把「事件型只增不改」作为当前 Agent 的提炼规则（§2.3 步骤 2）与 `warnings` 提示，而不是宣称已有确定性守卫。若要把它升级为硬约束，需先为 `MemoryEntry` 引入可判定的类型元数据并单独立任务。
-   - `MEMORY.md` 行数不设新的硬限。沿用既有提示阈值 `EntryBloatLines = 100`：超过时进入 `findings` 并写入提案 `warnings`，不阻断生成。
+   - `MEMORY.md` 行数不设新的硬限。沿用既有提示阈值 `EntryBloatLines = 100`：`prepare` 把它作为 `ENTRY_BLOAT` 放进 `findings`，`propose` 在结果树超过阈值时向提案 `warnings` 追加一行提示，两者都不阻断生成。
 4. **生成本地提案**：
    - 校验全部通过后，计算从 `baseHead` 到目标文件树的有序 `changes`、`diff` 与 `patchHash`，在 `$STATE/repos/<repoId>/proposals/<proposalId>.json` 持久化 `status: "ready"`、`runner: "local-agent"`、`sessionsScanned: len(sessions)`、`newMemoriesExtracted: len(acceptedNewMemories)` 的 `DreamProposal`。提案内部另存本次涉及的 `corpusDigests`：每项为 `{file, revision}`，`revision` 是准备阶段该摘要文件的内容哈希。只记录被 `newMemories[].sessionIndices` 实际引用的摘要：批次携带最多 12 份摘要供 Agent 选择，把未被引用的会话标为已消费会让它在下一批里永久消失。
    - 向调用方返回 `{proposalId, status: "ready", patchHash, sessionsScanned, newMemoriesExtracted, changes, diff, warnings}`。
@@ -371,7 +372,7 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
 | ID | 输入或故障场景 | 可验证结果 |
 | --- | --- | --- |
 | `D06` | Hook stdin 含 `transcript_path` / `last_assistant_message`、传入 `--transcript`，或 `dream --prepare` 扫描存量宿主历史目录；日志含超长工具输出、各类 API Key/Token/密码、`<system-reminder>`、可疑提示词注入回合，或设置了 `AGENT_MEMORY_CORPUS=0`；补扫目录中混入超过 `8 MiB` 的日志与最近的无关项目会话 | 实时采集与存量补扫生成的每个 `SessionDigest` 大小均 $\le 16\text{ KiB}$，所有凭据模式被替换为 `[REDACTED]`，系统块与可疑回合被剔除；超限日志只读取尾部并标记 `truncated: true`；当前项目的会话优先进入候选，无关项目不挤占配额；`AGENT_MEMORY_CORPUS=0` 或日志文件缺失时不写缓存且命令退出码为 `0` |
-| `D07` | 存在同一项目或跨项目的多个未消费 `SessionDigest` 时，通过 CLI（`dream --prepare [--project KEY]` → `dream --propose --stdin` → `dream --apply`）或 MCP（`memory_dream_prepare` → `memory_dream_propose`）执行本地交互式整理；含跨多会话引用 `sessionIndices: [0, 1]`、超出 12 个会话返回 `remainingUnconsumed`、传入越界 `sessionIndices`、伪造 `[source:]`、`files[]` 缺少拼装后的条目行、同一 basename 的两个克隆、删除未满 30 天的过期条目 | 仓库无远端、无 `.github/workflows/memctl-dream.yml` 时 `--prepare` 仍成功；`--prepare` 默认优先返回当前 `cwdKey` 项目的多个会话（指定 `project` 时仅返回该项目会话，同名歧义返回 `INVALID_ARGUMENT`）；`--propose` 正常路径生成 `runner: "local-agent"`、`status: "ready"` 的 `DreamProposal`，多会话提炼的新条目精确携带全部引用会话的 `source` 与最新 `added` 日期；`files[]` 缺少拼装行时拒绝且不生成提案；`apply` 成功后提交主分支并将本次涉及的多个会话摘要统一标记 `consumedBy` 与 `consumedRevision`；越界下标、伪造 `source` 或触发 `DELETION_DEFERRED` 时被本地守卫拒绝且不生成提案 |
+| `D07` | 存在同一项目或跨项目的多个未消费 `SessionDigest` 时，通过 CLI（`dream --prepare [--project KEY]` → `dream --propose --stdin` → `dream --apply`）或 MCP（`memory_dream_prepare` → `memory_dream_propose`）执行本地交互式整理；含跨多会话引用 `sessionIndices: [0, 1]`、超出 12 个会话返回 `remainingUnconsumed`、传入越界 `sessionIndices`、伪造 `[source:]`、`files[]` 缺少拼装后的条目行、目标文件的父目录不存在、新建主题文件但未补 `MEMORY.md` 索引、同一 basename 的两个克隆、删除未满 30 天的过期条目，以及 `MEMORY.md` 超过 `EntryBloatLines` | 仓库无远端、无 `.github/workflows/memctl-dream.yml` 时 `--prepare` 仍成功；`--prepare` 默认优先返回当前 `cwdKey` 项目的多个会话（指定 `project` 时仅返回该项目会话，同名歧义返回 `INVALID_ARGUMENT`）；`--propose` 正常路径生成 `runner: "local-agent"`、`status: "ready"` 的 `DreamProposal`，多会话提炼的新条目精确携带全部引用会话的 `source` 与最新 `added` 日期；`files[]` 缺少拼装行时拒绝且不生成提案；父目录不存在时返回 `NOT_FOUND` 并列出缺失目录，未补索引的新文件返回 `UNSUPPORTED` 并列出 `ORPHAN_FILE <path>`，两者均不落盘；`MEMORY.md` 超过 `EntryBloatLines` 时在提案 `warnings` 中提示但不阻断；`apply` 成功后提交主分支并将本次涉及的多个会话摘要统一标记 `consumedBy` 与 `consumedRevision`；越界下标、伪造 `source` 或触发 `DELETION_DEFERRED` 时被本地守卫拒绝且不生成提案 |
 | `D08` | 提案生成后、apply 前对参与整理的会话摘要重新蒸馏（`updatedAt` 与 `turns` 变化），以及 apply 提交成功后写回 `consumedBy` 前中断进程 | 摘要变化时 apply 仍可完成提交，但对应项不被标记消费并在结果与 `warnings` 中列出；写回中断后重新 apply 命中幂等路径并完成写回，已消费项保持不变；任何情况下都不以新摘要内容覆盖已记录的 `consumedRevision` |
 
 ### 6.2 阶段 H 实施顺序

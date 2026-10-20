@@ -35,6 +35,13 @@ func initLocalRepo(t *testing.T) string {
 	writeFile(t, filepath.Join(repo, "topic.md"), "# Topic\n- an existing fact [source: test; added: 2026-01-01]\n")
 	gitRun(t, env, repo, "add", "--", "MEMORY.md", "topic.md")
 	gitRun(t, env, repo, "commit", "-q", "-m", "init")
+	// A managed repository does not create directory structure, so a topic file
+	// under notes/ needs notes/ to exist before a proposal may target it. Git
+	// does not track an empty directory, so this one stays untracked without
+	// making the worktree dirty.
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o700); err != nil {
+		t.Fatalf("create notes: %v", err)
+	}
 	return repo
 }
 
@@ -723,5 +730,116 @@ func TestProposeLocalRefusesNewDanglingLinkCoversD07(t *testing.T) {
 	_, err := service.ProposeLocal(context.Background(), input)
 	if err == nil || !contractCode(err, "MISSING_LINK") {
 		t.Fatalf("dangling index link: err=%v, want MISSING_LINK", err)
+	}
+}
+
+// TestProposeLocalRefusesMissingParentDirCoversD07 covers the parent-directory
+// guard: memctl never creates directory structure while holding the lock, so a
+// proposal whose target sits under a missing directory is refused while it is
+// still a proposal instead of failing later in the apply transaction.
+func TestProposeLocalRefusesMissingParentDirCoversD07(t *testing.T) {
+	service, bundle := prepareFixture(t)
+	input := proposeInput(bundle, []int{0}, "发布只推标签",
+		"# Memory\n\n## Index\n- [[topic]]\n- [[archive/release]]\n",
+		"# Release\n"+assembledLine(bundle, []int{0}, "发布只推标签")+"\n")
+	input.Files[1].Path = "archive/release.md"
+	input.NewMemories[0].TargetPath = "archive/release.md"
+
+	_, err := service.ProposeLocal(context.Background(), input)
+	if err == nil || !contractCode(err, "NOT_FOUND") {
+		t.Fatalf("missing parent directory: err=%v, want NOT_FOUND", err)
+	}
+	if !strings.Contains(err.Error(), "archive/") {
+		t.Fatalf("error does not name the missing directory: %v", err)
+	}
+	if proposals := service.List(0); len(proposals) != 0 {
+		t.Fatalf("a refused proposal was persisted: %+v", proposals)
+	}
+
+	// The same proposal is accepted once the directory exists.
+	if err := os.MkdirAll(filepath.Join(service.Source.RepoPath, "archive"), 0o700); err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	bundle, err = service.PrepareLocal(context.Background(), PrepareRequest{Cwd: service.Source.RepoPath})
+	if err != nil {
+		t.Fatalf("PrepareLocal: %v", err)
+	}
+	input.BaseHead = bundle.BaseHead
+	input.BaseRevision = bundle.BaseRevision
+	if _, err := service.ProposeLocal(context.Background(), input); err != nil {
+		t.Fatalf("proposal into an existing directory was refused: %v", err)
+	}
+}
+
+// TestProposeLocalRefusesNewOrphanCoversD07 covers the orphan half of the
+// structural guard: a topic file the proposal creates but never links from the
+// entry file would be invisible to every read surface, so it is refused instead
+// of becoming a warning.
+func TestProposeLocalRefusesNewOrphanCoversD07(t *testing.T) {
+	service, bundle := prepareFixture(t)
+	input := proposeInput(bundle, []int{0}, "发布只推标签",
+		"# Memory\n\n## Index\n- [[topic]]\n",
+		"# Release\n"+assembledLine(bundle, []int{0}, "发布只推标签")+"\n")
+	_, err := service.ProposeLocal(context.Background(), input)
+	if err == nil || !contractCode(err, "UNSUPPORTED") {
+		t.Fatalf("orphan topic file: err=%v, want UNSUPPORTED", err)
+	}
+	if !strings.Contains(err.Error(), "ORPHAN_FILE notes/release.md") {
+		t.Fatalf("error does not name the orphan: %v", err)
+	}
+	// A file the baseline already had orphaned never blocks an unrelated
+	// proposal: fixing every pre-existing orphan is not this proposal's job.
+	service, bundle = prepareFixture(t)
+	writeFile(t, filepath.Join(service.Source.RepoPath, "stray.md"), "# Stray\n")
+	gitRun(t, gitEnv(t), service.Source.RepoPath, "add", "--", "stray.md")
+	gitRun(t, gitEnv(t), service.Source.RepoPath, "commit", "-q", "-m", "add stray")
+	bundle, err = service.PrepareLocal(context.Background(), PrepareRequest{Cwd: service.Source.RepoPath})
+	if err != nil {
+		t.Fatalf("PrepareLocal: %v", err)
+	}
+	input = proposeInput(bundle, []int{0}, "发布只推标签",
+		"# Memory\n\n## Index\n- [[topic]]\n- [[notes/release]]\n",
+		"# Release\n"+assembledLine(bundle, []int{0}, "发布只推标签")+"\n")
+	if _, err := service.ProposeLocal(context.Background(), input); err != nil {
+		t.Fatalf("a pre-existing orphan blocked an unrelated proposal: %v", err)
+	}
+}
+
+// TestProposeLocalWarnsOnEntryBloatCoversD07 covers the documented hint
+// threshold: MEMORY.md above EntryBloatLines enters the proposal warnings but
+// never blocks generation.
+func TestProposeLocalWarnsOnEntryBloatCoversD07(t *testing.T) {
+	service, bundle := prepareFixture(t)
+	entry := "# Memory\n\n## Index\n- [[topic]]\n- [[notes/release]]\n"
+	for i := 0; i < EntryBloatLines; i++ {
+		entry += "- filler line " + strings.Repeat("x", 4) + "\n"
+	}
+	result, err := service.ProposeLocal(context.Background(), proposeInput(bundle, []int{0}, "发布只推标签", entry,
+		"# Release\n"+assembledLine(bundle, []int{0}, "发布只推标签")+"\n"))
+	if err != nil {
+		t.Fatalf("ProposeLocal: %v", err)
+	}
+	var found bool
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "more than") && strings.Contains(warning, "lines") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings do not mention the entry threshold: %v", result.Warnings)
+	}
+
+	// A short entry file produces no such warning.
+	service, bundle = prepareFixture(t)
+	result, err = service.ProposeLocal(context.Background(), proposeInput(bundle, []int{0}, "发布只推标签",
+		"# Memory\n\n## Index\n- [[topic]]\n- [[notes/release]]\n",
+		"# Release\n"+assembledLine(bundle, []int{0}, "发布只推标签")+"\n"))
+	if err != nil {
+		t.Fatalf("ProposeLocal: %v", err)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "more than") {
+			t.Fatalf("a short entry file was reported as bloated: %v", result.Warnings)
+		}
 	}
 }
