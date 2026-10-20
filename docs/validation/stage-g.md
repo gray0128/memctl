@@ -159,3 +159,5 @@
 - 删除闸门（同日）：`vault.DeletionDue`/`DeletionBlockedReason`/`HiddenPeriodDays` 给出 30 天隐藏期判定；`App.DeleteEntry` 在删除已到期条目时校验隐藏期，未满返回新错误码 `DELETION_DEFERRED`（HTTP 409，消息给出可删除日期）。新增 `TestDeletionWindowCoversHiddenPeriod`、`TestDeleteEntryRespectsHiddenPeriod`、`TestDeleteEntryWithoutUntilIsAlwaysAllowed`、`TestT094DeleteDeferredInsideHiddenPeriod` 与 `TestT094DeleteWithoutUntilStillWorks`；后两条登记到分片清单。批量清理由哪个入口发起仍未定。
 
 - Dreaming 提案的同一闸门（同日）：`ApplyDream` 在落盘前逐文件比对原文与提案内容，若提案会移除处于隐藏期内的到期条目则返回 `DELETION_DEFERRED`，提案保持 `ready`；新增 `dreamDeferredEntries`/`requireDreamDeleteWindow`，测试 `TestApplyDreamRefusesDeleteInsideHiddenPeriod` 与 `TestApplyDreamAllowsDeleteAfterHiddenPeriod`。`plugins/pi` 的版本断言改为读取内嵌清单，避免每次升版都要改测试。
+
+- 收尾（2026-10-20）：`doctor` 的 `EXPIRED_ENTRY` 按隐藏期阶段给出不同提示——仍在隐藏期时在建议里给出首个可删除日期，隐藏期已满时在消息里标注 `deletable since <date>`；新增 `TestCheckDistinguishesHiddenPeriodPhase`。Dreaming worker 的 batch 提示词同步收紧为「只在该条目的静态候选声明隐藏期已满时才删除」。用户已确认批量清理由 Dreaming 提案统一发起，该设计选择已关闭。
