@@ -167,7 +167,7 @@
 ## T095：发布 `v0.9.0`（`memctl-dsh` 升到 `0.5.2`）
 
 - 目标与范围：把 `memctl-dsh` 版本从 `0.5.1` 提升到 `0.5.2`，与 `memctl-pi` 对齐；发布含 `T093`、`T094` 的 `v0.9.0`。插件运行时源码未改动，只改版本号。
-- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[dsh 专用插件](../07-dsh-plugin.md#81-npm-主通道)。
+- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[dsh 专用插件](../07-dsh-plugin.md#8-验证与验收)。
 - 实现：`plugins/dsh/package.json` 与 `plugins/dsh/README.md` 的版本与安装示例更新为 `0.5.2`；`plugins/dsh/embed_test.go` 的两处硬编码版本改为读取内嵌清单（与 `plugins/pi` 的处理一致），避免每次升版都要改测试。`scripts/release.sh` 从清单读版本，因此产物自动变为 `memctl-dsh-0.5.2.tgz`。
 - 本地校验：`make test` 全量通过（`tests/integration` 244 秒、插件 dsh 14 项、pi 15 项、前端 96 项）；`VERSION=v0.9.0 make release-dist` 生成四平台候选包与两个 `0.5.2` tarball，`shasum -a 256 -c SHA256SUMS` 六项全部 OK，`memctl-darwin-arm64 version` 输出 `memctl v0.9.0`。本地构建仅用于验证链路，不构成发布步骤。
 - 发布结果：提交 `26bdd10`，标签 `v0.9.0`，运行 [39357550244](https://github.com/gray0128/memctl/actions/runs/39357550244) 的 `verify`、`build`、`publish` 全部成功，[Release v0.9.0](https://github.com/gray0128/memctl/releases/tag/v0.9.0) 的 `publish` 作业完成。
