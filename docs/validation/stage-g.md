@@ -133,8 +133,9 @@
   5. `pi-theme-aura` 的 registry 文档 `readmeFilename` 为 `README.md`，`memctl-pi` 的 `readme` 为空、`readmeFilename` 为空；但 `pi-smart-ralph` 同样 `readme = 0` 却已收录，因此 README 缺失不是充分条件。
   6. 上游 [issue #11130](https://github.com/earendil-works/pi/issues/11130)（2026-10-19 自动关闭）记录同类现象：详情页 200、`?name=` 0 条、npm search 分数 0；报告者的排查同样排除了下载量与发布时间，并推测与索引文档构建有关。
 - 结论：pi.dev 目录直接消费 npm search 索引，收录门槛不在 pi.dev 侧。本包的问题表现为 npm 索引文档的 `score.final = 0` 且不在可枚举窗口内，属于 npm 侧的索引状态，`pi` 仓库文档只声明 `pi-package` 关键字即可发现。因此「补关键字、补仓库字段」不是修复路径。
-- 阻塞与解除条件：修复需要让 npm 重新索引该包，可行做法是发布一个新版本（例如 `0.5.2`，同时补齐 registry 文档缺失的 README 元数据）；本机 `~/.npmrc` 的 `registry.npmjs.org` token 已失效（`npm whoami` 返回 401，`GET /-/whoami` 返回 401），无法执行发布。解除条件：用户重新执行 npm 登录并确认可以发布 `memctl-pi` 新版本。
-- 未验证：重新发布能否让索引恢复，需要一次真实发布后复测 `?name=memctl-pi` 与 `name:memctl-pi` 才能确认；向 npm 提交索引重建请求是否可行未验证。
+- 解除条件与实测（2026-10-20）：重新发布 `memctl-pi@0.5.2` 后，npm search 的 `score.final` 从 `0` 恢复到约 `19`，`keywords:memctl` 能正常命中——说明「重新发布触发重新索引」的判断成立，之前是索引文档缺失而非收录规则另有要求。
+- 但仍未进入 pi.dev 目录：pi.dev 列表只消费 npm search 的前 5250 个可枚举名称（`from` 超过该窗口会回卷到首页），本包月下载 21 次，评分远低于窗口边界；同类未收录案例 `pi-cbmem`（56 次/月）同样落榜，而已收录的 `pi-theme-aura`（184 次/月）在列。因此这不是 memctl 侧的配置缺陷，也不是一次发版能修好的问题，需要真实的装机量。
+- 结论变更：该项从「阻塞待发布」改为「等待外部条件（下载量）」，不再作为可执行的开发任务。可选后续动作：在 pi 的 `docs/packages.md` 或 issue 里建议目录改为按关键字全量索引；这不改变本项目的代码。
 
 ## T094：记忆过期规则的读取侧实现
 

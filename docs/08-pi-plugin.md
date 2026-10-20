@@ -1,6 +1,6 @@
 # 08. pi 专用插件：调研、分发与实现方案
 
-> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`v0.5.1` 重新打包插件，`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。`memctl-pi@0.5.1` 已发布到 npm。非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
+> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`v0.5.1` 重新打包插件，`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。`memctl-pi@0.5.2` 已发布到 npm。非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
 
 ## 1. 结论
 
@@ -472,7 +472,7 @@ pi install npm:memctl-pi@<version>
 ```
 
 - npm 包名 `memctl-pi` 已发布 `0.5.0` 与 `0.5.1`，`latest` 为 `0.5.1`；`0.0.0-stage` 占位版本已删除。
-- `0.5.2` 仅提升版本号以触发 npm 重新索引（pi.dev 目录未收录的根因见 [T093](../docs/validation/stage-g.md#t093定位-pidev-目录未收录的根因)）。该版本已 staged（stage id `36f4dd6e-c1e7-4a85-a466-362b91abeb0b`），但 `npm stage approve` 需要浏览器二次认证，尚未发布；registry 的 `latest` 仍是 `0.5.1`。核对方式：`npm stage list --registry=https://registry.npmjs.org` 与 `curl -s https://registry.npmjs.org/memctl-pi`。
+- `0.5.2` 仅提升版本号以触发 npm 重新索引（pi.dev 目录未收录的根因见 [T093](../docs/validation/stage-g.md#t093定位-pidev-目录未收录的根因)）。该版本已于 2026-10-20 发布，registry `latest` 为 `0.5.2`；发布后 `score.final` 从 `0` 恢复到约 `19`，索引命中正常。pi.dev 目录仍不收录，原因是它只取前 5250 个可枚举名称，本包月下载量排在窗口外。
 - 使用精确版本；需要镜像时由用户在 pi 的安装源中选择。
 - 包不声明安装脚本和运行时依赖；安装时不需要编译或授权构建脚本。
 - 包版本与 memctl 主次版本保持一致；`peerDependencies` 只声明 pi 宿主包 `*`，不打包宿主包。
