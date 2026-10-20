@@ -13,8 +13,21 @@ func TestVersionMatchesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if version != "0.5.1" {
-		t.Fatalf("Version = %q, want 0.5.1", version)
+	// The embedded manifest is the single source of truth for the plugin
+	// version, so compare against it instead of pinning a literal that every
+	// bump would break.
+	manifest, err := files.ReadFile("package.json")
+	if err != nil {
+		t.Fatalf("read the embedded package.json: %v", err)
+	}
+	var declared struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(manifest, &declared); err != nil {
+		t.Fatalf("decode the embedded package.json: %v", err)
+	}
+	if declared.Version == "" || version != declared.Version {
+		t.Fatalf("Version() = %q, embedded manifest version = %q", version, declared.Version)
 	}
 }
 

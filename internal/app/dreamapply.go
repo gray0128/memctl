@@ -68,6 +68,20 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 		return recovered, nil
 	}
 
+	// The proposal is the documented place for bulk cleanup, so it must obey the
+	// same 30-day hidden period as a single entry delete. Check before the
+	// status moves to applying so a refused proposal stays ready for a later
+	// regeneration.
+	session, err := a.beginWrite(ctx)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	if err := a.requireDreamDeleteWindow(session, plan); err != nil {
+		session.Close()
+		return MutationResult{}, err
+	}
+	session.Close()
+
 	if err := service.MarkApplying(ctx, proposalID); err != nil {
 		if applied, ok := a.appliedDreamResult(ctx, service, proposalID); ok {
 			return applied, nil

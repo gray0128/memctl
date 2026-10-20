@@ -103,6 +103,38 @@ func withDreamProvider(t *testing.T, service *App, response string) {
 	service.SetDreamService(dreamSvc)
 }
 
+// previewWithResponse generates one proposal whose worker answers with the
+// given operations JSON. It mirrors previewWithStubWorker but lets a test choose
+// the file content, which is how the delete-window case is built.
+func previewWithResponse(t *testing.T, service *App, response string) dream.Proposal {
+	t.Helper()
+	ctx := context.Background()
+	started, err := service.DreamBegin(ctx, dream.ProviderDeepSeek, "")
+	if err != nil {
+		t.Fatalf("DreamBegin: %v", err)
+	}
+	repositoryPath := service.cfg.RepoPath
+	remoteURL := runGit(t, repositoryPath, "remote", "get-url", "origin")
+	workerDir := filepath.Join(t.TempDir(), "worker")
+	runGit(t, filepath.Dir(workerDir), "clone", "-q", remoteURL, workerDir)
+	workerSvc := dream.NewService(dream.Source{
+		RepoPath: config.Canonical(workerDir),
+		RepoID:   config.RepoID(workerDir),
+		StateDir: filepath.Join(t.TempDir(), "worker-state"),
+	})
+	workerSvc.NewProvider = func(string) (dream.Provider, error) {
+		return appStubProvider{response: response}, nil
+	}
+	if _, err := workerSvc.Worker(ctx, dream.RequestRef(started.ProposalID, dream.ProviderDeepSeek), started.BaseHead); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	proposal, err := service.DreamRun(ctx, started.ProposalID)
+	if err != nil {
+		t.Fatalf("DreamRun: %v", err)
+	}
+	return proposal
+}
+
 // dreamOrganizerBody is the deterministic worker response of the app tests.
 const dreamOrganizerBody = `{"operations":[{"action":"update","path":"MEMORY.md","content":"# Memory\n\n## Index\n- [[topic]]\n- [[new]]\n","rationale":"index"},{"action":"create","path":"new.md","content":"# New\n- added [source: test; added: 2026-10-19]\n","rationale":"split"}],"warnings":[]}`
 

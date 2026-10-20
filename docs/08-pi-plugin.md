@@ -472,6 +472,7 @@ pi install npm:memctl-pi@<version>
 ```
 
 - npm 包名 `memctl-pi` 已发布 `0.5.0` 与 `0.5.1`，`latest` 为 `0.5.1`；`0.0.0-stage` 占位版本已删除。
+- `0.5.2` 仅提升版本号以触发 npm 重新索引（pi.dev 目录未收录的根因见 [T093](../docs/validation/stage-g.md#t093定位-pidev-目录未收录的根因)）。该版本已 staged（stage id `36f4dd6e-c1e7-4a85-a466-362b91abeb0b`），但 `npm stage approve` 需要浏览器二次认证，尚未发布；registry 的 `latest` 仍是 `0.5.1`。核对方式：`npm stage list --registry=https://registry.npmjs.org` 与 `curl -s https://registry.npmjs.org/memctl-pi`。
 - 使用精确版本；需要镜像时由用户在 pi 的安装源中选择。
 - 包不声明安装脚本和运行时依赖；安装时不需要编译或授权构建脚本。
 - 包版本与 memctl 主次版本保持一致；`peerDependencies` 只声明 pi 宿主包 `*`，不打包宿主包。

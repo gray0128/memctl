@@ -128,7 +128,7 @@
 
 - 阶段 G（[GitHub Actions Dreaming 迁移](./11-github-actions-dreaming.md)）：`G-1`–`G-3` 已完成（`T082`、`T083`），`T085`/`T086` 修复了真实运行暴露的工作流校验和与 worker 仓库定位缺陷，`v0.7.2` 在 `gray0128/agent-memory-repo` 完成首次真实端到端运行（`G-4` 部分完成）。剩余：验证一次带实际文件变更的提案被 `apply` 提交；清理诊断仓库 `gray0128/memctl-dream-diag`。
 - `memctl mcp` 与 `install --status` 的 `mcp:` 块已随 `v0.6.0` 发布；本机 `desktop` profile 已插入 `@deepseek-ai/dsh-mcp-client` 条目并派生 `memctl --agent dsh` 子进程，DSH 的 MCP 通道已生效；其他 DSH 用户仍需按 [5.2](./09-mcp-memory-tools.md#52-各宿主的注册命令) 手工插入该条目。
-- 插件包仍为 `0.5.1`，与 `v0.6.0` 的主次版本不一致；插件源码未改动，如需对齐需单独走插件版本与 npm 发布轮次。
+- 插件包 registry `latest` 仍为 `0.5.1`（DSH 与 pi 均未改动源码）；源码 `plugins/pi/package.json` 已提升到 `0.5.2` 并 staged 到 npm，等待二次认证审批后才能发布。版本号提升只为触发 npm 重新索引，详见 `T093`。
 - 宿主侧写入已覆盖 DSH、Codex、pi、OpenCode、Command Code 与 Antigravity；Grok 需显式 `read_write`，Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.1` 已完成；绝对目录界面安装仍未验证。
 - 可选事项：独立 GitHub 仓库与 Discover 索引（`D2`、`D3`）仍为可选，不阻塞发布。

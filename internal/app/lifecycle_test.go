@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gray0128/memctl/internal/dream"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -276,5 +278,75 @@ func TestDeleteEntryWithoutUntilIsAlwaysAllowed(t *testing.T) {
 		ID: page.Items[0].ID, FilePath: "MEMORY.md", FileRevision: file.FileRevision,
 	}); err != nil {
 		t.Fatalf("delete without until: %v", err)
+	}
+}
+
+// TestApplyDreamRefusesDeleteInsideHiddenPeriod covers the bulk path: the
+// Dreaming proposal is the documented place for cleanup, so applying one that
+// removes an expired entry inside its hidden period is refused with
+// DELETION_DEFERRED, the repository is untouched and the proposal stays ready.
+func TestApplyDreamRefusesDeleteInsideHiddenPeriod(t *testing.T) {
+	service, repo := newTestService(t)
+	withDreamBackend(t, service)
+	ctx := context.Background()
+
+	// A time-limited entry that expired two days ago: hidden, but still inside
+	// the 30-day period. The date is relative so the test never ages.
+	until := time.Now().AddDate(0, 0, -2).Format(vault.DateLayout)
+	entryFile := "# Memory\n\n## Index\n- [[topic]]\n- recent trial [until: " + until + "; source: test; added: 2026-01-01]\n"
+	writeFile(t, service, ctx, "MEMORY.md", entryFile)
+	// The worker runs from a clone of origin, so the fixture must publish the
+	// commit the proposal will pin as its baseline.
+	runGit(t, repo, "push", "-q", "origin", "main")
+	before := readTestFile(t, filepath.Join(repo, "MEMORY.md"))
+
+	// The worker drops the expired entry and keeps the rest of the index.
+	response := `{"operations":[{"action":"update","path":"MEMORY.md","content":"# Memory\n\n## Index\n- [[topic]]\n","rationale":"drop expired"}],"warnings":[]}`
+	proposal := previewWithResponse(t, service, response)
+	if proposal.Status != dream.StatusReady {
+		t.Fatalf("proposal = %+v, want ready", proposal)
+	}
+
+	_, err := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	requireContractCode(t, err, memerr.DeletionDeferred)
+	if after := readTestFile(t, filepath.Join(repo, "MEMORY.md")); after != before {
+		t.Fatalf("the refused apply changed MEMORY.md:\n%s", after)
+	}
+	// The proposal is still ready, so the operator can regenerate it once the
+	// hidden period ends.
+	reloaded, loadErr := service.dreamService().Load(ctx, proposal.ProposalID)
+	if loadErr != nil {
+		t.Fatalf("reload proposal: %v", loadErr)
+	}
+	if reloaded.Status != dream.StatusReady {
+		t.Fatalf("proposal status after refusal = %s, want ready", reloaded.Status)
+	}
+}
+
+// TestApplyDreamAllowsDeleteAfterHiddenPeriod covers the allowed side: once the
+// hidden period is over, a proposal may remove the expired entry, and the
+// delete is a normal managed commit.
+func TestApplyDreamAllowsDeleteAfterHiddenPeriod(t *testing.T) {
+	service, repo := newTestService(t)
+	withDreamBackend(t, service)
+	ctx := context.Background()
+
+	until := time.Now().AddDate(0, 0, -40).Format(vault.DateLayout)
+	entryFile := "# Memory\n\n## Index\n- [[topic]]\n- old trial [until: " + until + "; source: test; added: 2026-01-01]\n"
+	writeFile(t, service, ctx, "MEMORY.md", entryFile)
+	runGit(t, repo, "push", "-q", "origin", "main")
+
+	response := `{"operations":[{"action":"update","path":"MEMORY.md","content":"# Memory\n\n## Index\n- [[topic]]\n","rationale":"drop expired"}],"warnings":[]}`
+	proposal := previewWithResponse(t, service, response)
+
+	result, err := service.ApplyDream(ctx, proposal.ProposalID, proposal.PatchHash)
+	if err != nil {
+		t.Fatalf("apply after the hidden period: %v", err)
+	}
+	if result.Commit == "" {
+		t.Fatal("apply returned no commit")
+	}
+	if after := readTestFile(t, filepath.Join(repo, "MEMORY.md")); strings.Contains(after, "old trial") {
+		t.Fatalf("the expired entry was not removed:\n%s", after)
 	}
 }
