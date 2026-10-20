@@ -192,3 +192,16 @@
 - 发布：`memctl-dsh@0.5.3` 在 npm 上以 `latest` 发布（stage id `44b296f9-3839-477b-9211-bd69e1fc2590`，shasum `115791a56c2d05c93e94449a75669660d39b5805`，8 个运行时文件，staged 队列已空）；维护者在终端完成二次认证，本会话只负责入队与发布后核对。本机 `desktop` profile 已升级到 `0.5.3`，`install --status` 返回 `configured plugin@0.5.3`，安装后的 `index.js` 与仓库源码一致。二进制仍为 `v0.9.0`，Release 附件要等下一次 `v*` 发布才包含 `0.5.3`。
 - 未验证与遗留：真实 `desktop` 会话仍在 `0.5.2` 上复验，`0.5.3` 只有隔离 headless 证据；慢启动时首轮 `turn/end` 不触发 `sync`，由收尾 `end` 兜底，把监听器提前的尝试未得到预期结果且原因未定位，已回退；`agent/disposed` 仍只由单元测试覆盖。
 - 下一步：在下一次 `v*` 发布前用真实 `desktop` 会话复验 `0.5.3`，并把 npm 发布步骤登记为常规流程（已写入 [07 §7.3](../07-dsh-plugin.md#73-ci-与发布)）。证据见 [T096 验证记录](./t096-dsh-plugin-0-5-2-verification.md)。
+
+## T097：发布 `v0.9.1`（含 `memctl-dsh@0.5.3`）
+
+- 目标与范围：把 `T096` 的插件修复（`memctl-dsh@0.5.3`）带进 Release，发布 `v0.9.1`；同一轮更新 README、STATUS 与任务表。`memctl` 二进制源码未改动，只改文档与版本记录。
+- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[dsh 专用插件](../07-dsh-plugin.md#13-实现状态)。
+- 验证日期与环境：2026-10-20，macOS arm64，Go 1.27.1，Node v26.10.0 / npm 11.19.1。
+- 本地校验：`make test` 全量通过（前端构建、插件 Node 测试 dsh 15 项与 pi 15 项、Go 全部包，`tests/integration` 202 秒）。
+- 发布：提交 `1b59944`，标签 `v0.9.1`（附注标签 `v0.9.1: memctl-dsh 0.5.3（保留非零退出 start 的上下文）`）。[运行 39370452913](https://github.com/gray0128/memctl/actions/runs/39370452913) 的 `verify` 四个分片、`build`、`publish` 全部成功，创建 [Release v0.9.1](https://github.com/gray0128/memctl/releases/tag/v0.9.1)。
+- 附件与校验：下载到独立目录 `/tmp/memctl-v0.9.1` 后 `shasum -a 256 -c SHA256SUMS` 六项全部 OK；附件为四个候选二进制、`memctl-dsh-0.5.3.tgz`、`memctl-pi-0.5.2.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。`RELEASE-INFO.txt` 的 `version` 为 `v0.9.1`、`commit` 为 `1b59944`、插件 tarball 记为 `0.5.3` 与 `0.5.2`、宿主运行时验证仅标注 darwin/arm64。
+- 产物核对：`memctl-darwin-arm64` 与 `memctl-darwin-amd64` 的 `version` 均为 `memctl v0.9.1`；`help --json` 为 `schemaVersion` 1、23 个命令；`install --status` 返回 `dsh: configured plugin@0.5.3`、`pi: configured plugin@0.5.2`、`mcp: serving … (v0.9.1)`。`memctl-dsh-0.5.3.tgz` 含 8 个运行时文件，解包后 `index.js` 与仓库源码逐字节一致；`memctl-pi-0.5.2.tgz` 含 4 个。
+- 本机升级：用「写临时文件 → `mv` 原子替换」把 `~/.agent-memory/bin/memctl` 换成 Release 的 `memctl-darwin-arm64`（SHA-256 `0bf2ff95…`，与 `SHA256SUMS` 一致）；`version` 输出 `memctl v0.9.1`，`dsh plugin-path` 生成 `~/.agent-memory/dsh/memctl-dsh-0.5.3.tgz`，`update --check` 返回 `up to date`。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；`memctl-dsh@0.5.3` 的真实 `desktop` 会话仍未复验（只有隔离 headless 证据），本机 `desktop` profile 保持 `0.5.3`。
+- 下一步：在真实 `desktop` 会话复验 `0.5.3` 的注入与同步，把结果补进 [T096 验证记录](./t096-dsh-plugin-0-5-2-verification.md)。
