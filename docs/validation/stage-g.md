@@ -163,3 +163,15 @@
 - 收尾（2026-10-20）：`doctor` 的 `EXPIRED_ENTRY` 按隐藏期阶段给出不同提示——仍在隐藏期时在建议里给出首个可删除日期，隐藏期已满时在消息里标注 `deletable since <date>`；新增 `TestCheckDistinguishesHiddenPeriodPhase`。Dreaming worker 的 batch 提示词同步收紧为「只在该条目的静态候选声明隐藏期已满时才删除」。用户已确认批量清理由 Dreaming 提案统一发起，该设计选择已关闭。
 
 - UI 展示（2026-10-20）：条目视图的结果栏在快照 `hiddenExpired > 0` 时显示「另有 N 条已过期并隐藏」，避免把「被隐藏」误读成「没有记录」；文案与 `docs/04` 的视图表同步。真实二进制验证：快照 `hiddenExpired = 1`，`MEMORY.md` 的条目列表只剩索引链接与当前事实，构建产物含该文案。
+
+## T095：发布 `v0.9.0`（`memctl-dsh` 升到 `0.5.2`）
+
+- 目标与范围：把 `memctl-dsh` 版本从 `0.5.1` 提升到 `0.5.2`，与 `memctl-pi` 对齐；发布含 `T093`、`T094` 的 `v0.9.0`。插件运行时源码未改动，只改版本号。
+- 契约：[发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[单文件打包](../04-ui-and-cli-specification.md#6-单文件打包)、[dsh 专用插件](../07-dsh-plugin.md#81-npm-主通道)。
+- 实现：`plugins/dsh/package.json` 与 `plugins/dsh/README.md` 的版本与安装示例更新为 `0.5.2`；`plugins/dsh/embed_test.go` 的两处硬编码版本改为读取内嵌清单（与 `plugins/pi` 的处理一致），避免每次升版都要改测试。`scripts/release.sh` 从清单读版本，因此产物自动变为 `memctl-dsh-0.5.2.tgz`。
+- 本地校验：`make test` 全量通过（`tests/integration` 244 秒、插件 dsh 14 项、pi 15 项、前端 96 项）；`VERSION=v0.9.0 make release-dist` 生成四平台候选包与两个 `0.5.2` tarball，`shasum -a 256 -c SHA256SUMS` 六项全部 OK，`memctl-darwin-arm64 version` 输出 `memctl v0.9.0`。本地构建仅用于验证链路，不构成发布步骤。
+- 发布结果：提交 `26bdd10`，标签 `v0.9.0`，运行 [39357550244](https://github.com/gray0128/memctl/actions/runs/39357550244) 的 `verify`、`build`、`publish` 全部成功，[Release v0.9.0](https://github.com/gray0128/memctl/releases/tag/v0.9.0) 的 `publish` 作业完成。
+- 附件与校验：下载到独立目录 `/tmp/memctl-v0.9.0` 后 `SHA256SUMS` 六项全部 OK；附件为四平台候选二进制、`memctl-dsh-0.5.2.tgz`、`memctl-pi-0.5.2.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`；`RELEASE-INFO.txt` 的 `commit` 为 `26bdd10`、插件 tarball 记为两个 `0.5.2`、宿主运行时验证仅标注 darwin/arm64。`memctl-dsh-0.5.2.tgz` 含 8 个运行时文件（`LICENSE`、`index.js`、`package.json`、`README.md`、`icon.svg`、`cordis.patch.yml`、`locale/en.json`、`locale/zh.json`），`memctl-pi-0.5.2.tgz` 含 4 个。
+- 本机升级：按记录用「下载到 `/tmp` → 校验 → `mv` 原子替换」把 `~/.agent-memory/bin/memctl` 升级到 `v0.9.0`；`version` 输出 `memctl v0.9.0`，`dsh plugin-path` 输出 `~/.agent-memory/dsh/memctl-dsh-0.5.2.tgz`，`pi plugin-dir` 输出 `~/.agent-memory/pi`，`install --status` 显示 `pi: configured plugin@0.5.2`、`dsh: configured plugin@0.5.1`（本机 `desktop` profile 尚未升级）、`mcp: serving … (v0.9.0)`。
+- npm：`memctl-dsh@0.5.2` 已 staged（stage id `70327715-23d9-4a75-8b00-744540290fa6`，shasum `f9b8e15f…`），`npm stage approve` 需要浏览器二次认证，尚未发布；registry `latest` 在审批前仍为 `0.5.1`。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；本机 `desktop` profile 的 `memctl-dsh` 未升级到 `0.5.2`，界面安装与真实会话未在 `0.5.2` 复验；`memctl-dsh@0.5.2` 的 npm 发布待二次认证审批。
