@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理（在记忆仓库的 GitHub Actions 中运行）。
 
-当前版本 `v0.9.0`（2026-10-20 发布，新增记忆过期规则：`until` 到期条目在四个读取面统一隐藏、`EXPIRED_ENTRY` 诊断与 `DELETION_DEFERRED` 删除闸门；`v0.8.0` 于 2026-10-19 发布，新增「整理」与「客户端接入」两个独立视图、`GET /api/v1/mcp` 的 MCP 通道状态展示与审计视图修正；`v0.7.3` 新增工作流版本漂移拦截 `WORKFLOW_STALE`，`v0.7.0` 把 Dreaming 迁移到 GitHub Actions 远端整理并在本地删除 runner 与平台沙箱），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话复验，`0.5.3`（未发布）修复了非零退出的 `start` 丢弃上下文，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布；两个插件自 2026-10-20 起统一为 `0.5.2` 并随 `v0.9.0` Release 附带（`memctl-dsh` 源码已到 `0.5.3`，尚未发布），pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，Dreaming 整理使用记忆仓库远端 GitHub Actions 中的模型提供商，本地不读取模型凭据。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
+当前版本 `v0.9.0`（2026-10-20 发布，新增记忆过期规则：`until` 到期条目在四个读取面统一隐藏、`EXPIRED_ENTRY` 诊断与 `DELETION_DEFERRED` 删除闸门；`v0.8.0` 于 2026-10-19 发布，新增「整理」与「客户端接入」两个独立视图、`GET /api/v1/mcp` 的 MCP 通道状态展示与审计视图修正；`v0.7.3` 新增工作流版本漂移拦截 `WORKFLOW_STALE`，`v0.7.0` 把 Dreaming 迁移到 GitHub Actions 远端整理并在本地删除 runner 与平台沙箱），阶段 A–D 的能力已全部交付；阶段 E 的 DSH 插件已发布，真实会话验证完成到 `v0.4.0`，npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话复验，`0.5.3` 修复了非零退出的 `start` 丢弃上下文并已发布到 npm，`agent/disposed` 事件受宿主限制。阶段 F 的 pi 插件已随 `v0.5.0` 发布；两个插件自 2026-10-20 起统一为 `0.5.2` 并随 `v0.9.0` Release 附带（`memctl-dsh` 已单独发布 `0.5.3` 到 npm，未进 Release），pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台子代理不注入记忆。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库，需要仓库的命令运行时依赖系统 Git；Node.js 仅用于前端构建，Dreaming 整理使用记忆仓库远端 GitHub Actions 中的模型提供商，本地不读取模型凭据。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
 ## 快速开始
 
@@ -29,7 +29,7 @@ printf '# Memory\n\n## Index\n- new entry\n' \
 DSH 使用专用 Host 插件 `memctl-dsh`，可通过 npm 安装，也可使用二进制内嵌的 tarball：
 
 ```bash
-dsh plugin --profile <profile> add memctl-dsh@0.5.2
+dsh plugin --profile <profile> add memctl-dsh@0.5.3
 
 # 离线备用
 ./bin/memctl dsh plugin-path   # 输出绝对 .tgz 路径
@@ -97,7 +97,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 | 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理、客户端接入 8 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
-| DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.2`；只写状态目录，不修改 DSH profile |
+| DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.3`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
 | 整理提案 | `dream --init-workflow`、`dream --runner`、`dream --show`、`dream --apply` | 推送 `dream/req` 触发 GitHub Actions 结构化整理，拉取并校验结果树生成带固定 Diff 的提案；人工确认后按受管事务应用，应用不重新调用模型 |
@@ -123,7 +123,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 - Dreaming：统一在记忆仓库所在 GitHub 远端的 Actions 运行器中执行，本地不再依赖平台沙箱；已在 `gray0128/agent-memory-repo` 用 DeepSeek 端点跑通一次，但两次真实运行模型都判定无需改动，「带实际变更的提案被 apply 提交」仍未验证。
 - 真实宿主：macOS arm64 上 7 个宿主的 Hook 已完成配置，其中 5 个完成会话级验证；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.2`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
-- dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话的注入、轮次同步与收尾复验；`0.5.3`（未发布）修复了非零退出的 `start` 丢弃上下文；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
+- dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话的注入、轮次同步与收尾复验；`0.5.3` 修复了非零退出的 `start` 丢弃上下文，已发布到 npm 并升级本机 `desktop`；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 记忆写入通道：生命周期插件在宿主进程内运行，Agent 在 bash 中执行 `memctl read/write` 时会受工作区沙箱限制，无法写 `~/memory`。`memctl mcp` 提供不受该沙箱限制的 MCP 工具；DSH、Codex、pi、OpenCode、Command Code 与 Antigravity 已完成 MCP 受管写入实测，Grok 需要把记忆仓库加入 `read_write`（同时放开 shell），Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)。
 - 自更新：Windows 不能在运行中替换可执行文件，`update` 返回 `UNSUPPORTED`，但 `update --check` 可用；其余平台的自更新仅在本机 darwin/arm64 验证，其他平台按交叉编译与单元测试记录。
 - 其余未验证项与已知限制见 [开发状态](./docs/STATUS.md#当前事实)。

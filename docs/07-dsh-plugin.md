@@ -1,6 +1,6 @@
 # 07. dsh 专用插件：分发、安装与实现方案
 
-> 状态：已实现（`T048`，2026-10-17）。仓库内插件源码版本为 `0.5.3`（未发布）；npm 与 Release 上的最新版本仍是 `0.5.2`，它与 `memctl-pi` 对齐，`0.5.1` 是更早长期使用的版本，`v0.5.1` 起各次 Release 曾共用同一 tarball。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile 复验到 `0.5.2`；`0.5.3` 修复非零退出的 `start` 丢弃上下文，已在隔离 profile 复验。绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
+> 状态：已实现（`T048`，2026-10-17）。插件版本自 2026-10-20 起为 `0.5.3`，与 `memctl-pi` 的 `0.5.2` 相差一个补丁版本（补丁可独立，见 §9 `D4`）；`0.5.1`、`0.5.2` 是此前长期使用的版本，`v0.5.1` 起各次 Release 曾共用同一 tarball。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile 复验到 `0.5.2`，本机已通过 `dsh plugin --profile desktop add memctl-dsh@0.5.3` 升级；绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
 
 ## 1. 结论
 
@@ -113,7 +113,7 @@
 在「插件 → 添加插件」对话框安装：
 
 1. **npm 包名（推荐）**：输入 `memctl-dsh`，需要固定版本时输入 `memctl-dsh@<version>`；网络受限时在「安装源」选择镜像。点击安装并确认信任提示。
-2. **内嵌 tarball（离线）**：先运行只读命令 `memctl dsh plugin-path` 取得绝对路径，例如 `/Users/me/.agent-memory/dsh/memctl-dsh-0.5.2.tgz`（当前 npm 与 Release 的版本；仓库源码 `0.5.3` 尚未发布）；把该路径粘贴到同一个输入框，点击安装。安装完成后当前会话可用；重装或升级时需重新提供 tarball，建议保留到确认稳定。
+2. **内嵌 tarball（离线）**：先运行只读命令 `memctl dsh plugin-path` 取得绝对路径，例如 `/Users/me/.agent-memory/dsh/memctl-dsh-0.5.3.tgz`；把该路径粘贴到同一个输入框，点击安装。安装完成后当前会话可用；重装或升级时需重新提供 tarball，建议保留到确认稳定。
 3. **随 Release 下载的 tarball**：下载 `memctl-dsh-<version>.tgz`，粘贴其绝对路径；效果与内嵌 tarball 相同。
 4. **独立 GitHub 仓库**：粘贴仓库根 URL，例如 `https://github.com/<owner>/memctl-dsh`；仓库根必须有 `package.json`、bundle patch 和预构建入口，不能依赖 `prepare` 构建。
 5. **本地目录（开发或 tarball 被拒绝时的回退）**：粘贴绝对目录路径；DSH 会以 link 依赖安装，目录不能移动或删除。
@@ -392,6 +392,16 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - 不在 CI 中运行 `dsh plugin add` 修改真实用户 profile；安装验证使用隔离的 `DSH_HOME` 和临时 profile。
 - 安装验证至少覆盖界面使用的三种 spec：npm 包名、绝对 tarball 路径、绝对目录路径；GitHub URL 在独立仓库可用后单独验证。
 
+npm 发布的实际操作（`memctl-pi` 同样适用）：
+
+1. 升 `package.json` 版本，同步包内 `README.md` 的安装示例；`npm pack --dry-run` 核对文件清单与版本。
+2. `npm stage publish . --registry=https://registry.npmjs.org` 入队，记录输出的 stage id 与 shasum；`npm stage list` 确认 `status: staged`。
+3. 审批需要 npm 账号的二次认证，必须由维护者在终端执行 `npm stage approve <stage-id> --registry=https://registry.npmjs.org`；浏览器流程无法在无 TTY 的 Agent 会话内完成。
+4. 发布后用 `npm view <pkg> version dist-tags` 与 `npm view <pkg>@<version> dist.shasum` 核对，并确认 `npm stage list` 已为空。
+5. 升级本机宿主 profile（例如 `dsh plugin --profile desktop add memctl-dsh@<version>`），再更新 `README`、本文与 `STATUS` 中的版本表述。
+
+本机环境有两个固定前提：`~/.npmrc` 的 registry 指向镜像而 `_authToken` 属于 `registry.npmjs.org`，因此每条命令都要带 `--registry=https://registry.npmjs.org`，否则 `npm whoami` 报 `ENEEDAUTH`；沙箱会话不能写 `~/.npm` 缓存，需用 `npm_config_cache=/tmp/<dir>` 指定可写缓存。
+
 ### 7.4 版本矩阵
 
 | 维度 | 策略 |
@@ -542,7 +552,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
-- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`；`v0.6.0` 与 `v0.7.0` Release 附带同名 `memctl-dsh-0.5.1.tgz`（插件源码未改动，版本保持 `0.5.1`）。2026-10-20 起两个插件统一为 `0.5.2`，该版本随 `v0.9.0` 发布并已发布到 npm；本机 `desktop` profile 已升级到 `0.5.2`，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.2`。`0.5.2` 的真实会话复验与 `0.5.3` 修复见 [T096 验证记录](./validation/t096-dsh-plugin-0-5-2-verification.md)；`0.5.3` 只改插件对 `start` 非零退出的处理与版本号，尚未发布到 npm 或随 Release 发布。
+- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`；`v0.6.0` 与 `v0.7.0` Release 附带同名 `memctl-dsh-0.5.1.tgz`（插件源码未改动，版本保持 `0.5.1`）。2026-10-20 起两个插件统一为 `0.5.2`，该版本随 `v0.9.0` 发布并已发布到 npm。同日 `memctl-dsh` 单独发布 `0.5.3` 到 npm（`latest`，shasum `115791a5…`）：只改 `start` 非零退出时的 envelope 处理与版本号，未进 Release，二进制仍为 `v0.9.0`，其内嵌 tarball 已是 `0.5.3`。本机 `desktop` profile 已升级到 `0.5.3`，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.3`。真实会话复验与缺陷定位见 [T096 验证记录](./validation/t096-dsh-plugin-0-5-2-verification.md)。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
 - 验证证据：插件 Node 单元测试 15 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.4.0` 已发布，`desktop` profile 的 `memctl-dsh` 已更新到 `0.4.0`；`v0.5.0` 已发布，`desktop` profile 的插件仍为 `0.4.0`；`v0.5.1` 已发布，两个插件均可在 npm 安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，profile 的 bundle 列表与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；当前真实会话的 `runtime-context` 快照包含 `memctl:memory`，同步缓存于 23:20:24 更新为 `synced`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`0.4.0` 隔离 web 会话中模型实际执行 `memctl write`，产生提交 `61fd68e`，`turn/end` 后触发 `sync`；人工持锁时 `sync --wait` 在 3.1 秒内返回 `BUSY`，会话继续且本地提交保留；远端离线时缓存记录 `NETWORK_UNAVAILABLE`，会话继续且本地提交保留。`agent/disposed` 事件本身未在真实宿主观察到；DSH 0.2.1-rc.2 没有单会话销毁入口。
 

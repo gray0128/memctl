@@ -4,10 +4,10 @@ DSH 宿主插件：会话开始时读取 memctl 记忆并注入上下文，轮�
 
 ## 安装
 
-通过 DSH 插件管理器安装 npm 包（npm 上当前可用版本为 `0.5.2`；随本包发布的源码版本是 `0.5.3`，尚未发布）：
+通过 DSH 插件管理器安装 npm 包：
 
 ```sh
-dsh plugin --profile <profile> add memctl-dsh@0.5.2
+dsh plugin --profile <profile> add memctl-dsh@0.5.3
 ```
 
 或使用离线 tarball / 本地目录：

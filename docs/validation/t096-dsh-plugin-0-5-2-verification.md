@@ -55,14 +55,24 @@
 
   headless 一次性会话在 `turn/end` 后 17 ms 就进入插件卸载：`turn/end` 确实触发了 `sync`，但 `dispose` 按 T054 的约定终止在途 `sync`，再由 detached `end` 完成最终同步（缓存 `lastSuccessAt=04:17:23Z`）。长驻的 `desktop` 会话不会在同一时刻卸载，`sync` 会自行完成；`end` 是幂等的后台同步，两条路径写同一缓存，任一条成功即可。
 
-## 4. 未验证与遗留
+## 4. 发布
+
+`0.5.3` 只发布到 npm，未推 `v*` 标签，因此没有新的 Release；`memctl` 二进制仍为 `v0.9.0`，其内嵌 tarball 已是 `memctl-dsh-0.5.3.tgz`。
+
+- 打包：`npm_config_cache=/tmp/<dir> npm pack --dry-run` 输出 8 个运行时文件、`memctl-dsh-0.5.3.tgz`、shasum `115791a56c2d05c93e94449a75669660d39b5805`。
+- 入队：`npm stage publish . --registry=https://registry.npmjs.org` 首次返回 `E409 Cannot stage previously published version "0.5.3"`，说明 `0.5.3` 已在队列中；`npm stage list` 显示 stage id `44b296f9-3839-477b-9211-bd69e1fc2590`、`tag: latest`、`status` 先为 `validating`，约 20 秒后为 `staged`。
+- 审批：`npm stage approve` 在本会话报 `EOTP`，缺少 TTY 时 npm 把 `authUrl` 打码为 `***`，由维护者在终端完成二次认证。
+- 发布后核对：`npm view memctl-dsh version dist-tags` 为 `0.5.3` / `{ latest: '0.5.3' }`，`versions` 为 `0.5.1`、`0.5.2`、`0.5.3`；`npm view memctl-dsh@0.5.3 dist.shasum` 与打包 shasum 一致；`npm stage list` 返回 `No staged packages found`。
+- 本机升级：`dsh plugin --profile desktop add memctl-dsh@0.5.3` 把 `dependencies` 从 `0.5.2` 改为 `0.5.3`，`node_modules/memctl-dsh/package.json` 为 `0.5.3`，安装后的 `index.js` 与仓库源码逐字节一致；`memctl install --status` 返回 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.3`。
+
+## 5. 未验证与遗留
 
 - 首轮 `turn/end` 可能不触发 `sync`：包装脚本让 `start` 延迟 3 秒时，`0.5.2` 的记录为 `start` 派生在 `…601.844`、`turn/end` 在 `…605.396`、`end` 派生在 `…605.440`，中间没有 `sync`；收尾的 `end` 仍完成同步，数据不会丢失。把 `session/event` 监听器提前到 `await start` 之前后，同样的慢启动对照仍只记录 `start` 与 `end`，未出现预期的 `sync`，原因未定位，因此没有保留该改动；它作为已知限制留在插件文档。
 - `agent/disposed` 事件本身仍无法在 DSH 0.2.1-rc.2 复现，由插件单元测试覆盖。
-- `0.5.3` 未发布：npm `latest` 与 Release 附件仍是 `0.5.2`。发布需要新的 tag 与 npm 发布审批。
-- 真实 `desktop` 会话只在 `0.5.2` 上复验；`0.5.3` 只有隔离 headless 证据。headless 会话在 `turn/end` 后立即卸载，`sync` 会被在途终止并由 `end` 接管，因此 `0.5.3` 的「长驻会话 `sync` 自行完成」未单独观测。
+- `0.5.3` 只在 npm；Release 附件仍是 `v0.9.0` 的 `memctl-dsh-0.5.2.tgz`，两者版本不一致，直到下一次 `v*` 发布。
+- 真实 `desktop` 会话只在 `0.5.2` 上复验；`0.5.3` 只有隔离 headless 证据，升级后尚未在新版本上跑真实会话。headless 会话在 `turn/end` 后立即卸载，`sync` 会被在途终止并由 `end` 接管，因此 `0.5.3` 的「长驻会话 `sync` 自行完成」未单独观测。
 - macOS amd64、Linux 与 Windows 未验证；仅 `0.5.2` 的 tarball 与 Node 单元测试与平台无关。
 
 ## 结论
 
-`0.5.2` 的注入、`turn/end` 同步与收尾在真实 `desktop` 会话与隔离 profile 上均有证据；同时暴露并定位了一个真实缺陷：远端同步失败导致的 `start` 非零退出会让插件丢弃整段记忆。`0.5.3` 修复该缺陷并用 A/B 对照与单元测试锁定；发布仍待决策。
+`0.5.2` 的注入、`turn/end` 同步与收尾在真实 `desktop` 会话与隔离 profile 上均有证据；同时暴露并定位了一个真实缺陷：远端同步失败导致的 `start` 非零退出会让插件丢弃整段记忆。`0.5.3` 修复该缺陷并用 A/B 对照与单元测试锁定，已发布到 npm（`latest`）并升级本机 `desktop`；Release 附件要等下一次 `v*` 发布才会包含它。
