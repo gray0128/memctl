@@ -17,8 +17,21 @@ func TestVersionMatchesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if version != "0.5.1" {
-		t.Fatalf("Version = %q, want 0.5.1", version)
+	// The embedded manifest is the single source of truth for the plugin
+	// version, so compare against it instead of pinning a literal that every
+	// bump would break.
+	manifest, err := files.ReadFile("package.json")
+	if err != nil {
+		t.Fatalf("read the embedded package.json: %v", err)
+	}
+	var declared struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(manifest, &declared); err != nil {
+		t.Fatalf("decode the embedded package.json: %v", err)
+	}
+	if declared.Version == "" || version != declared.Version {
+		t.Fatalf("Version() = %q, embedded manifest version = %q", version, declared.Version)
 	}
 	if strings.Contains(version, "+") || strings.Contains(version, " ") {
 		t.Fatalf("Version = %q is not suitable for a tarball name", version)
@@ -78,7 +91,7 @@ func TestWriteDirWritesEveryRuntimeFile(t *testing.T) {
 }
 
 func TestWriteTarballIsNpmCompatible(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "memctl-dsh-0.5.1.tgz")
+	path := filepath.Join(t.TempDir(), "memctl-dsh-test.tgz")
 	if err := WriteTarball(path); err != nil {
 		t.Fatalf("WriteTarball: %v", err)
 	}
@@ -144,7 +157,11 @@ func TestEnsurePathsAreAbsoluteAndReplaceable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureTarball: %v", err)
 	}
-	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-0.5.1.tgz") {
+	wantVersion, err := Version()
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	if !filepath.IsAbs(tarball) || !strings.HasSuffix(tarball, "memctl-dsh-"+wantVersion+".tgz") {
 		t.Fatalf("unexpected tarball path %q", tarball)
 	}
 	if _, err := os.Stat(tarball); err != nil {

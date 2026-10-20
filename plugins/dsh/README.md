@@ -7,7 +7,7 @@ DSH 宿主插件：会话开始时读取 memctl 记忆并注入上下文，轮�
 通过 DSH 插件管理器安装 npm 包：
 
 ```sh
-dsh plugin --profile <profile> add memctl-dsh@0.5.1
+dsh plugin --profile <profile> add memctl-dsh@0.5.2
 ```
 
 或使用离线 tarball / 本地目录：
