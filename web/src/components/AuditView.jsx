@@ -35,8 +35,16 @@ function SourceChips({ commit }) {
             title={title}
             className="inline-flex max-w-[16rem] items-center gap-1 rounded border border-slate-200/80 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
           >
-            <span className="text-slate-400 dark:text-slate-500">{part.label}</span>
-            <span className="truncate font-mono">{part.value}</span>
+            {/*
+              The label never shrinks: a two-character Chinese label inside a
+              narrow flex row would otherwise wrap one character per line once
+              the long value fills the chip. Only the value shrinks, and it
+              truncates.
+            */}
+            <span className="shrink-0 whitespace-nowrap text-slate-400 dark:text-slate-500">
+              {part.label}
+            </span>
+            <span className="min-w-0 truncate font-mono">{part.value}</span>
           </span>
         )
       })}
