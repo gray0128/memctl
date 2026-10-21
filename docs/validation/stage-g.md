@@ -226,3 +226,12 @@
 - 检查：`web` 单测 18 个文件 104 项通过（新增 `proposalDiff.test.js` 4 项）；`make ui` 构建通过；`make test` 全量通过，含 Go 全部包、`tests/integration`（341.6 秒）与两个插件的 Node 测试。
 - 浏览器实看：以 `--readonly` 启动内嵌 UI，打开提案 `dp-38ce0f7e…`，在 1280×900 与 430×932 两种宽度、浅色与深色两种主题下确认：三个文件各自成块并显示 `+1 −0`、`+1 −0` 与 `+3 −0`；长记忆行在块内换行且无横向裁切；窄屏下正文仍保留 215 px 可用宽度，`document.scrollWidth` 等于视口宽度，整页无横向溢出。
 - 未验证与遗留：审计视图保持既有横向滚动与 8em 内边距，本轮未改动，窄屏下仍依赖横向滚动（`T107` 收口）；视觉结论来自本机 Chromium，未在移动端真机复验；`docs/validation/stage-h.md` 的两节 `T102` 重复仍未合并。
+
+## T107：统一审计与「整理」两个视图的 Diff 行为
+
+- 目标与范围：`T106` 只让整理视图换行，审计视图仍是 8em 内边距加横向滚动，同一份记忆文本在两个视图里读法不同。本轮把行宽与换行规则从 `.proposal-diff` 提升到共享的 `.diff-preview`：`box-sizing: border-box` 与 `width: 100%` 配左 8em、右 0.75em 内边距，正文 `white-space: pre-wrap` 与 `overflow-wrap: anywhere`。整理视图只保留自绘文件头（折叠 Diff2Html 文件头与边线），审计视图保留 Diff2Html 文件头与边框。后端、REST 与提案契约未改动。
+- 对应契约：[04. CLI 与 UI](../04-ui-and-cli-specification.md#4-web-ui)（审计回滚与整理两行的渲染约定及共享段落）。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0，agent-browser 驱动的 Chromium。
+- 检查：`make ui` 构建通过；`make test` 全量通过，含 Go 全部包、`tests/integration`（245.9 秒）、`vitest run` 18 个文件 104 项与两个插件的 Node 测试。
+- 浏览器实看：审计视图打开提交 `ef0eaac060`、整理视图打开提案 `dp-38ce0f7e…`，在 1280×900 与 430×932、浅色与深色下确认：两处 Diff 都按文件分块、新增行绿底删除行红底、长行换行且行号可见；430 px 下审计容器 `scrollWidth` 等于 `clientWidth`（340 px），整理容器为 322 px，整页 `scrollWidth` 等于视口 430 px，均无横向滚动。
+- 未验证与遗留：窄屏下行号留白仍占约四分之一宽度，正文可用宽度约 215–230 px，未做移动端真机复验；`docs/validation/stage-h.md` 的两节 `T102` 重复仍未合并。

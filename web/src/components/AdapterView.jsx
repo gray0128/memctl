@@ -300,7 +300,7 @@ export function AdapterView({ api, refreshKey }) {
 
                   {artifact.patch && (
                     <div className="mt-2.5">
-                      <pre className="max-h-56 overflow-auto rounded-lg border border-slate-200/80 bg-slate-900 p-2.5 font-mono text-[11px] leading-relaxed text-slate-100 shadow-inner dark:border-slate-800">
+                      <pre className="max-h-56 overflow-auto rounded-lg border border-slate-200/80 bg-slate-50 p-2.5 font-mono text-[11px] leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
                         {changedLines(artifact.patch)
                           .map((line) => `${line}\n`)
                           .join('')}

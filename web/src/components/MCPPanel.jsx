@@ -149,7 +149,7 @@ export function MCPPanel({ api, refreshKey, adapters }) {
                       )}
                     </div>
                     {action && (
-                      <code className="mt-2 block break-all rounded-lg bg-slate-900 p-2.5 font-mono text-[11px] leading-relaxed text-slate-100">
+                      <code className="mt-2 block break-all rounded-lg border border-slate-200/80 bg-slate-50 p-2.5 font-mono text-[11px] leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
                         {action}
                       </code>
                     )}
