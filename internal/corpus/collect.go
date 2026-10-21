@@ -53,6 +53,10 @@ var parsers = map[string]parseFunc{
 	"pi":          parsePi,
 	"dsh":         parseDSH,
 	"antigravity": parseAntigravity,
+	// WorkBuddy runs the CodeBuddy agent core, so both hosts share one parser
+	// and differ only in their store root and agent name.
+	"codebuddy": parseCodeBuddy,
+	"workbuddy": parseCodeBuddy,
 }
 
 // Supports reports whether the host's log format is implemented.
@@ -90,17 +94,17 @@ func (c Collector) Collect(agent, fallbackSID string, r io.Reader) (Digest, bool
 	}
 	now := c.now()
 	return Digest{
-		SchemaVersion:    SchemaVersion,
-		Agent:            agent,
-		SessionID:        sid,
-		SourceTag:        hookio.Tag(c.Device, agent, sid),
-		Date:             digestDate(parsed.newest, now),
-		UpdatedAt:        now.UTC().Format(time.RFC3339),
-		CwdBase:          CwdBase(cwd),
-		CwdKey:           CwdKey(cwd),
+		SchemaVersion:     SchemaVersion,
+		Agent:             agent,
+		SessionID:         sid,
+		SourceTag:         hookio.Tag(c.Device, agent, sid),
+		Date:              digestDate(parsed.newest, now),
+		UpdatedAt:         now.UTC().Format(time.RFC3339),
+		CwdBase:           CwdBase(cwd),
+		CwdKey:            CwdKey(cwd),
 		Truncated:         parsed.truncated,
 		WroteMemoryInSess: parsed.wroteMemory,
-		Turns:            turns,
+		Turns:             turns,
 	}, true
 }
 

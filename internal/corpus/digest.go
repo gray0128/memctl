@@ -168,7 +168,9 @@ func boundTools(tools []string) []string {
 	}
 	kept := make([]string, 0, MaxToolsPerTurn)
 	for _, tool := range tools {
-		tool = truncateText(asciiSafe(singleLine(tool)), MaxToolTextBytes)
+		// Tool arguments can carry credentials (a shell command with a token,
+		// for example), so the same redaction as dialogue text applies here.
+		tool = truncateText(asciiSafe(Redact(singleLine(tool))), MaxToolTextBytes)
 		if tool == "" {
 			continue
 		}

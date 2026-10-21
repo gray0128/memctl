@@ -20,6 +20,8 @@ func backfillHome(t *testing.T, cwd string) string {
 	writeDSHSession(t, home, cwd, "dsh-session", "DSH 的 MCP 客户端随应用内置")
 	writeCodexSession(t, home, cwd, "codex-session", "不要用 make release 发布")
 	writeAntigravitySession(t, home, cwd, "agy-session", "以后审查报告统一用中文")
+	writeCodeBuddySession(t, home, cwd, "codebuddy-session", "发布只推标签，不要在本地 make release")
+	writeWorkBuddySession(t, home, cwd, "workbuddy-session", "以后都用 pnpm")
 	return home
 }
 
@@ -123,6 +125,31 @@ func writeAntigravitySession(t *testing.T, home, cwd, sid, user string) string {
 	return writeNested(t, filepath.Join(home, ".gemini", "antigravity", "brain", sid, ".system_generated", "logs", "transcript.jsonl"), strings.Join(lines, "\n"))
 }
 
+// writeCodeBuddySession writes one CodeBuddy transcript under its user store.
+func writeCodeBuddySession(t *testing.T, home, cwd, sid, user string) string {
+	t.Helper()
+	return writeCodeBuddyLike(t, home, ".codebuddy", cwd, sid, user)
+}
+
+// writeWorkBuddySession writes one WorkBuddy transcript under its user store.
+func writeWorkBuddySession(t *testing.T, home, cwd, sid, user string) string {
+	t.Helper()
+	return writeCodeBuddyLike(t, home, ".workbuddy", cwd, sid, user)
+}
+
+// writeCodeBuddyLike writes a transcript in the shared CodeBuddy format. The
+// session-meta opener has no cwd, which exercises the parser's per-line
+// metadata handling.
+func writeCodeBuddyLike(t *testing.T, home, store, cwd, sid, user string) string {
+	t.Helper()
+	lines := []string{
+		`{"type":"session-meta","sessionId":"` + sid + `","timestamp":1792371600000}`,
+		`{"type":"message","role":"user","timestamp":1792371600000,"sessionId":"` + sid + `","cwd":"` + cwd + `","content":[{"type":"input_text","text":"` + user + `"}]}`,
+		`{"type":"message","role":"assistant","timestamp":1792371605000,"sessionId":"` + sid + `","cwd":"` + cwd + `","content":[{"type":"output_text","text":"收到。"}]}`,
+	}
+	return writeNested(t, filepath.Join(home, store, "projects", codeBuddyDir(cwd), sid+".jsonl"), strings.Join(lines, "\n"))
+}
+
 // writeZstdTo compresses content into a zstd session file.
 func writeZstdTo(t *testing.T, path, content string) {
 	t.Helper()
@@ -148,8 +175,8 @@ func TestBackfillCollectsCurrentProjectCoversD06(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 
 	result := Backfill(cache, BackfillRequest{Cwd: cwd, Device: "testhost", Home: home, Now: func() time.Time { return now }})
-	if result.Collected != 5 {
-		t.Fatalf("collected = %d, want 5 (%+v)", result.Collected, result)
+	if result.Collected != 7 {
+		t.Fatalf("collected = %d, want 7 (%+v)", result.Collected, result)
 	}
 	for _, want := range []struct{ agent, sid, text string }{
 		{"claude-code", "claude-session", "发布只推标签"},
@@ -157,6 +184,8 @@ func TestBackfillCollectsCurrentProjectCoversD06(t *testing.T) {
 		{"dsh", "dsh-session", "MCP 客户端"},
 		{"codex", "codex-session", "make release"},
 		{"antigravity", "agy-session", "审查报告"},
+		{"codebuddy", "codebuddy-session", "只推标签"},
+		{"workbuddy", "workbuddy-session", "pnpm"},
 	} {
 		digest, ok := cache.Load(want.agent, want.sid)
 		if !ok {
@@ -184,6 +213,8 @@ func TestBackfillSkipsOtherProjectsCoversD06(t *testing.T) {
 	writePiSession(t, home, "/work/other", "theirs-pi", "不相关")
 	writeCodexSession(t, home, "/work/other", "theirs-codex", "不相关")
 	writeAntigravitySession(t, home, "/work/other", "theirs-agy", "不相关")
+	writeCodeBuddySession(t, home, "/work/other", "theirs-codebuddy", "不相关")
+	writeWorkBuddySession(t, home, "/work/other", "theirs-workbuddy", "不相关")
 	// A sibling clone with the same basename is a different project: only the
 	// cwdKey tells them apart.
 	writeDSHSession(t, home, "/other/checkout/memctl", "theirs-dsh", "不相关")
@@ -200,6 +231,7 @@ func TestBackfillSkipsOtherProjectsCoversD06(t *testing.T) {
 	for _, other := range []struct{ agent, sid string }{
 		{"pi", "theirs-pi"}, {"codex", "theirs-codex"},
 		{"antigravity", "theirs-agy"}, {"dsh", "theirs-dsh"},
+		{"codebuddy", "theirs-codebuddy"}, {"workbuddy", "theirs-workbuddy"},
 	} {
 		if _, ok := cache.Load(other.agent, other.sid); ok {
 			t.Fatalf("%s/%s from another project was collected", other.agent, other.sid)
@@ -519,6 +551,19 @@ func TestEscapeStoreNames(t *testing.T) {
 			t.Fatalf("claudeDir(%q) = %q, want %q", cwd, got, want)
 		}
 	}
+	// CodeBuddy and WorkBuddy only replace separators; underscores, spaces and
+	// non-ASCII characters stay as they are.
+	codebuddy := map[string]string{
+		"/Users/me/memctl":          "Users-me-memctl",
+		"/Users/me/04_产品/One Drive": "Users-me-04_产品-One Drive",
+		"/Users/me/2027 维工项目":       "Users-me-2027 维工项目",
+		"/Users/me/agent通用工作空间":     "Users-me-agent通用工作空间",
+	}
+	for cwd, want := range codebuddy {
+		if got := codeBuddyDir(cwd); got != want {
+			t.Fatalf("codeBuddyDir(%q) = %q, want %q", cwd, got, want)
+		}
+	}
 }
 
 // TestBackfillDSHStoreIsReadable checks that the derived DSH directory name
@@ -550,6 +595,8 @@ func TestLocateSessionFindsKnownSessionCoversD07(t *testing.T) {
 	dshPath := writeDSHSession(t, home, cwd, "dsh-session", "DSH 的 MCP 客户端随应用内置")
 	codexPath := writeCodexSession(t, home, cwd, "codex-session", "不要用 make release 发布")
 	agyPath := writeAntigravitySession(t, home, cwd, "agy-session", "以后审查报告统一用中文")
+	codebuddyPath := writeCodeBuddySession(t, home, cwd, "codebuddy-session", "发布只推标签")
+	workbuddyPath := writeWorkBuddySession(t, home, cwd, "workbuddy-session", "以后都用 pnpm")
 
 	cases := []struct {
 		agent string
@@ -561,6 +608,8 @@ func TestLocateSessionFindsKnownSessionCoversD07(t *testing.T) {
 		{"dsh", "dsh-session", dshPath},
 		{"codex", "codex-session", codexPath},
 		{"antigravity", "agy-session", agyPath},
+		{"codebuddy", "codebuddy-session", codebuddyPath},
+		{"workbuddy", "workbuddy-session", workbuddyPath},
 		{"claude-code", "unknown", ""},
 		{"commandcode", "any", ""},
 		{"claude-code", "", ""},

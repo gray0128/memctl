@@ -255,11 +255,18 @@ func leadingTagName(text string) (string, bool) {
 // dominate a digest.
 func looksLikeInjectedContext(text string) bool {
 	trimmed := strings.TrimSpace(text)
-	// A message that opens with an underscored tag is a host event, such as
-	// `<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>`.
-	// Harness wrappers use snake_case tag names; person-typed markup rarely does.
-	if name, ok := leadingTagName(trimmed); ok && strings.Contains(name, "_") {
-		return true
+	// A message that opens with a host tag is not user speech. Reading the tag
+	// name instead of a literal prefix also covers tags with attributes, such
+	// as `<system-reminder data-role="user-context">`.
+	if name, ok := leadingTagName(trimmed); ok {
+		if strings.Contains(name, "_") {
+			return true
+		}
+		switch name {
+		case "system-reminder", "local-command-stdout", "local-command-stderr",
+			"local-command-caveat", "command-name", "command-args", "task-notification":
+			return true
+		}
 	}
 	for _, prefix := range []string{
 		"# AGENTS.md instructions",
@@ -268,6 +275,14 @@ func looksLikeInjectedContext(text string) bool {
 		"<user_instructions>",
 		"<environment_context>",
 		"<system-reminder>",
+		// CodeBuddy and WorkBuddy record slash-command echoes and task
+		// notifications as user-role messages.
+		"<local-command-stdout>",
+		"<local-command-stderr>",
+		"<local-command-caveat>",
+		"<command-name>",
+		"<command-args>",
+		"<task-notification>",
 		// Harness runtime banners that hosts record as user-role messages.
 		"Current runtime context.",
 		"Time sampled while preparing",

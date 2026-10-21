@@ -339,16 +339,16 @@ func TestPruneRespectsTTLAndConsumptionCoversD06(t *testing.T) {
 // credential rule.
 func TestRedactCoversDocumentedPatternsCoversD06(t *testing.T) {
 	cases := map[string]string{
-		"sk-abcdefghijklmnopqrstuvwxyz":                              "sk-",
-		"ghp_abcdefghijklmnopqrstuvwxyz0123":                         "ghp_",
-		"github_pat_abcdefghijklmnopqrstuvwxyz0123":                  "github_pat_",
-		"xoxb-123456789012-abcdefghij":                               "xoxb-",
-		"AKIAIOSFODNN7EXAMPLE":                                       "AKIA",
-		"AIzaabcdefghijklmnopqrstuvwxyz0123456789":                   "AIza",
+		"sk-abcdefghijklmnopqrstuvwxyz":                                     "sk-",
+		"ghp_abcdefghijklmnopqrstuvwxyz0123":                                "ghp_",
+		"github_pat_abcdefghijklmnopqrstuvwxyz0123":                         "github_pat_",
+		"xoxb-123456789012-abcdefghij":                                      "xoxb-",
+		"AKIAIOSFODNN7EXAMPLE":                                              "AKIA",
+		"AIzaabcdefghijklmnopqrstuvwxyz0123456789":                          "AIza",
 		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop": "eyJ",
-		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz":           "Bearer",
-		`password = "hunter2hunter2"`:                                "password",
-		"https://user:supersecret@example.com/repo.git":              "https://",
+		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz":                  "Bearer",
+		`password = "hunter2hunter2"`:                                       "password",
+		"https://user:supersecret@example.com/repo.git":                     "https://",
 	}
 	for input, prefix := range cases {
 		out := Redact(input)
@@ -418,5 +418,88 @@ func TestDigestRoundTrip(t *testing.T) {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("stored digest is missing %s", key)
 		}
+	}
+}
+
+// TestCodeBuddyDigestCoversD06 distills a CodeBuddy transcript with the
+// session-meta opener, a tool call, a host echo, a reasoning event and a
+// compaction summary.
+func TestCodeBuddyDigestCoversD06(t *testing.T) {
+	lines := []string{
+		`{"type":"session-meta","id":"01a15d0d","sessionId":"cb-session","timestamp":1792371600000,"meta":{"codebuddy.ai/hostKind":"unopted"}}`,
+		`{"type":"message","role":"user","timestamp":1792371600000,"sessionId":"cb-session","cwd":"/work/memctl","content":[{"type":"input_text","text":"发布新版 release，不要在本地跑 make release；我的 key 是 sk-abcdefghijklmnopqrstuvwx"}]}`,
+		`{"type":"reasoning","timestamp":1792371601000,"sessionId":"cb-session","cwd":"/work/memctl","text":"private plan with sk-secretsecretsecretsecret"}`,
+		`{"type":"function_call","name":"Bash","timestamp":1792371605000,"sessionId":"cb-session","cwd":"/work/memctl","callId":"call-1","arguments":"{\"command\":\"git push origin v0.9.1 --token ghp_abcdefghijklmnopqrstuvwxyz0123456789\"}"}`,
+		`{"type":"function_call_result","name":"Bash","timestamp":1792371605001,"sessionId":"cb-session","cwd":"/work/memctl","callId":"call-1","status":"completed","output":{"type":"text","text":"secret tool output"}}`,
+		`{"type":"message","role":"assistant","timestamp":1792371605002,"sessionId":"cb-session","cwd":"/work/memctl","content":[{"type":"output_text","text":"已推送标签 v0.9.1 触发流水线发布。"}]}`,
+		`{"type":"message","role":"user","timestamp":1792371606000,"sessionId":"cb-session","cwd":"/work/memctl","providerData":{"skipRun":true},"content":[{"type":"input_text","text":"<local-command-stdout>Switched model</local-command-stdout>"}]}`,
+		`{"type":"summary","timestamp":1792371607000,"sessionId":"cb-session","cwd":"/work/memctl"}`,
+	}
+	digest, ok := testCollector(t).Collect("codebuddy", "", strings.NewReader(strings.Join(lines, "\n")))
+	if !ok {
+		t.Fatal("the codebuddy transcript produced no digest")
+	}
+	if digest.Agent != "codebuddy" || digest.SessionID != "cb-session" {
+		t.Fatalf("identity = %q/%q", digest.Agent, digest.SessionID)
+	}
+	if digest.SourceTag != "agent://testhost/codebuddy/cb-session" {
+		t.Fatalf("source tag = %q", digest.SourceTag)
+	}
+	if digest.CwdBase != "memctl" || digest.CwdKey == "" {
+		t.Fatalf("project fields = %q/%q", digest.CwdBase, digest.CwdKey)
+	}
+	// The fixture's millisecond timestamp is 2026-10-19; the collector clock is
+	// 2026-10-20, so an unparsed timestamp would silently fall back to it.
+	if digest.Date == "" || digest.Date == "2026-10-20" {
+		t.Fatalf("date = %q, want the date of the millisecond timestamp", digest.Date)
+	}
+	if !digest.Truncated {
+		t.Fatal("a summary event must mark the digest truncated")
+	}
+	if len(digest.Turns) != 1 {
+		t.Fatalf("turns = %d, want 1 (the host echo is not user speech)", len(digest.Turns))
+	}
+	turn := digest.Turns[0]
+	if !strings.Contains(turn.User, "make release") || !strings.Contains(turn.User, "[REDACTED]") {
+		t.Fatalf("user text = %q", turn.User)
+	}
+	if strings.Contains(turn.User, "sk-abcdefghijklmnopqrstuvwx") {
+		t.Fatalf("user credential was not redacted: %q", turn.User)
+	}
+	if !strings.Contains(turn.Assistant, "已推送标签") {
+		t.Fatalf("assistant text = %q", turn.Assistant)
+	}
+	if len(turn.Tools) != 1 || !strings.Contains(turn.Tools[0], "Bash: git push origin v0.9.1") {
+		t.Fatalf("tools = %v", turn.Tools)
+	}
+	if strings.Contains(turn.Tools[0], "ghp_") || !strings.Contains(turn.Tools[0], "[REDACTED]") {
+		t.Fatalf("tool credential was not redacted: %q", turn.Tools[0])
+	}
+	for _, text := range []string{turn.User, turn.Assistant, turn.Tools[0]} {
+		if strings.Contains(text, "private plan") || strings.Contains(text, "secret tool output") {
+			t.Fatalf("dropped content leaked into the digest: %q", text)
+		}
+	}
+}
+
+// TestWorkBuddyUsesCodeBuddyFormat checks that WorkBuddy reuses the CodeBuddy
+// parser while keeping its own agent name and source tag.
+func TestWorkBuddyUsesCodeBuddyFormat(t *testing.T) {
+	lines := []string{
+		`{"type":"message","role":"user","timestamp":1792371600000,"sessionId":"wb-session","cwd":"/work/memctl","content":[{"type":"input_text","text":"<system-reminder data-role=\"user-context\">per-turn context</system-reminder>\n<user_query>以后审查报告统一用中文</user_query>"}]}`,
+		`{"type":"message","role":"assistant","timestamp":1792371605000,"sessionId":"wb-session","cwd":"/work/memctl","content":[{"type":"output_text","text":"记下了。"}]}`,
+	}
+	digest, ok := testCollector(t).Collect("workbuddy", "", strings.NewReader(strings.Join(lines, "\n")))
+	if !ok {
+		t.Fatal("the workbuddy transcript produced no digest")
+	}
+	if digest.Agent != "workbuddy" || digest.SourceTag != "agent://testhost/workbuddy/wb-session" {
+		t.Fatalf("identity = %q/%q", digest.Agent, digest.SourceTag)
+	}
+	if len(digest.Turns) != 1 || !strings.Contains(digest.Turns[0].User, "审查报告") {
+		t.Fatalf("turns = %+v", digest.Turns)
+	}
+	if strings.Contains(digest.Turns[0].User, "system-reminder") || strings.Contains(digest.Turns[0].User, "user_query") {
+		t.Fatalf("the injected envelope leaked into the digest: %q", digest.Turns[0].User)
 	}
 }

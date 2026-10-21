@@ -51,6 +51,12 @@ func LocateSession(agent, sid, cwd, home string) string {
 			".system_generated", "logs", "transcript.jsonl"))
 	case "codex":
 		return locateCodex(home, sid)
+	case "codebuddy":
+		// CodeBuddy and WorkBuddy name the transcript `<sid>.jsonl` under the
+		// project directory, exactly like Claude Code.
+		return regularFile(filepath.Join(home, filepath.FromSlash(".codebuddy/projects"), codeBuddyDir(cwd), sid+".jsonl"))
+	case "workbuddy":
+		return regularFile(filepath.Join(home, filepath.FromSlash(".workbuddy/projects"), codeBuddyDir(cwd), sid+".jsonl"))
 	default:
 		return ""
 	}

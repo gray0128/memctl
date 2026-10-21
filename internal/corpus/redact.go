@@ -22,7 +22,9 @@ const redacted = "[REDACTED]"
 // blockPatterns strip whole regions before any text is kept. They are applied
 // repeatedly because the injected text itself can contain nested tags.
 var blockPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?is)<system-reminder>.*?</system-reminder>`),
+	// The opening tag may carry attributes, as in
+	// `<system-reminder data-role="user-context">`.
+	regexp.MustCompile(`(?is)<system-reminder(?:\s[^>]*)?>.*?</system-reminder>`),
 	regexp.MustCompile(`(?is)<MEMCTL_INSTRUCTIONS>.*?</MEMCTL_INSTRUCTIONS>`),
 	regexp.MustCompile(`(?is)<INSTRUCTIONS>.*?</INSTRUCTIONS>`),
 	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`),

@@ -1,6 +1,6 @@
 # 12. 跨会话新记忆提炼：本地当前 Agent 交互式整理方案
 
-> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`）；`H-2a` 本地会话蒸馏器已实现并验收（2026-10-20，`T100`）；`H-2b` 存量多会话补扫与 `antigravity` 接入已实现并验收（2026-10-20，`T101`）；`H-3` 本地 `prepare`/`propose`、项目筛选与两个 MCP 工具已实现并验收（2026-10-20，`T102`）；`H-4` 的配套 Skill、中英与 JSON 帮助、UI「整理」视图的本地提案列表与宿主会话内端到端验收已完成（2026-10-20，`T103`）。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`）；`H-2a` 本地会话蒸馏器已实现并验收（2026-10-20，`T100`）；`H-2b` 存量多会话补扫与 `antigravity` 接入已实现并验收（2026-10-20，`T101`）；`H-3` 本地 `prepare`/`propose`、项目筛选与两个 MCP 工具已实现并验收（2026-10-20，`T102`）；`H-4` 的配套 Skill、中英与 JSON 帮助、UI「整理」视图的本地提案列表与宿主会话内端到端验收已完成（2026-10-20，`T103`）；`H-2c` 的 CodeBuddy 与 WorkBuddy 会话格式接入已完成（2026-10-21，`T115`）。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
@@ -60,6 +60,8 @@ flowchart TB
 | `pi` | `memctl-pi` 通过 `ctx.sessionManager.getSessionFile()` 取得会话文件路径并传 `--transcript <path>`；宿主未提供该方法时不传路径 | `$HOME/.pi/agent/sessions/**/*.jsonl`（首行 `type: "session"` 的 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 | 已核对 |
 | `dsh` | `memctl-dsh` 在会话根下定位 `session-<sid>/` 目录并取最高版本记录传给 `--transcript <path>`；会话根依次取 `DSH_SESSIONS_DIR`、`$DSH_HOME/sessions`、`~/.dsh/sessions`，都不可用时插件不传路径 | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（同目录可能有 `session.v3.jsonl.zstd` 与未分片的 `session.jsonl.zstd`，取版本号最高者） | JSONL（zstd 压缩）：首行 `type: "session"` 的 `id` 与 `cwd`；对话从 `user/message`（`data.content[].text`）、`assistant/message`（`data.message.content[]` 中 `type: "text"`）、`tool/call`（`data.name` 与 `data.arguments`）与 `tool/result`（`data.message.isError`）提取；`type: "reasoning"` 内容块丢弃 | 已核对，**zstd 压缩** |
 | `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位（未接宿主 Hook 样例） | `$HOME/.gemini/antigravity/brain/<sid>/.system_generated/logs/transcript.jsonl`（目录名为 `sid`） | JSONL：`type="USER_INPUT"` 且 `source="USER_EXPLICIT"` 的记录取 `<USER_REQUEST>` 正文（剥离同记录内的 `<ADDITIONAL_METADATA>`、`<USER_SETTINGS_CHANGE>`）；`type="PLANNER_RESPONSE"` 取 `content` 文本与 `tool_calls[].args` 的命令/路径签名，丢弃同层 `thinking`；其余记录类型（`CONVERSATION_HISTORY`、`CHECKPOINT`、`RUN_COMMAND` 等）是工具输出或系统块，不进入摘要。会话没有元数据行，工作目录只出现在 `run_command` 的 `args.Cwd` | 已核对（本机 169 份 transcript 的事件类型与字段层级） |
+| `codebuddy` | Hook stdin 的 `"transcript_path"`（协议字段，尚未在真实 Hook 触发中复验） | `$HOME/.codebuddy/projects/*/*.jsonl`（项目目录名是 `cwd` 的路径转义，只把分隔符替换为 `-`；文件名即 `sid`） | JSONL：每行带 `sessionId`、`cwd` 与毫秒时间戳；`type="message"` 的 `input_text`/`output_text` 取对话，`function_call` 取工具名与 `arguments` 中的命令或路径；`reasoning`、`function_call_result.output` 与宿主回显（`providerData.skipRun`、`<local-command-*>`、`<command-name>`、`<command-args>`、`<task-notification>`）丢弃；`type="summary"` 标记上下文已压缩 | 已核对（本机 CodeBuddy 日志） |
+| `workbuddy` | Hook stdin 的 `"transcript_path"`（与 CodeBuddy 共用 agent core，尚未在真实 Hook 触发中复验） | `$HOME/.workbuddy/projects/*/*.jsonl`（目录转义与 `codebuddy` 相同） | 与 `codebuddy` 共用格式；新会话首行可能是 `type="session-meta"`，只提供 `sessionId`、不含 `cwd`，不作为对话内容 | 已核对（本机 WorkBuddy 日志） |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
 | `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 不扫描：`$HOME/.commandcode/projects`、`$HOME/.grok/projects` 等目录存在，但字段结构未核对 | 不解析：`H-2b` 只实现「探测失败静默跳过」，不打开这些目录，也不猜测字段 | 未核对格式，静默跳过 |
 
@@ -76,7 +78,7 @@ flowchart TB
 
 补扫的目标是让当前项目的历史会话进入候选池，而不是把整台机器最近读写过的文件都解析一遍。因此顺序是「先按项目收窄，再按时间排序」：
 
-1. **目录级预过滤**：目录名能还原 `cwd` 的宿主（`claude-code`、`dsh`、`pi`）只保留当前项目对应的目录；`codex` 按 `session_meta` 行、`antigravity` 按 `run_command` 的 `args.Cwd` 判定，不匹配即关闭文件、不进入候选集。判定失败的日志同样丢弃。这两种宿主按目录名收窄不了的会话在候选集之外就被排除，所以无关项目的会话不会占用后面的文件配额。
+1. **目录级预过滤**：目录名能还原 `cwd` 的宿主（`claude-code`、`dsh`、`pi`、`codebuddy`、`workbuddy`）只保留当前项目对应的目录；`codex` 按 `session_meta` 行、`antigravity` 按 `run_command` 的 `args.Cwd` 判定，不匹配即关闭文件、不进入候选集。判定失败的日志同样丢弃。`codex` 与 `antigravity` 这两类按记录判定的宿主无法用目录名收窄，其无关会话在候选集之外就被排除，所以不会占用后面的文件配额。
 2. **按 `mtime` 倒序**：在过滤后的候选集合内按文件修改时间倒序处理。
 3. **有界读取**：单文件解码产出上限 `MaxBackfillFileBytes = 8 MiB`；明文 JSONL 超过上限时只保留尾部（会话结束部分），zstd 流则从头部顺序解码并在达到上限时停止，两者都标记 `truncated: true`。累计解析文件数上限 `MaxBackfillFilesPerRun = 50`。这个配额统计的是**蒸馏成摘要**的日志数；`codex` 与 `antigravity` 判定项目时只做有界元数据嗅探，受时间预算约束而不占用该配额，否则按日期分区的 `codex` 存储会用 300 余条其他项目日志耗尽上限，一个会话也补不进来。
 4. **时间预算**：单次补扫的墙钟预算 `BackfillBudget = 5 s`。超预算时停止解析并保留已完成的摘要，不视为失败。
@@ -142,7 +144,7 @@ flowchart TB
 
 写入 `SessionDigest` 前，`internal/corpus` 依次执行三道确定性过滤：
 
-1. **系统与注入块剥离**：剔除 `<system-reminder>...</system-reminder>`、`<MEMCTL_INSTRUCTIONS>...</MEMCTL_INSTRUCTIONS>`、`[agent-memory] ...` 注入横幅、代码块中的大段文件内容，以及模型内部 `thinking` / `reasoning` 字段。
+1. **系统与注入块剥离**：剔除 `<system-reminder ...>...</system-reminder>`（含带 `data-role` 等属性的形式）、`<MEMCTL_INSTRUCTIONS>...</MEMCTL_INSTRUCTIONS>`、`[agent-memory] ...` 注入横幅、代码块中的大段文件内容，以及模型内部 `thinking` / `reasoning` 字段。
 2. **凭据与密钥正则脱敏**：将匹配以下模式的子串替换为 `[REDACTED]`：
    - 常见 API Key 与令牌前缀：`sk-[A-Za-z0-9_-]{16,}`、`gh[pousr]_[A-Za-z0-9]{20,}`、`github_pat_[A-Za-z0-9_]{20,}`、`xox[baprs]-[A-Za-z0-9-]{10,}`、`AKIA[0-9A-Z]{16}`、`AIza[0-9A-Za-z_-]{35}`；
    - JWT 与长 Bearer 串：`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`、`(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}`；
@@ -158,7 +160,7 @@ flowchart TB
 以下四条在 `H-2a` 实现时按本机会话样本补充，不改变 §2.2.1 的字段契约：
 
 - **回合按用户消息切分**：一个回合从一个用户消息开始，到下一条用户消息或日志结束为止。连续的用户消息（粘贴的文件、真正的问题、宿主的补充说明）合并进同一回合，避免产生只有工具调用、`user` 为空的回合。
-- **宿主的注入消息不算用户发言**：`dsh` 的 `user/message` 带 `data.source.kind`，只有 `user` 是用户键入的内容；`agent-instructions`、`runtime-context`、`skill-catalog`、`time-context`、`user-approval` 等由宿主注入，直接跳过。`codex` 与 `pi` 的同名消息按内容前缀识别（`# AGENTS.md instructions`、`Current runtime context.`、以 snake_case 标签开头的宿主事件等）。
+- **宿主的注入消息不算用户发言**：`dsh` 的 `user/message` 带 `data.source.kind`，只有 `user` 是用户键入的内容；`agent-instructions`、`runtime-context`、`skill-catalog`、`time-context`、`user-approval` 等由宿主注入，直接跳过。`codex` 与 `pi` 的同名消息按内容前缀识别（`# AGENTS.md instructions`、`Current runtime context.`、以 snake_case 标签开头的宿主事件等）。`codebuddy` 与 `workbuddy` 另外跳过 `providerData.skipRun` 标记的命令回显，以及以 `<local-command-stdout>`、`<command-name>`、`<command-args>`、`<task-notification>` 开头的宿主消息；用户消息先剥离注入块，再取 `<user_query>` 正文，WorkBuddy 把当轮上下文与真实请求写在同一条消息里时不会整条丢弃；`startsNewUserRequest: false` 与 `__codebuddyLocal` 仍是用户输入，不跳过。
 - **没有打开的回合时不记录**：在任何用户消息之前出现的助手文本与工具调用属于宿主初始化，无法归属到某个回合，直接丢弃。
 - **截断标记落在限额之内**：`MaxTurnTextBytes` 与 `MaxToolTextBytes` 把 `…` 计入上限，截断后的字段不超过限值本身。若一份摘要的全部回合都带纠正信号且仍超过 `MaxSessionDigestBytes`，采集按失败处理并静默跳过该会话，不写出超过限额的文件。
 
@@ -382,5 +384,6 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
 | `H-1`：方案与契约修订（`T098`，本轮） | `G-4` | 新增 `docs/12-session-corpus-dreaming.md`，同步修订 `docs/01`–`05`、`docs/09`、`docs/README.md` 与 `docs/STATUS.md`；不改动已实现的 GitHub Actions Dreaming 功能 | 文档链接、锚点与跨文档契约一致性检查 |
 | `H-2a`：本地会话蒸馏器（已核对宿主） | `H-1` | 引入 `github.com/klauspost/compress/zstd` 并在 `go.mod` 固定版本；实现 `internal/corpus` 框架与四个已核对格式（`claude-code`、`codex`、`pi`、`dsh` 含 zstd 解码与解压产出上限）、回合裁剪、正则脱敏、可疑指令过滤、14 天 TTL 缓存与消费保留规则；扩展 `hookio.ReadInput` 解析 `transcript_path` 与 `last_assistant_message`；`sync`/`end` 支持 `--transcript` 与 `AGENT_MEMORY_CORPUS`；`memctl-pi`、`memctl-dsh` 传递会话文件路径 | `D06` 中四个已核对宿主的单元测试与 CLI 集成测试 |
 | `H-2b`：存量多会话补扫与其余宿主探测 | `H-2a` | 实现按项目预过滤的补扫（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`）；接入 `antigravity`；`commandcode`、`grok`、`opencode` 只做「探测失败静默跳过」，并在本文档记录格式核对状态 | `D06` 其余场景（超限日志、无关项目不挤占配额） |
+| `H-2c`：CodeBuddy 与 WorkBuddy 接入（`T115`） | `H-2b` | 按共用会话格式实现 `codebuddy`、`workbuddy` 的实时采集、按 `sid` 定位与存量补扫（`$HOME/.codebuddy/projects`、`$HOME/.workbuddy/projects`）；补解析器、目录转义、工具签名脱敏与宿主回显过滤测试 | `D06` 的解析、补扫、定位与脱敏单元测试 |
 | `H-3`：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具 | `H-2a`、`H-2b` | `internal/dream` 实现本地基线固定路径（不依赖远端就绪检查）、`PrepareLocal`（补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数）与 `ProposeLocal`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门、链接校验、`runner: "local-agent"` 提案持久化）、`ApplyDream` 的幂等消费写回与 `Store.List`；CLI 新增 `dream --prepare`、`dream --propose --stdin`、`dream --list`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`；`internal/server` 新增 `GET /api/v1/dream` | `D07`、`D08` 单元测试、MCP 协议测试与 CLI 集成测试 |
 | `H-4`：配套 Skill、CLI 帮助、UI 展示与端到端验收（`T103`，已完成） | `H-3` | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图通过 `GET /api/v1/dream` 列出提案并展示 `local-agent` 的 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | `D06`、`D07`、`D08`、`R06`、前端单测与真实宿主会话回归 |

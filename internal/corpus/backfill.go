@@ -191,8 +191,11 @@ func discoverCandidates(req BackfillRequest, cwdKey string, sweep *sweep) []cand
 	var out []candidate
 
 	// Hosts whose store directory is the escaped working directory: only the
-	// directories of the current project are visited.
+	// directories of the current project are visited. CodeBuddy and WorkBuddy
+	// use their own escaping, which preserves underscores and spaces.
 	out = append(out, discoverFlat(home, filepath.FromSlash(".claude/projects"), claudeDir(req.Cwd), "claude-code", claudeSessionID, sweep)...)
+	out = append(out, discoverFlat(home, filepath.FromSlash(".codebuddy/projects"), codeBuddyDir(req.Cwd), "codebuddy", claudeSessionID, sweep)...)
+	out = append(out, discoverFlat(home, filepath.FromSlash(".workbuddy/projects"), codeBuddyDir(req.Cwd), "workbuddy", claudeSessionID, sweep)...)
 	out = append(out, discoverFlat(home, filepath.FromSlash(".pi/agent/sessions"), piDir(req.Cwd), "pi", piSessionID, sweep)...)
 	out = append(out, discoverDSH(home, req.Cwd, sweep)...)
 	// Hosts whose store is not organised by project: the log decides, and a
