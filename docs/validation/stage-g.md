@@ -217,3 +217,12 @@
 - 产物核对：`memctl-darwin-arm64 version` 为 `v0.10.0`；`help --json` 为 `schemaVersion` 1、23 个命令；`help dream --lang zh` 含 `T104` 的三条守卫文案。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl` 到 `v0.10.0`；`update --check` 返回 `up to date`；`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.10.0)`。`--readonly` 启动 UI 后，内嵌 bundle 同时含审计标签修复、`readyHint` 文案与「已保存提案」列表，`GET /api/v1/dream` 返回既有提案；验证后停止服务并确认端口释放。
 - 未验证与遗留：`memctl-dsh@0.5.3` 真实会话未在本版本复验；界面修复只做 bundle 内容核对，未做浏览器视觉复验；三个非 darwin/arm64 平台仍只有交叉编译证据。`docs/validation/stage-h.md` 的两节 `T102` 重复未在该轮合并。
+
+## T106：「整理」视图固定 Diff 按文件分块渲染
+
+- 目标与范围：让「整理」视图的固定 Diff 可读。原实现把 `proposal.diff` 整段塞进不换行的 `<pre>`，而记忆条目是整行长文本，右侧被裁切；增删行同色、多个文件的 patch 首尾相接，读不出哪个文件改了哪一行。本轮按 `changes[].patch` 逐文件分块渲染，复用审计视图的 Diff2Html 管线，增加 `+`/`-` 着色、长行换行、文件级与全局增删计数，并修正深色模式下 Diff2Html 行号对比度过低。提案生成、`patchHash`、`apply` 与 REST 字段均未改动。
+- 对应契约：[02. 领域模型与契约](../02-domain-models-and-contracts.md#2-领域对象)（补充 `changes[]` 项形状）、[04. CLI 与 UI](../04-ui-and-cli-specification.md#4-web-ui)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0，agent-browser 驱动的 Chromium。
+- 检查：`web` 单测 18 个文件 104 项通过（新增 `proposalDiff.test.js` 4 项）；`make ui` 构建通过；`make test` 全量通过，含 Go 全部包、`tests/integration`（341.6 秒）与两个插件的 Node 测试。
+- 浏览器实看：以 `--readonly` 启动内嵌 UI，打开提案 `dp-38ce0f7e…`，在 1280×900 与 430×932 两种宽度、浅色与深色两种主题下确认：三个文件各自成块并显示 `+1 −0`、`+1 −0` 与 `+3 −0`；长记忆行在块内换行且无横向裁切；窄屏下正文仍保留 215 px 可用宽度，`document.scrollWidth` 等于视口宽度，整页无横向溢出。
+- 未验证与遗留：审计视图保持既有横向滚动与 8em 内边距，本轮未改动，窄屏下仍依赖横向滚动（`T107` 收口）；视觉结论来自本机 Chromium，未在移动端真机复验；`docs/validation/stage-h.md` 的两节 `T102` 重复仍未合并。

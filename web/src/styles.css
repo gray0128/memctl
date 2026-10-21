@@ -96,12 +96,22 @@ code, pre, kbd, samp {
 
 .diff-preview .d2h-code-line {
   /* Diff2Html positions the line numbers absolutely in a 7.5em column and
-     reserves that space with 8em horizontal padding. Only the vertical
-     padding is customized here. */
-  padding: 2px 8em;
+     reserves it with 8em of left padding while also subtracting 16em from the
+     row width, which leaves no room for the text on a narrow screen. Keep the
+     left gutter only and let the code use the rest of the row. */
+  box-sizing: border-box;
+  width: 100%;
+  padding: 2px 0.75em 2px 8em;
   font-family: ui-monospace, monospace;
   font-size: 0.75rem;
   line-height: 1.4;
+}
+
+/* Memory entries are long single lines, so both the audit and the 整理 view wrap
+   the diff instead of clipping it or requiring horizontal scrolling. */
+.diff-preview .d2h-code-line-ctn {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -142,8 +152,8 @@ code, pre, kbd, samp {
   }
 }
 
-/* 整理视图的固定 Diff：外层卡片已经画出文件头和边框，这里折叠 Diff2Html 的
-   重复文件头与边线；记忆条目是整行长文本，必须换行显示而不是横向裁切。 */
+/* 整理视图的固定 Diff：外层卡片已经画出文件头与边框，这里折叠 Diff2Html 的
+   重复文件头与边线；行宽与换行沿用上面对所有 Diff 区块共用的约定。 */
 .proposal-diff .d2h-wrapper {
   border: 0;
   border-radius: 0;
@@ -157,18 +167,4 @@ code, pre, kbd, samp {
 
 .proposal-diff .d2h-file-header {
   display: none;
-}
-
-.proposal-diff .d2h-code-line-ctn {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* Diff2Html reserves the gutter with 8em of horizontal padding while also
-   subtracting 16em from the row width, which leaves no room for the text on a
-   narrow screen. Keep the left gutter only and let the code use the rest. */
-.proposal-diff .d2h-code-line {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 2px 0.75em 2px 8em;
 }
