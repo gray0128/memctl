@@ -158,19 +158,19 @@ export function FileEditor({ api, files }) {
 
       {/* Code Textarea & Workspace */}
       {loaded && (
-        <div className="space-y-3 rounded-xl border border-slate-200/80 bg-slate-950 p-1 shadow-inner dark:border-slate-800">
+        <div className="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-1 shadow-2xs dark:border-slate-800 dark:bg-slate-950 dark:shadow-inner">
           {/* Editor Meta Bar */}
-          <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-mono text-slate-400 border-b border-slate-800/80">
+          <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-mono text-slate-500 border-b border-slate-200/80 dark:text-slate-400 dark:border-slate-800/80">
             <span className="truncate max-w-xs">{loaded.path}</span>
             <div className="flex items-center gap-3">
               <span>{lineCount} 行</span>
               <span>{draft.length} 字符</span>
               {dirty ? (
-                <span className="rounded-full bg-amber-900/60 px-2 py-0.2 font-sans font-semibold text-amber-300">
+                <span className="rounded-full bg-amber-100 px-2 py-0.2 font-sans font-semibold text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
                   已修改 (未保存)
                 </span>
               ) : (
-                <span className="rounded-full bg-emerald-900/50 px-2 py-0.2 font-sans text-emerald-300">
+                <span className="rounded-full bg-emerald-100 px-2 py-0.2 font-sans text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
                   同步基线
                 </span>
               )}
@@ -182,10 +182,10 @@ export function FileEditor({ api, files }) {
             rows={16}
             onInput={(event) => setDraft(event.currentTarget.value)}
             spellCheck={false}
-            className="w-full bg-transparent p-3 font-mono text-xs leading-relaxed text-slate-100 outline-none resize-y selection:bg-indigo-500/30"
+            className="w-full bg-transparent p-3 font-mono text-xs leading-relaxed text-slate-900 outline-none resize-y selection:bg-indigo-500/20 dark:text-slate-100 dark:selection:bg-indigo-500/30"
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 px-3 py-2 rounded-b-lg border-t border-slate-800/80">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/80 px-3 py-2 rounded-b-lg border-t border-slate-200/80 dark:bg-slate-900 dark:border-slate-800/80">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -203,13 +203,13 @@ export function FileEditor({ api, files }) {
                   setStatus(null)
                 }}
                 disabled={busy || !dirty}
-                className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 active:scale-95 disabled:opacity-40"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 active:scale-95 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 放弃修改
               </button>
             </div>
             {api.readOnly && (
-              <span className="text-xs text-slate-400">只读保护：写权限已禁用</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">只读保护：写权限已禁用</span>
             )}
           </div>
         </div>
