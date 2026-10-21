@@ -300,6 +300,8 @@ var files embed.FS
 
 内嵌默认指引的「After an entry stops being true」一节是条目失效时的判定规则来源：状态型条目就地改写或删除，事件型条目追加并保留旧条目，记忆文件内不维护变更记录。类型划分与判定标准见 [10. 记忆更新与过期](./10-memory-lifecycle.md#3-记忆分类与处理规则)；本节只说明该规则由 `internal/assets/INSTRUCTIONS.md` 内嵌、随每次会话注入。
 
+内嵌默认指引的「Organizing memory」一节是批量整理的入口规则：用户要求整理、去重、重构或跨会话提炼时，先执行 `memctl dream --prepare`，再用 `--propose` 提交完整目标文件，只生成待审阅提案；Agent 不得用 `memctl write` 直接改写记忆库，也不得自行 `--apply`。单条事实仍按 Writing 规则写入，协议见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)。
+
 以下 Makefile 是 POSIX 构建机上的实际构建入口。`make build` 先构建前端再编译本机二进制；`make release` 依赖 `make test`，先跑全量测试（含两个插件的 Node 测试）再由 `scripts/release.sh` 交叉编译四个候选二进制、打包两个插件 tarball 并生成发布元数据。`make release-dist` 只构建与打包、不跑测试，仅供「测试已由前置作业保证」的流水线使用，不用于本地发布。Windows 运行支持仍需对应平台测试。
 
 ```makefile

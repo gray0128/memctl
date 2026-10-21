@@ -307,3 +307,14 @@
 - 产物核对：`memctl-darwin-arm64 version` 为 `v0.11.1`；`install --status` 的 WorkBuddy 注册动作已改为 `to ~/.workbuddy/mcp.json; WorkBuddy reads the user-scope mcp.json (not .mcp.json, which is plugin scope)`。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.11.1`，`update --check` 返回 `up to date`。本机两个宿主的 hooks 已在此前安装，当前 `install --status` 为 `codebuddy: configured host=codebuddy@2.164.0` 与 `workbuddy: configured host=app`。
 - 未验证与遗留：CodeBuddy 与 WorkBuddy 的真实会话仍未各跑一次，`start`/`sync`/`end` 的实际触发未复看；WorkBuddy 是否在退出时重写 `settings.json` 或 `mcp.json` 未验证；写入失败的根因（该环境的 `os.Root.Rename` 被拒绝）无法在本机复现。
+
+## T116：发布 `v0.12.0`
+
+- 目标与范围：发布 `v0.12.0`，把 `T115` 的 CodeBuddy 与 WorkBuddy 会话蒸馏带入 Release。版本号按次版本递增：新增两个宿主的格式解析与补扫，没有破坏性接口变化。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
+- 对应契约：[04. CLI、UI 与分发](../04-ui-and-cli-specification.md#61-发布入口)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)、[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`T115` 的 `make test` 全绿（`tests/integration` 241.7 秒、`vitest` 104 项、两个插件 Node 测试）；发布准备提交 `5f4ce50`。
+- 发布：推送附注标签 `v0.12.0`，[运行 39564437562](https://github.com/gray0128/memctl/actions/runs/39564437562) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.12.0](https://github.com/gray0128/memctl/releases/tag/v0.12.0)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.12.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.12.0`、`commit: 5f4ce50`；产物 `memctl-darwin-arm64 version` 为 `v0.12.0`。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.12.0`，`update --check` 返回 `up to date`，`install --status` 仍为 `codebuddy: configured host=codebuddy@2.164.0` 与 `workbuddy: configured host=app`。
+- 未验证与遗留：`T115` 记录的 `SessionEnd`（交互式退出）、WorkBuddy 桌面 GUI 会话、`CODEBUDDY_CONFIG_DIR` 自定义根与 Windows 盘符转义仍未验证；平台验证范围与 `v0.11.1` 相同。

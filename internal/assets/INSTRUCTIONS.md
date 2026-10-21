@@ -52,6 +52,20 @@ Report it to the user instead.
 - No change log in memory files: no "previously X, now Y". Git history holds
   the earlier versions.
 
+## Organizing memory
+
+- The Writing rules above cover single durable facts. When the user asks to
+  organize, deduplicate, restructure, or extract memory across sessions, do not
+  rewrite the repository with `memctl write`.
+- Prepare the material with `memctl dream --prepare --json` (MCP:
+  `memory_dream_prepare`), then submit the complete target files with
+  `memctl dream --propose --stdin` (MCP: `memory_dream_propose`). These steps
+  only persist a `ready` proposal; they do not change the repository.
+- Show the proposal id, patch hash and a diff summary, then wait for the user
+  to review it. Do not apply a proposal yourself: the user applies it from the
+  CLI (`memctl dream --apply <id> --patch-hash <hash>`) or the Web UI. MCP has
+  no apply tool.
+
 ## Syncing
 
 - Hooks and `memctl wrap` commit and push for you. Do not run Git yourself

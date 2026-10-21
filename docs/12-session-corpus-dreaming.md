@@ -168,7 +168,9 @@ flowchart TB
 
 用户在当前 Agent 会话中显式发起整理时，Agent 按配套 Skill（`skills/memctl/SKILL.md` §6）指引执行两步结构化交互；受沙箱限制的宿主（如 `workspace-write` 下的 Codex 与 DSH）直接调用同名 MCP 工具，无需放宽工作区沙箱。
 
-Skill 只描述流程与判定规则，不复述参数表：检索与阅读时机、三类可提炼信号与频次门控、`files[]` 的逐字写法、失败码处置都写在该 Skill，命令、选项、输入输出与退出码以 `memctl help dream` 为准。两处边界由 Skill 明确承担，因为它们都属于「Agent 必须在提交前知道」的规则：
+Skill 只描述流程与判定规则，不复述参数表：检索与阅读时机、三类可提炼信号与频次门控、`files[]` 的逐字写法、失败码处置都写在该 Skill，命令、选项、输入输出与退出码以 `memctl help dream` 为准。内嵌默认指引的「Organizing memory」一节承担同一路由：用户要求整理记忆时，Agent 不得用 `memctl write` 批量改写，必须先执行 `--prepare` 再提交 `--propose`，把提案交回用户确认；应用只能来自用户操作。Skill 与默认指引约束 Agent 行为，服务端仍由 `apply` 的基线与 `patchHash` 校验兜底。
+
+两处边界由 Skill 明确承担，因为它们都属于「Agent 必须在提交前知道」的规则：
 
 - 目标文件所在的父目录必须已存在。`memctl` 不在持锁期间创建目录结构（见 [架构与模块](./01-architecture-and-modules.md#32-文件边界)）。该约束由 `propose` 在生成提案前校验：`files[]` 中任一目标文件的父目录不在基线里时返回 `NOT_FOUND` 并列出缺失目录，提案不落盘；`apply` 仍在事务内重复校验同一约束。
 - MCP 不提供 `memory_dream_apply`。提案生成后由 Skill 展示摘要与 Diff，应用只能来自用户的 CLI 或 UI 操作。

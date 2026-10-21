@@ -65,6 +65,10 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"rewrite the entry in place",
 		"No change log in memory files",
 		"until: YYYY-MM-DD",
+		"## Organizing memory",
+		"memctl dream --prepare --json",
+		"only persist a `ready` proposal",
+		"Do not apply a proposal yourself",
 		"# Memory",
 	} {
 		if !strings.Contains(start.stdout, want) {
