@@ -154,7 +154,7 @@
 - 目标与范围：对应阶段 H 的 `H-2c`，为 `internal/corpus` 接入 CodeBuddy 与 WorkBuddy。两者共用 CodeBuddy 会话格式：按行读取 `sessionId` 与 `cwd`、毫秒时间戳、`input_text`/`output_text` 对话与 `function_call` 工具签名；丢弃 `reasoning`、工具输出与宿主回显（`providerData.skipRun`、`<local-command-*>`、`<command-name>`、`<command-args>`、`<task-notification>`）；`summary` 标记 `truncated`。新增按 `sid` 定位与两个存量补扫目录，并让工具签名在写入摘要前经过同一套凭据脱敏。本轮不发布新版本。
 - 对应契约：[12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)、[05. 验收与交付](./05-validation-and-delivery.md#阶段-h-的实施顺序)。
 - 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
-- 验证：`go test ./internal/corpus ./internal/dream ./internal/cli` 通过；`make test` 全绿（`tests/integration` 241.7 秒、`vitest` 104 项、两个插件 Node 测试）。另用本机真实 CodeBuddy 与 WorkBuddy 日志各做一次只读探针：CodeBuddy 得到 13 个回合、日期 2026-10-21，WorkBuddy 的首条消息正确剥离带属性的注入块并取出 `<user_query>` 正文；`reasoning` 与工具输出均未进入摘要，探针文件已删除。
+- 验证：`go test ./internal/corpus ./internal/dream ./internal/cli` 通过；`make test` 全绿（`tests/integration` 241.7 秒、`vitest` 104 项、两个插件 Node 测试）。另用本机真实 CodeBuddy 与 WorkBuddy 日志各做一次只读探针：CodeBuddy 得到 13 个回合、日期 2026-10-21，WorkBuddy 的首条消息正确剥离带属性的注入块并取出 `<user_query>` 正文；`reasoning` 与工具输出均未进入摘要，探针文件已删除。在真实记忆仓库运行 `dream --prepare`，当前 12 个候选中有 3 个 `codebuddy` 会话（`cwdBase=memctl`），补扫链路已贯通。
 - 未验证与遗留：真实 CodeBuddy / WorkBuddy Hook 触发尚未复跑；`CODEBUDDY_CONFIG_DIR` 指向其他配置根时补扫仍只查 `$HOME`；Windows 盘符与分隔符转义未验证；工具签名不记录退出状态，与现有解析器一致。
 
 ## 近期待办与下一步
