@@ -244,3 +244,24 @@
 - 检查：`make ui` 构建通过；`make test` 全量通过，含 Go 全部包、`tests/integration`（232.6 秒）、`vitest run` 与两个插件的 Node 测试。
 - 浏览器实看：`--readonly` 启动内嵌 UI 后打开「客户端接入」，1280×900 下浅色主题的注册命令块为浅灰底深色等宽字，深色主题仍为深底浅字；两种主题下文字与背景对比清晰，命令未被截断。
 - 未验证与遗留：适配器的补丁预览只在安装预览流程中出现，只读模式禁用该入口，本轮只核对类名与构建结果，未做视觉复验；窄屏与其他宿主命令未逐一复看。
+
+## T109：文件原文编辑区按主题取底色
+
+- 目标与范围：条目浏览的「文件原文受管编辑」工作区整体固定深色——容器 `bg-slate-950`、正文 `text-slate-100`、底栏 `bg-slate-900`、次要按钮深底浅字、脏标记与「同步基线」徽标用深色底，浅色主题下是一块黑画布。本轮按 `T108` 的同一规则改为随主题取底色：浅色主题工作区 `bg-slate-50/60`、正文 `text-slate-900`、meta 栏与底栏浅灰、次要按钮浅底深字、两个徽标改浅色底；深色主题保持原有深底浅字与内阴影。只改展示类名，加载、保存、冲突处理与接口未变。
+- 对应契约：[04. CLI 与 UI](../04-ui-and-cli-specification.md#4-web-ui)（条目浏览一行的编辑区底色约定）。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0，agent-browser 驱动的 Chromium。
+- 检查：`make ui` 构建通过；`make test` 全量通过，含 Go 全部包、`tests/integration`（238.6 秒）、`vitest run` 与两个插件的 Node 测试。
+- 浏览器实看：以 `--readonly` 启动内嵌 UI，在「条目」视图打开文件原文编辑器并载入 `MEMORY.md`，1280×900 下浅色主题编辑区为浅灰底深色等宽字、底栏与徽标同为浅色，深色主题仍为深底浅字；两种主题下正文、行数字段与只读提示均可读。
+- 未验证与遗留：条目内联编辑与冲突面板在只读模式下不可达，未复看；窄屏未复验。
+
+## T110：发布 `v0.10.1`
+
+- 目标与范围：发布 `v0.10.1`，把 `T106`–`T109` 的界面阅读修复带入发布：整理视图固定 Diff 逐文件分块并标注动作与 `+n/-n`、长记忆行换行；审计与整理的 Diff 统一行宽与换行；客户端接入代码块与文件原文编辑区按主题取底色。插件源码未改动，tarball 仍为 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`。
+- 对应契约：[04. CLI 与 UI](../04-ui-and-cli-specification.md#61-发布入口)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`make test` 全绿，`tests/integration` 238.6 秒、`vitest run` 18 个文件 104 项与两个插件的 Node 测试通过。
+- 发布：提交 `793ae57`，附注标签 `v0.10.1`（`v0.10.1：修复 Diff 阅读与浅色主题对比度`）。[运行 39538949487](https://github.com/gray0128/memctl/actions/runs/39538949487) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，创建 [Release v0.10.1](https://github.com/gray0128/memctl/releases/tag/v0.10.1)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.10.1` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.10.1`、`commit: 793ae57`、构建宿主 darwin/arm64 标记为 runtime-verified。
+- 产物核对：`memctl-darwin-arm64 version` 为 `v0.10.1`；`help --json` 为 `schemaVersion` 1；`dsh plugin-path` 生成 `memctl-dsh-0.5.3.tgz`。以该产物启动 `--readonly` UI 后，内嵌 bundle `assets/index-BADBuDNy.js` 含「改动文件」与 `proposal-diff`，浏览器打开提案 `dp-38ce0f7e…` 显示三个文件各自成块与 `+1/-0`、`+1/-0`、`+3/-0` 计数；验证后停止服务并确认端口释放。
+- 本机升级：用「写临时文件 → `mv` 原子替换」把 `~/.agent-memory/bin/memctl` 换成 Release 的 `memctl-darwin-arm64`；`version` 为 `memctl v0.10.1`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.10.1)`。
+- 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只有交叉编译证据；发布后的四视图冒烟只覆盖「整理」，其余视图未逐一复看；`memctl-dsh@0.5.3` 的真实会话复验仍未补。
