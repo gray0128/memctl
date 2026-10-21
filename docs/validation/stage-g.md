@@ -205,3 +205,15 @@
 - 本机升级：用「写临时文件 → `mv` 原子替换」把 `~/.agent-memory/bin/memctl` 换成 Release 的 `memctl-darwin-arm64`（SHA-256 `0bf2ff95…`，与 `SHA256SUMS` 一致）；`version` 输出 `memctl v0.9.1`，`dsh plugin-path` 生成 `~/.agent-memory/dsh/memctl-dsh-0.5.3.tgz`，`update --check` 返回 `up to date`。
 - 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只交叉编译；`memctl-dsh@0.5.3` 的真实 `desktop` 会话仍未复验（只有隔离 headless 证据），本机 `desktop` profile 保持 `0.5.3`。
 - 下一步：在真实 `desktop` 会话复验 `0.5.3` 的注入与同步，把结果补进 [T096 验证记录](./t096-dsh-plugin-0-5-2-verification.md)。
+
+## T105：发布 `v0.10.0`
+
+- 目标与范围：发布 `v0.10.0`，把阶段 H 的本地当前 Agent 交互式跨会话记忆提炼（`T100`–`T104`）带入发布，并修复「整理」视图因缺少 `readyHint` 导入而整页空白、审计视图来源标签在窄容器中逐字换行。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`。
+- 对应契约：[04. CLI 与 UI](../04-ui-and-cli-specification.md#61-发布入口)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)、[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`make test` 全绿，含 `internal/...` 全部包、`tests/integration`（199.7 秒）与 `vitest run` 17 个文件 100 项，两个插件的 Node 测试通过。
+- 发布：提交 `0b3c661`，附注标签 `v0.10.0`。[运行 39524475231](https://github.com/gray0128/memctl/actions/runs/39524475231) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，创建 [Release v0.10.0](https://github.com/gray0128/memctl/releases/tag/v0.10.0)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.10.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；附件为四个候选二进制、`memctl-dsh-0.5.3.tgz`、`memctl-pi-0.5.2.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`，后者记录 `version: v0.10.0`、`commit: 0b3c661`。
+- 产物核对：`memctl-darwin-arm64 version` 为 `v0.10.0`；`help --json` 为 `schemaVersion` 1、23 个命令；`help dream --lang zh` 含 `T104` 的三条守卫文案。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl` 到 `v0.10.0`；`update --check` 返回 `up to date`；`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.10.0)`。`--readonly` 启动 UI 后，内嵌 bundle 同时含审计标签修复、`readyHint` 文案与「已保存提案」列表，`GET /api/v1/dream` 返回既有提案；验证后停止服务并确认端口释放。
+- 未验证与遗留：`memctl-dsh@0.5.3` 真实会话未在本版本复验；界面修复只做 bundle 内容核对，未做浏览器视觉复验；三个非 darwin/arm64 平台仍只有交叉编译证据。
