@@ -4,6 +4,7 @@ import {
   applyPayload,
   canApply,
   canGenerate,
+  changeActionLabel,
   changeSummary,
   isLocalProposal,
   isTerminalProposal,
@@ -14,6 +15,11 @@ import {
   runnerLabel,
   summarizeProposal,
 } from '../dreams.js'
+import {
+  proposalDiffFiles,
+  proposalDiffTotals,
+  renderProposalDiff,
+} from '../proposalDiff.js'
 import { formatTimestamp } from '../time.js'
 
 const TONES = {
@@ -32,6 +38,14 @@ const STATUS_CONFIG = {
   failed: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/60',
 }
 
+// ACTION_CONFIG colors the per-file header of the fixed diff so an added file
+// is not mistaken for an edit of an existing one.
+const ACTION_CONFIG = {
+  create: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/60',
+  update: 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900/60',
+  delete: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/60',
+}
+
 export function DreamPanel({ api, refreshKey }) {
   const [runner, setRunner] = useState(RUNNERS[0].id)
   const [proposalId, setProposalId] = useState('')
@@ -44,6 +58,7 @@ export function DreamPanel({ api, refreshKey }) {
   const [reload, setReload] = useState(0)
   const [listed, setListed] = useState([])
   const [listError, setListError] = useState(null)
+  const [diffHtml, setDiffHtml] = useState({})
 
   // The proposal table lists every persisted proposal, including the
   // `local-agent` ones written by `memctl dream --propose` in the current agent
@@ -90,6 +105,27 @@ export function DreamPanel({ api, refreshKey }) {
       if (timer) clearTimeout(timer)
     }
   }, [api, proposalId, refreshKey, reload])
+
+  // The fixed diff is rendered one block per changed file. The renderer is
+  // imported on demand and escapes the patch text, so a memory line that
+  // contains markup is still shown as text. Keyed by the reviewed patch hash so
+  // a status poll of the same proposal does not rebuild identical blocks.
+  useEffect(() => {
+    if (!proposal) return undefined
+    const files = proposalDiffFiles(proposal)
+    if (files.length === 0) return undefined
+    let cancelled = false
+    setDiffHtml({})
+    renderProposalDiff(files).then((rendered) => {
+      if (cancelled) return
+      const next = {}
+      for (const file of rendered) next[file.path] = file.html
+      setDiffHtml(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [proposal && proposal.proposalId, proposal && proposal.patchHash])
 
   async function generate() {
     setBusy(true)
@@ -149,6 +185,8 @@ export function DreamPanel({ api, refreshKey }) {
 
   const backendReady = api.dreamSandbox && !backendUnavailable
   const generationEnabled = canGenerate(api.readOnly, backendReady)
+  const diffFiles = proposalDiffFiles(proposal)
+  const diffTotals = proposalDiffTotals(diffFiles)
 
   return (
     <section className="space-y-4 rounded-2xl border border-indigo-200/80 bg-white p-5 shadow-2xs dark:border-indigo-900/60 dark:bg-slate-900">
@@ -346,13 +384,64 @@ export function DreamPanel({ api, refreshKey }) {
             </div>
           )}
 
-          {proposal.diff && (
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">固定 Diff 预览</span>
-              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-200/80 bg-slate-900 p-3 font-mono text-[11px] leading-relaxed text-slate-100 shadow-inner dark:border-slate-800">
-                {proposal.diff}
-              </pre>
+          {diffFiles.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">固定 Diff 预览</span>
+                <span className="rounded-md border border-slate-200/80 bg-white px-2 py-0.5 text-slate-600 shadow-2xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                  改动文件 <strong className="font-mono text-slate-900 dark:text-white">{diffTotals.files}</strong>
+                </span>
+                <span className="rounded-md border border-emerald-200/80 bg-emerald-50/70 px-2 py-0.5 font-mono font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  +{diffTotals.additions}
+                </span>
+                <span className="rounded-md border border-rose-200/80 bg-rose-50/70 px-2 py-0.5 font-mono font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                  -{diffTotals.deletions}
+                </span>
+              </div>
+              <div className="proposal-diff space-y-2">
+                {diffFiles.map((file) => (
+                  <div
+                    key={file.path}
+                    className="overflow-hidden rounded-lg border border-slate-200/80 dark:border-slate-800"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+                      <span
+                        className={`inline-flex shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                          ACTION_CONFIG[file.action] || ACTION_CONFIG.update
+                        }`}
+                      >
+                        {changeActionLabel(file.action)}
+                      </span>
+                      <span className="min-w-0 break-all font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                        {file.path}
+                      </span>
+                      <span className="ml-auto shrink-0 font-mono text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        +{file.additions}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                        -{file.deletions}
+                      </span>
+                    </div>
+                    {diffHtml[file.path] ? (
+                      <div
+                        className="diff-preview text-xs"
+                        dangerouslySetInnerHTML={{ __html: diffHtml[file.path] }}
+                      />
+                    ) : (
+                      <p className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                        正在渲染该文件的 Diff…
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
+          )}
+
+          {diffFiles.length === 0 && (proposal.changes || []).length > 0 && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              该提案没有可渲染的文本 Diff，请以「预期变动」中的文件清单为准。
+            </p>
           )}
 
           <div className="flex flex-wrap items-center gap-2 pt-1">

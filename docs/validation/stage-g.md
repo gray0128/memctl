@@ -216,4 +216,4 @@
 - 附件与校验：独立目录 `/tmp/memctl-v0.10.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；附件为四个候选二进制、`memctl-dsh-0.5.3.tgz`、`memctl-pi-0.5.2.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`，后者记录 `version: v0.10.0`、`commit: 0b3c661`。
 - 产物核对：`memctl-darwin-arm64 version` 为 `v0.10.0`；`help --json` 为 `schemaVersion` 1、23 个命令；`help dream --lang zh` 含 `T104` 的三条守卫文案。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl` 到 `v0.10.0`；`update --check` 返回 `up to date`；`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.10.0)`。`--readonly` 启动 UI 后，内嵌 bundle 同时含审计标签修复、`readyHint` 文案与「已保存提案」列表，`GET /api/v1/dream` 返回既有提案；验证后停止服务并确认端口释放。
-- 未验证与遗留：`memctl-dsh@0.5.3` 真实会话未在本版本复验；界面修复只做 bundle 内容核对，未做浏览器视觉复验；三个非 darwin/arm64 平台仍只有交叉编译证据。
+- 未验证与遗留：`memctl-dsh@0.5.3` 真实会话未在本版本复验；界面修复只做 bundle 内容核对，未做浏览器视觉复验；三个非 darwin/arm64 平台仍只有交叉编译证据。`docs/validation/stage-h.md` 的两节 `T102` 重复未在该轮合并。

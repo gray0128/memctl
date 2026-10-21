@@ -17,20 +17,30 @@ export function buildUnifiedDiff(files) {
     .join('\n')
 }
 
-// renderDiffHtml returns Diff2Html markup for the text patches, or an empty
-// string when there is nothing to render. Diff2Html escapes code content, so
-// memory text is rendered as untrusted text per
+// DIFF_HTML_OPTIONS is the one rendering configuration shared by every diff
+// block in the UI, so the audit view and the 整理 view never drift apart.
+export const DIFF_HTML_OPTIONS = {
+  drawFileList: false,
+  matching: 'lines',
+  outputFormat: 'line-by-line',
+}
+
+// diffHtmlRenderer resolves the on-demand Diff2Html renderer. Diff2Html escapes
+// code content, so memory text is rendered as untrusted text per
 // docs/04-ui-and-cli-specification.md section 4.
+export async function diffHtmlRenderer() {
+  const { html } = await import('diff2html')
+  return html
+}
+
+// renderDiffHtml returns Diff2Html markup for the text patches, or an empty
+// string when there is nothing to render.
 export async function renderDiffHtml(files) {
   const text = buildUnifiedDiff(files)
   if (!text.trim()) return ''
   try {
-    const { html } = await import('diff2html')
-    return html(text, {
-      drawFileList: false,
-      matching: 'lines',
-      outputFormat: 'line-by-line',
-    })
+    const render = await diffHtmlRenderer()
+    return render(text, DIFF_HTML_OPTIONS)
   } catch {
     return ''
   }

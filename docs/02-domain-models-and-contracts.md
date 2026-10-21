@@ -74,7 +74,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `FileDiff` | `path`, `additions`, `deletions`, `patch`, `binary` |
 | `DiagnosticIssue` | `code`, `severity`, `filePath?`, `lineNumber?`, `message`, `suggestion`, `autoFixable` |
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
-| `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `sessionsScanned?`, `newMemoriesExtracted?`, `warnings`, `createdAt`, `appliedCommit?`, `error?`；`runner` 取 `deepseek \| minimax \| openai \| anthropic \| local-agent` |
+| `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `sessionsScanned?`, `newMemoriesExtracted?`, `warnings`, `createdAt`, `appliedCommit?`, `error?`；`runner` 取 `deepseek \| minimax \| openai \| anthropic \| local-agent`；`changes[]` 每项为 `{path, action, baseRevision?, plannedRevision, patch?}`，`action` 为 `create \| update \| delete`，`patch` 是该文件的单文件统一 diff，`diff` 按 `changes[]` 顺序拼接各 `patch` |
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
 | `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
 

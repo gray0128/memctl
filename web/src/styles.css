@@ -135,4 +135,40 @@ code, pre, kbd, samp {
     color: #a5b4fc !important;
     border-color: rgba(99, 102, 241, 0.2) !important;
   }
+  /* Diff2Html colors the line numbers with a dark alpha that disappears on the
+     dark surface, so the reviewed line range becomes unreadable. */
+  .diff-preview .d2h-code-linenumber {
+    color: rgba(148, 163, 184, 0.9);
+  }
+}
+
+/* 整理视图的固定 Diff：外层卡片已经画出文件头和边框，这里折叠 Diff2Html 的
+   重复文件头与边线；记忆条目是整行长文本，必须换行显示而不是横向裁切。 */
+.proposal-diff .d2h-wrapper {
+  border: 0;
+  border-radius: 0;
+}
+
+.proposal-diff .d2h-file-wrapper {
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
+.proposal-diff .d2h-file-header {
+  display: none;
+}
+
+.proposal-diff .d2h-code-line-ctn {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Diff2Html reserves the gutter with 8em of horizontal padding while also
+   subtracting 16em from the row width, which leaves no room for the text on a
+   narrow screen. Keep the left gutter only and let the code use the rest. */
+.proposal-diff .d2h-code-line {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 2px 0.75em 2px 8em;
 }
