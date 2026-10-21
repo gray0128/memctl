@@ -295,3 +295,15 @@
 - 证据：WorkBuddy 应用包内 `UserMcpFile.get filePath()` 返回 `join(getConfigDir(), "mcp.json")`，`migrateMcpJsonPaths` 同样读 `mcp.json`；`.mcp.json` 仅出现在 `readPluginMcpConfig` 与 `readExpertMcpServers`。按 `~/.workbuddy/mcp.json` 写入后，管道握手返回 `serverInfo memctl v0.11.0` 与五个工具。
 - 检查：新增 `TestWriteFailureLeavesNoPendingTransaction`，在修复前能复现「failed write left a transaction record」，修复后通过；`go test ./internal/app ./internal/mcp ./internal/cli` 通过；`make test` 全量通过。
 - 未验证与遗留：WorkBuddy 桌面应用是否会在退出时重写 `mcp.json`、以及在连接器里点「信任」后的热加载行为，仍未在 GUI 内复看；写入失败的根因（该环境的 `os.Root.Rename` 被拒绝）无法在本机复现，本次只保证失败后不再遗留事务。
+
+## T114：发布 `v0.11.1`
+
+- 目标与范围：发布 `v0.11.1`，把 `T113` 的两处修复带入发布：WorkBuddy 用户级 MCP 文件更正为 `~/.workbuddy/mcp.json`（`.mcp.json` 只用于插件与专家包），以及受管写入失败时回滚事务、不再遗留 pending 记录。版本号按补丁级递增：没有新增命令或接口。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`。
+- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#6-受管写入与同步)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`make test` 全绿，含 `tests/integration`（228.3 秒）、`vitest run` 与两个插件的 Node 测试。
+- 发布：发布准备提交 `24f9a4d`，附注标签 `v0.11.1`。[运行 39554914156](https://github.com/gray0128/memctl/actions/runs/39554914156) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，创建 [Release v0.11.1](https://github.com/gray0128/memctl/releases/tag/v0.11.1)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.11.1` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.11.1`、`commit: 24f9a4d`。
+- 产物核对：`memctl-darwin-arm64 version` 为 `v0.11.1`；`install --status` 的 WorkBuddy 注册动作已改为 `to ~/.workbuddy/mcp.json; WorkBuddy reads the user-scope mcp.json (not .mcp.json, which is plugin scope)`。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.11.1`，`update --check` 返回 `up to date`。本机两个宿主的 hooks 已在此前安装，当前 `install --status` 为 `codebuddy: configured host=codebuddy@2.164.0` 与 `workbuddy: configured host=app`。
+- 未验证与遗留：CodeBuddy 与 WorkBuddy 的真实会话仍未各跑一次，`start`/`sync`/`end` 的实际触发未复看；WorkBuddy 是否在退出时重写 `settings.json` 或 `mcp.json` 未验证；写入失败的根因（该环境的 `os.Root.Rename` 被拒绝）无法在本机复现。
