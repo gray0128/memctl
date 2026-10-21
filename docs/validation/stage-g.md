@@ -265,3 +265,24 @@
 - 产物核对：`memctl-darwin-arm64 version` 为 `v0.10.1`；`help --json` 为 `schemaVersion` 1；`dsh plugin-path` 生成 `memctl-dsh-0.5.3.tgz`。以该产物启动 `--readonly` UI 后，内嵌 bundle `assets/index-BADBuDNy.js` 含「改动文件」与 `proposal-diff`，浏览器打开提案 `dp-38ce0f7e…` 显示三个文件各自成块与 `+1/-0`、`+1/-0`、`+3/-0` 计数；验证后停止服务并确认端口释放。
 - 本机升级：用「写临时文件 → `mv` 原子替换」把 `~/.agent-memory/bin/memctl` 换成 Release 的 `memctl-darwin-arm64`；`version` 为 `memctl v0.10.1`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.10.1)`。
 - 未验证与遗留：macOS amd64、Linux amd64、Windows amd64 仍只有交叉编译证据；发布后的四视图冒烟只覆盖「整理」，其余视图未逐一复看；`memctl-dsh@0.5.3` 的真实会话复验仍未补。
+
+## T111：接入 CodeBuddy 与 WorkBuddy
+
+- 目标与范围：把 CodeBuddy Code 与 WorkBuddy 接入「客户端接入」。两者共用 Claude 兼容的 `hooks` 事件表，因此新增两份内嵌模板（`SessionStart`→`start`、`Stop`→`sync`、`SessionEnd`→`end`），分别合并到 `~/.codebuddy/settings.json` 与 `~/.workbuddy/settings.json` 的 `hooks` 成员。WorkBuddy 没有 CLI，`AdapterSpec` 新增 `HostPaths`，按 `$HOME/.workbuddy` 目录探测，状态行显示 `host=app`，缺失时措辞改为「host application not found」。MCP 侧新增 CodeBuddy 的 `codebuddy mcp add --scope user` 命令与 WorkBuddy 的 `~/.workbuddy/.mcp.json` 手工步骤。既有宿主、MCP 通道与提案契约未改动。
+- 对应契约：[03. 工作流与数据流](../03-workflows-and-dataflows.md#7-agent-配置安装)、[04. CLI 与 UI](../04-ui-and-cli-specification.md#4-web-ui)（`install` 与 §3.2 事件映射）、[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[05. 验收与交付](../05-validation-and-delivery.md#3-性能与适配记录)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1；本机 CodeBuddy `2.164.0`、WorkBuddy `5.8.3`。
+- 实测：外部写入的 `hooks` 在 CodeBuddy headless 与 WorkBuddy 内置 agent（`CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy`）下都直接执行，实测触发 `SessionStart`、`UserPromptSubmit`、`Stop`；`SessionStart` 的 stdout 进入模型上下文；`-p` 模式不触发 `SessionEnd`。CodeBuddy 的 MCP 注册在隔离 `HOME` 下执行 `codebuddy mcp add --scope user` 后，`codebuddy mcp list` 对真实二进制返回 `✓ Connected`。
+- 检查：`go test ./internal/adapters ./internal/mcp ./internal/cli ./internal/server` 通过，新增 3 个用例（真实设置结构下的合并保留、WorkBuddy 目录探测、注册清单与模板内容）；`tests/integration` 的两处宿主计数改为 10；`make test` 全量通过（`tests/integration` 280.6 秒）。端到端安装用复制自本机的 33 KB CodeBuddy 设置与 29 KB WorkBuddy 设置：CodeBuddy 的 10 个既有事件数组逐项保留并新增 3 条命令，WorkBuddy 只新增 `hooks` 键、其余键值不变；二次安装返回 `configured` 与 `skip`。
+- 未验证与遗留：WorkBuddy 桌面应用自身的会话是否执行这些 hooks、退出时是否重写 `settings.json`，未在 GUI 内实测；两个宿主的 `SessionEnd` 在交互式退出时是否触发未验证；`internal/corpus` 尚未解析这两个宿主的 transcript，「整理」暂不提炼它们的会话。
+
+## T112：发布 `v0.11.0`
+
+- 目标与范围：发布 `v0.11.0`，把 `T106`–`T111` 带入发布：逐文件固定 Diff、审计与整理统一换行、浅色主题代码块与编辑区配色，以及 CodeBuddy、WorkBuddy 两个宿主的 Hook 安装与 MCP 注册。版本号按次版本递增：新增两个宿主属于兼容的新能力。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`。
+- 对应契约：[04. CLI 与 UI](../04-ui-and-cli-specification.md#61-发布入口)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`make test` 全绿，`tests/integration` 280.6 秒、`vitest run` 104 项与两个插件的 Node 测试通过。
+- 发布：发布准备提交 `fe2bf0c`，附注标签 `v0.11.0`。[运行 39551478907](https://github.com/gray0128/memctl/actions/runs/39551478907) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，创建 [Release v0.11.0](https://github.com/gray0128/memctl/releases/tag/v0.11.0)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.11.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.11.0`、`commit: fe2bf0c`、构建宿主 darwin/arm64 为 runtime-verified。
+- 产物核对：`memctl-darwin-arm64 version` 为 `v0.11.0`；`install --status` 输出含 `codebuddy: not_installed host=codebuddy@2.164.0` 与 `workbuddy: not_installed host=app`，`mcp:` 块报 `(v0.11.0)`。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.11.0`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.11.0)`，两个新宿主均为 `not_installed`（尚未执行安装）。
+- 未验证与遗留：CodeBuddy 与 WorkBuddy 的 hooks 尚未在本机真实会话中执行过，需要 `install codebuddy workbuddy` 后各跑一次；WorkBuddy 桌面应用是否重写 `~/.workbuddy/settings.json` 未验证；三个非 darwin/arm64 平台仍只有交叉编译证据。
