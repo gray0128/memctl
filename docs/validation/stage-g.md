@@ -286,3 +286,12 @@
 - 产物核对：`memctl-darwin-arm64 version` 为 `v0.11.0`；`install --status` 输出含 `codebuddy: not_installed host=codebuddy@2.164.0` 与 `workbuddy: not_installed host=app`，`mcp:` 块报 `(v0.11.0)`。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.11.0`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: plugin@0.5.3`、`pi: plugin@0.5.2`、`mcp: serving … (v0.11.0)`，两个新宿主均为 `not_installed`（尚未执行安装）。
 - 未验证与遗留：CodeBuddy 与 WorkBuddy 的 hooks 尚未在本机真实会话中执行过，需要 `install codebuddy workbuddy` 后各跑一次；WorkBuddy 桌面应用是否重写 `~/.workbuddy/settings.json` 未验证；三个非 darwin/arm64 平台仍只有交叉编译证据。
+
+## T113：更正 WorkBuddy 的 MCP 文件路径并修复失败写入遗留事务
+
+- 目标与范围：两处更正。第一，WorkBuddy 的用户级 MCP 文件是 `<configDir>/mcp.json`：应用代码里的 `UserMcpFile` 使用常量 `mcp.json`，`.mcp.json` 只被插件与专家包读取，原提示写成 `~/.workbuddy/.mcp.json` 会让人写到永不加载的位置，附带的 `CODEBUDDY_CONFIG_DIR` 说明也是从 sidecar 推断的。第二，`commit` 的写入循环在 `WriteAtomic` 失败时直接返回，事务记录留在 pending，之后所有命令都要求先 `memctl recover --rollback`；现在改为调用 `session.abort` 回滚并删除记录。
+- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#6-受管写入与同步)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
+- 证据：WorkBuddy 应用包内 `UserMcpFile.get filePath()` 返回 `join(getConfigDir(), "mcp.json")`，`migrateMcpJsonPaths` 同样读 `mcp.json`；`.mcp.json` 仅出现在 `readPluginMcpConfig` 与 `readExpertMcpServers`。按 `~/.workbuddy/mcp.json` 写入后，管道握手返回 `serverInfo memctl v0.11.0` 与五个工具。
+- 检查：新增 `TestWriteFailureLeavesNoPendingTransaction`，在修复前能复现「failed write left a transaction record」，修复后通过；`go test ./internal/app ./internal/mcp ./internal/cli` 通过；`make test` 全量通过。
+- 未验证与遗留：WorkBuddy 桌面应用是否会在退出时重写 `mcp.json`、以及在连接器里点「信任」后的热加载行为，仍未在 GUI 内复看；写入失败的根因（该环境的 `os.Root.Rename` 被拒绝）无法在本机复现，本次只保证失败后不再遗留事务。

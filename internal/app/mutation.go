@@ -213,7 +213,10 @@ func (a *App) commit(ctx context.Context, session *writeSession, operation strin
 			err = session.root.WriteAtomic(plan.path, []byte(plan.content), plan.fsMode)
 		}
 		if err != nil {
-			return MutationResult{TransactionID: txID}, err
+			// A failed write leaves the journal pending unless it is aborted:
+			// the next command would then refuse to run until someone rolled
+			// the transaction back by hand.
+			return session.abort(ctx, txID, record, err)
 		}
 		if err := a.fault(fmt.Sprintf("after-write:%d", index)); err != nil {
 			return MutationResult{}, err

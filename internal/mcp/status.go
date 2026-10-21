@@ -40,11 +40,11 @@ func Registrations(memctl string) []Registration {
 			Instruction: `add an @deepseek-ai/dsh-mcp-client stdio entry with command "` + memctl + `" and args ["mcp","--agent","dsh"] to the profile's cordis.patch.yml`,
 		},
 		{
-			// WorkBuddy ships no CLI. Its agent runs the CodeBuddy core with
-			// CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy, so it reads the same
-			// user-level MCP file the CodeBuddy CLI writes.
+			// WorkBuddy ships no CLI. Its app reads the user-scope file
+			// <configDir>/mcp.json; `.mcp.json` is only read for plugins and
+			// expert packages, so writing that name would never load.
 			Agent:       "workbuddy",
-			Instruction: `add a stdio entry named "memctl" with command "` + memctl + `" and args ["mcp","--agent","workbuddy"] to ~/.workbuddy/.mcp.json; WorkBuddy reads it with CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy and has no mcp add command of its own`,
+			Instruction: `add a stdio entry named "memctl" with command "` + memctl + `" and args ["mcp","--agent","workbuddy"] to ~/.workbuddy/mcp.json; WorkBuddy reads the user-scope mcp.json (not .mcp.json, which is plugin scope), has no mcp add command, and only loads it after a restart or trusting it in the app`,
 		},
 	}
 }

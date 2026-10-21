@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,9 @@ func TestStatusEnvReportsServingBinary(t *testing.T) {
 		}
 		if registration.Command != "" || registration.Instruction == "" {
 			t.Fatalf("%s registration = %+v", agent, registration)
+		}
+		if agent == "workbuddy" && !strings.Contains(registration.Instruction, "~/.workbuddy/mcp.json") {
+			t.Fatalf("workbuddy instruction must name the user-scope mcp.json: %q", registration.Instruction)
 		}
 	}
 	codebuddy, ok := registrationFor(status.Registrations, "codebuddy")

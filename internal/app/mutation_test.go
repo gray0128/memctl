@@ -932,3 +932,40 @@ func TestApplyReportsPendingRemoteState(t *testing.T) {
 		t.Fatalf("cached head = %q, want the new commit %q", summary.Head, result.Commit)
 	}
 }
+
+// TestWriteFailureLeavesNoPendingTransaction covers the failure path of the
+// write loop: a filesystem error while publishing the file must roll the
+// journal back, otherwise every later command complains about an unfinished
+// transaction until the operator runs `memctl recover --rollback`.
+func TestWriteFailureLeavesNoPendingTransaction(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+
+	notes := filepath.Join(repo, "notes")
+	if err := os.Mkdir(notes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(notes, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(notes, 0o755) })
+
+	_, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+		Path: "notes/new.md", ExpectedRevision: vault.AbsentRevision, Action: ActionPut, RawContent: "# new\n",
+	}}})
+	requireContractCode(t, err, memerr.IOFailed)
+
+	if _, err := os.Stat(filepath.Join(notes, "new.md")); !os.IsNotExist(err) {
+		t.Fatalf("failed write left the target behind: %v", err)
+	}
+	status, err := service.RecoverStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Transactions) != 0 {
+		t.Fatalf("failed write left a transaction record: %+v", status)
+	}
+	if got := readTestFile(t, filepath.Join(repo, "MEMORY.md")); got != testInitialMemory {
+		t.Fatalf("failed write changed MEMORY.md: %q", got)
+	}
+}
