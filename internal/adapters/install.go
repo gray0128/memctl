@@ -129,7 +129,7 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		switch {
 		case !det.hostFound:
 			plan.Status = StatusNotInstalled
-			plan.Reason = "host executable not found"
+			plan.Reason = hostMissingReason(spec)
 			return plan, nil
 		case det.hostUnparsed:
 			plan.Status = StatusUnsupported
@@ -222,7 +222,7 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		plan.Applicable = applicable
 	case !det.hostFound && !anyExisting:
 		plan.Status = StatusNotInstalled
-		plan.Reason = "host executable not found"
+		plan.Reason = hostMissingReason(spec)
 		plan.Applicable = false
 	case allSkip:
 		plan.Status = StatusConfigured
@@ -560,4 +560,13 @@ func parseVersion(version string) ([3]int, bool) {
 		parsed[index] = number
 	}
 	return parsed, true
+}
+
+// hostMissingReason names the surface detection looked at, so a desktop host
+// without a CLI is not reported as a missing executable.
+func hostMissingReason(spec AdapterSpec) string {
+	if len(spec.HostPaths) > 0 {
+		return "host application not found"
+	}
+	return "host executable not found"
 }

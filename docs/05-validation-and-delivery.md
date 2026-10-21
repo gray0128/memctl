@@ -235,7 +235,7 @@
 
 报告 p50、p95、最大值及清理时间。`version/help < 5ms`、无竞争派生路径 `< 50ms` 是待测优化目标；达不到时如实记录并调整目标，不省略一致性检查。完整同步遵循业务预算，网络和故障清理不纳入毫秒级宣传。
 
-每个 adapter 记录：宿主版本、插件版本、配置格式、事件映射、SID 来源、输入字段、输出 envelope、上下文是否确实注入、stdout 上限、timeout、进程清理方式、实测命令与结果。候选列表为 Claude Code、Codex、Grok、Antigravity、Command Code、OpenCode、pi、dsh；当前方案不将其统一标为已支持。
+每个 adapter 记录：宿主版本、插件版本、配置格式、事件映射、SID 来源、输入字段、输出 envelope、上下文是否确实注入、stdout 上限、timeout、进程清理方式、实测命令与结果。候选列表为 Claude Code、CodeBuddy、Codex、Grok、Antigravity、Command Code、WorkBuddy、OpenCode、pi、dsh；当前方案不将其统一标为已支持，CodeBuddy 与 WorkBuddy 的 hooks 写入已实测触发，桌面应用内的 `SessionEnd` 与 MCP 配置仍待验证。
 
 平台矩阵至少覆盖目标 macOS arm64/amd64、Linux amd64、Windows amd64。编译、文件锁、路径语义与 Git 生命周期分项记录；没有测试结果的项保持未验证。
 

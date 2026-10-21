@@ -198,8 +198,8 @@ func TestC3AdaptersHTTPInstallCoversI01I02(t *testing.T) {
 	if err := json.Unmarshal(res.body, &list); err != nil {
 		t.Fatalf("decode adapters: %v\n%s", err, res.body)
 	}
-	if len(list.Adapters) != 8 {
-		t.Fatalf("expected 8 registered adapters, got %d", len(list.Adapters))
+	if len(list.Adapters) != 10 {
+		t.Fatalf("expected 10 registered adapters, got %d", len(list.Adapters))
 	}
 	claude := findAdapter(t, list.Adapters, "claude-code")
 	if claude.Status != "not_installed" {

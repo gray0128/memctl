@@ -65,6 +65,8 @@ echo '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"memory_read"},{"name":
 		"pi: pi mcp add memctl --exposure direct -- " + path + " mcp --agent pi",
 		"antigravity: agy mcp add --type stdio memctl " + path + " mcp --agent antigravity",
 		"dsh: add an @deepseek-ai/dsh-mcp-client stdio entry with command \"" + path + "\"",
+		"codebuddy: codebuddy mcp add --scope user memctl -- " + path + " mcp --agent codebuddy",
+		"workbuddy: add a stdio entry named \"memctl\" with command \"" + path + "\"",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)

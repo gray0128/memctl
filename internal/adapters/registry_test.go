@@ -155,3 +155,48 @@ func TestRegistryCapabilities(t *testing.T) {
 		t.Fatalf("unknown adapter capabilities = %v, want empty", unknown)
 	}
 }
+
+// TestRegistryCoversCodeBuddyAndWorkBuddy pins the two hosts added for the
+// 客户端接入 view: CodeBuddy keeps the Claude-compatible event map in its own
+// settings file, and WorkBuddy reads the same map from its state directory.
+func TestRegistryCoversCodeBuddyAndWorkBuddy(t *testing.T) {
+	codebuddy, ok := Lookup("codebuddy")
+	if !ok || len(codebuddy.Artifacts) != 1 {
+		t.Fatal("codebuddy adapter is missing")
+	}
+	codebuddyArtifact := codebuddy.Artifacts[0]
+	if codebuddyArtifact.PathTemplate != "$HOME/.codebuddy/settings.json" ||
+		len(codebuddyArtifact.ContainerPath) != 1 || codebuddyArtifact.ContainerPath[0] != "hooks" {
+		t.Fatalf("codebuddy artifact = %+v", codebuddyArtifact)
+	}
+	codebuddyHooks := string(loadAsset(t, codebuddyArtifact.Asset))
+	for _, want := range []string{
+		`"SessionStart"`,
+		"start --agent codebuddy --stdin",
+		"sync --agent codebuddy --stdin",
+		`"SessionEnd"`,
+		"end --agent codebuddy --stdin",
+	} {
+		if !strings.Contains(codebuddyHooks, want) {
+			t.Fatalf("codebuddy template missing %q:\n%s", want, codebuddyHooks)
+		}
+	}
+
+	workbuddy, ok := Lookup("workbuddy")
+	if !ok || len(workbuddy.Artifacts) != 1 {
+		t.Fatal("workbuddy adapter is missing")
+	}
+	if len(workbuddy.HostCommands) != 0 || len(workbuddy.HostPaths) != 1 || workbuddy.HostPaths[0] != "$HOME/.workbuddy" {
+		t.Fatalf("workbuddy detection = %+v", workbuddy)
+	}
+	workbuddyArtifact := workbuddy.Artifacts[0]
+	if workbuddyArtifact.PathTemplate != "$HOME/.workbuddy/settings.json" {
+		t.Fatalf("workbuddy artifact = %+v", workbuddyArtifact)
+	}
+	workbuddyHooks := string(loadAsset(t, workbuddyArtifact.Asset))
+	for _, want := range []string{"start --agent workbuddy --stdin", "sync --agent workbuddy --stdin", "end --agent workbuddy --stdin"} {
+		if !strings.Contains(workbuddyHooks, want) {
+			t.Fatalf("workbuddy template missing %q:\n%s", want, workbuddyHooks)
+		}
+	}
+}

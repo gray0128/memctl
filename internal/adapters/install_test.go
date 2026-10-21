@@ -746,3 +746,100 @@ func TestVersionLessThan(t *testing.T) {
 		}
 	}
 }
+
+// TestCodeBuddyMergeKeepsExistingHooks covers the real settings file: the host
+// already carries hooks from another tool, and memctl may only add its own
+// entries without dropping or reordering the existing ones.
+func TestCodeBuddyMergeKeepsExistingHooks(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"codebuddy": "/usr/bin/codebuddy"}, map[string]string{"/usr/bin/codebuddy": "2.164.0\n"})
+	target := filepath.Join(home, ".codebuddy", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "model": "deepseek-v4.1-flash",
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "echo other-tool"}]}
+    ]
+  }
+}`
+	if err := os.WriteFile(target, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := env.Plan("codebuddy")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if len(plan.Artifacts) != 1 || plan.Artifacts[0].Action != ActionUpdate {
+		t.Fatalf("unexpected plan: %+v", plan)
+	}
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("target not readable: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"echo other-tool",
+		"start --agent codebuddy --stdin",
+		"sync --agent codebuddy --stdin",
+		"end --agent codebuddy --stdin",
+		`"model"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("merged settings lost %q:\n%s", want, text)
+		}
+	}
+	if strings.Count(text, "start --agent codebuddy --stdin") != 1 {
+		t.Fatalf("codebuddy SessionStart must be written once:\n%s", text)
+	}
+
+	second, err := env.Plan("codebuddy")
+	if err != nil {
+		t.Fatalf("second Plan error: %v", err)
+	}
+	if second.Status != StatusConfigured || second.Applicable {
+		t.Fatalf("second plan must be configured and not applicable: %+v", second)
+	}
+}
+
+// TestWorkBuddyIsDetectedByItsStateDirectory covers the desktop host without a
+// CLI: the adapter must not claim the host is missing when only its directory
+// exists, and the hooks must land in its own settings file.
+func TestWorkBuddyIsDetectedByItsStateDirectory(t *testing.T) {
+	env, home := fakeEnv(t, nil, nil)
+
+	missing, err := env.Plan("workbuddy")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if missing.Status != StatusNotInstalled || missing.Reason != "host application not found" {
+		t.Fatalf("plan without the host directory = %+v", missing)
+	}
+
+	if err := os.MkdirAll(filepath.Join(home, ".workbuddy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := env.Plan("workbuddy")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if !plan.HostFound || !plan.Applicable || len(plan.Artifacts) != 1 {
+		t.Fatalf("plan with the host directory = %+v", plan)
+	}
+	if _, err := env.Apply(plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".workbuddy", "settings.json"))
+	if err != nil {
+		t.Fatalf("settings not written: %v", err)
+	}
+	if !strings.Contains(string(data), "start --agent workbuddy --stdin") {
+		t.Fatalf("workbuddy hooks missing:\n%s", data)
+	}
+}

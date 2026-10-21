@@ -92,6 +92,13 @@ func (env Env) readFile(path string) ([]byte, error) {
 	return env.ReadFile(path)
 }
 
+func (env Env) stat(path string) (os.FileInfo, error) {
+	if env.Stat == nil {
+		return nil, fs.ErrNotExist
+	}
+	return env.Stat(path)
+}
+
 // detect probes the host executable and any registered plugin manifest.
 func (env Env) detect(spec AdapterSpec) detection {
 	result := detection{pluginRequired: spec.Plugin != nil && spec.NativePlugin == nil}
@@ -112,6 +119,17 @@ func (env Env) detect(spec AdapterSpec) detection {
 		}
 		result.hostUnparsed = true
 		break
+	}
+	// A host without a CLI (WorkBuddy) proves installation by its state
+	// directory, so detection never reports a desktop app as missing.
+	if !result.hostFound {
+		for _, template := range spec.HostPaths {
+			path := env.expand(template)
+			if _, err := env.stat(path); err == nil {
+				result.hostFound = true
+				break
+			}
+		}
 	}
 	if spec.Plugin != nil {
 		if found, version := env.probePlugin(*spec.Plugin); found {

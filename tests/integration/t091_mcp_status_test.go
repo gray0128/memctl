@@ -59,17 +59,20 @@ func TestT091MCPStatusRoute(t *testing.T) {
 			t.Fatalf("mcp status tools = %v, missing %s", status.Tools, tool)
 		}
 	}
-	if len(status.Registrations) != 8 {
+	if len(status.Registrations) != 10 {
 		t.Fatalf("expected one registration per adapter, got %d", len(status.Registrations))
 	}
 	for _, registration := range status.Registrations {
-		if registration.Agent != "dsh" && !strings.Contains(registration.Command, status.Executable) {
-			t.Fatalf("%s registration does not use the probed executable: %q", registration.Agent, registration.Command)
-		}
-		if registration.Agent == "dsh" {
+		// dsh and WorkBuddy have no host CLI, so they carry an instruction
+		// instead of a command that quotes the probed executable.
+		if registration.Agent == "dsh" || registration.Agent == "workbuddy" {
 			if registration.Command != "" || registration.Instruction == "" {
-				t.Fatalf("dsh registration = %+v", registration)
+				t.Fatalf("%s registration = %+v", registration.Agent, registration)
 			}
+			continue
+		}
+		if !strings.Contains(registration.Command, status.Executable) {
+			t.Fatalf("%s registration does not use the probed executable: %q", registration.Agent, registration.Command)
 		}
 	}
 }

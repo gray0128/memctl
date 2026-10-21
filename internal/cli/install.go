@@ -141,7 +141,13 @@ func runInstallStatus(env adapters.Env, stdout, stderr io.Writer) int {
 func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 	header := fmt.Sprintf("%s: %s", plan.Agent, plan.Status)
 	if plan.HostFound {
-		header += " host=" + plan.HostCommand
+		// A desktop host without a CLI (WorkBuddy) is detected by its state
+		// directory, so it has no command name to print.
+		name := plan.HostCommand
+		if name == "" {
+			name = "app"
+		}
+		header += " host=" + name
 		if plan.HostVersion != "" {
 			header += "@" + plan.HostVersion
 		}

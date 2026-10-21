@@ -36,6 +36,10 @@ type AdapterSpec struct {
 	// HostCommands are the executable names tried in order for version
 	// detection.
 	HostCommands []string
+	// HostPaths are state-directory templates probed when no host executable
+	// is on PATH. A desktop host without a CLI (WorkBuddy) proves installation
+	// by its state directory instead of a version command.
+	HostPaths []string
 	// Plugin is the optional legacy plugin the host needs for hook support.
 	// A host without its plugin is reported as needs_attention instead of
 	// configured unless a NativePlugin is installed.
@@ -113,6 +117,19 @@ var registry = []AdapterSpec{
 		}},
 	},
 	{
+		// CodeBuddy Code keeps Claude-compatible hook events and exposes the
+		// same event map under `hooks` in its user settings file.
+		Agent:        "codebuddy",
+		HostCommands: []string{"codebuddy", "cbc"},
+		Artifacts: []ArtifactSpec{{
+			PathTemplate:  "$HOME/.codebuddy/settings.json",
+			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
+			ContainerPath: []string{"hooks"},
+			Asset:         "codebuddy/hooks.json",
+		}},
+	},
+	{
 		Agent:        "codex",
 		HostCommands: []string{"codex"},
 		Artifacts: []ArtifactSpec{
@@ -162,6 +179,20 @@ var registry = []AdapterSpec{
 			Capability:    CapabilityHooks,
 			ContainerPath: []string{"hooks"},
 			Asset:         "commandcode/hooks.json",
+		}},
+	},
+	{
+		// WorkBuddy is a desktop app with no CLI. It runs the CodeBuddy agent
+		// core with CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy, so the same `hooks`
+		// event map is read from its own settings file.
+		Agent:     "workbuddy",
+		HostPaths: []string{"$HOME/.workbuddy"},
+		Artifacts: []ArtifactSpec{{
+			PathTemplate:  "$HOME/.workbuddy/settings.json",
+			Kind:          KindMerge,
+			Capability:    CapabilityHooks,
+			ContainerPath: []string{"hooks"},
+			Asset:         "workbuddy/hooks.json",
 		}},
 	},
 	{

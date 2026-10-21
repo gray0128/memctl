@@ -171,10 +171,12 @@ Agent（模型）
 | Command Code | `~/.commandcode/mcp.json` | `commandcode mcp add --scope user memctl <memctl> mcp --agent commandcode` | 省略 `--scope user` 时写入项目级路径 |
 | Antigravity | `~/.gemini/config/mcp_config.json` | `agy mcp add --type stdio memctl <memctl> mcp --agent antigravity` | 也可手工编辑 `mcpServers`，条目为 `{command, args, disabled}`；记忆仓库不在工作区时需同时设 `env` |
 | DSH | profile 的 `cordis.patch.yml` | 用 `insert:` 追加 `@deepseek-ai/dsh-mcp-client` stdio 条目，`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","dsh"]` | 该包随 DSH 应用分发，profile 无需安装或声明依赖；必须用 `insert:`，见下 |
+| CodeBuddy | `~/.codebuddy/.mcp.json` | `codebuddy mcp add --scope user memctl -- <memctl> mcp --agent codebuddy` | 用户级文件是带点的 `.mcp.json`；文件里由宿主补 `"type": "stdio"`，无需手工编辑 |
+| WorkBuddy | `~/.workbuddy/.mcp.json` | 无 CLI，手工添加 stdio 条目：`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","workbuddy"]` | agent 以 `CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy` 启动，读该文件；桌面应用层未实测，见下 |
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；无法注入时省略该参数，来源记为 `unknown`。
 
-有 `mcp add` 子命令的 7 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（当时只有 `memory_read`、`memory_write`；`memory_entries` 是 `T089` 新增的第三个工具），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。
+有 `mcp add` 子命令的 8 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（当时只有 `memory_read`、`memory_write`；`memory_entries` 是 `T089` 新增的第三个工具），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。CodeBuddy 于 2026-10-21 在隔离 `HOME` 下补测：`codebuddy mcp add --scope user` 写入 `~/.codebuddy/.mcp.json`，`codebuddy mcp list` 对真实二进制返回 `✓ Connected`。WorkBuddy 没有 CLI；用其内置 agent 以 `CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy` 运行时，`mcp list` 能读到 `~/.workbuddy/.mcp.json` 并连接成功，桌面应用本身是否会重写该文件尚未实测。
 
 DSH 的注册条目写在 profile 的 `cordis.patch.yml` 里，追加一条 `insert:` 记录：
 

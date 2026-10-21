@@ -26,6 +26,7 @@ func Registrations(memctl string) []Registration {
 	server := memctl + " mcp --agent "
 	return []Registration{
 		{Agent: "claude-code", Command: "claude mcp add memctl --scope user -- " + server + "claude-code"},
+		{Agent: "codebuddy", Command: "codebuddy mcp add --scope user memctl -- " + server + "codebuddy"},
 		{Agent: "codex", Command: "codex mcp add memctl -- " + server + "codex"},
 		{Agent: "grok", Command: "grok mcp add --scope user memctl -- " + server + "grok"},
 		{Agent: "antigravity", Command: "agy mcp add --type stdio memctl " + server + "antigravity"},
@@ -37,6 +38,13 @@ func Registrations(memctl string) []Registration {
 		{
 			Agent:       "dsh",
 			Instruction: `add an @deepseek-ai/dsh-mcp-client stdio entry with command "` + memctl + `" and args ["mcp","--agent","dsh"] to the profile's cordis.patch.yml`,
+		},
+		{
+			// WorkBuddy ships no CLI. Its agent runs the CodeBuddy core with
+			// CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy, so it reads the same
+			// user-level MCP file the CodeBuddy CLI writes.
+			Agent:       "workbuddy",
+			Instruction: `add a stdio entry named "memctl" with command "` + memctl + `" and args ["mcp","--agent","workbuddy"] to ~/.workbuddy/.mcp.json; WorkBuddy reads it with CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy and has no mcp add command of its own`,
 		},
 	}
 }

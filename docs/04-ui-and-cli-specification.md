@@ -28,7 +28,7 @@ memctl <subcommand> [flags] [-- command...]
 | `dream` | `--runner deepseek\|minimax\|openai\|anthropic` | 选择模型提供商即确认将受管记忆文本在 GitHub Actions 中发送给该提供商端点；推送 `dream/req` 触发远端整理并拉取校验结果树，保存提案，输出 proposalId、patchHash、Diff 和警告；不写主库 |
 | `dream` | `--prepare [--project KEY] [--max-bytes N] [--agent NAME] [--sid ID] [--json]`、`--propose --stdin` 或 `--list [--limit N]` | 本地当前 Agent 交互式整理入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`--prepare` 先刷新带稳定 `--agent`/`--sid` 的当前会话摘要并触发本机存量多会话补扫，按当前项目（或 `--project` 指定的 `cwdBase`/`cwdKey`）优先输出当前基线、静态诊断与最多 12 个未消费 `SessionDigest[]`（默认累计 96 KiB），并把该批会话写成 `cache/dream/prepare.json` 快照；`--propose --stdin` 按该快照校验 Agent 提交的结构化整理结果、拼装真实会话 `source` 并生成本地 `ready` 提案；`--list` 按创建时间倒序列出已持久化提案（默认 50 条，最多 200）；三者都不写主库，且都不要求已配置远端或工作流文件；`--propose` 在生成提案前校验目标父目录是否在基线中（缺失返回 `NOT_FOUND`），并拒绝新出现的断链与不可达文件（`UNSUPPORTED`），`MEMORY.md` 超过 100 行只追加警告 |
 | `dream` | `--show ID`、`--apply ID --patch-hash HASH`、`--init-workflow` 或 `--worker` | 查看或确认已有提案（apply 不重新调用模型，成功后将关联 `SessionDigest` 标记为已消费）；`--init-workflow` 在锁内将内嵌的 `.github/workflows/memctl-dream.yml` 写入记忆仓库并提交；`--worker` 为 GitHub Actions 内部执行入口 |
-| `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并 |
+| `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并；没有 CLI 的桌面宿主（WorkBuddy）按状态目录探测，状态行显示 `host=app` |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 安装；只写状态目录，不修改 pi settings；不提供 tarball 形式 |
 | `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read`、`memory_entries` 与 `memory_write`；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
@@ -199,6 +199,8 @@ CLI 不预加载 Web 路由、全库 AST 或 watcher。原方案的「冷启动 
 | Grok | `Stop`/`StopFailure`；`PreCompact` 为待补事件 | `SessionEnd` | 默认超时 5 秒 |
 | Antigravity | `PostInvocation`；`Stop` | 待真实宿主确认 `Stop` 的语义；当前模板不写 `SessionEnd` | 未确认前不新增映射 |
 | Command Code | `Stop` | 无 `SessionEnd` | 只保证回合级同步，不宣称收尾已验证 |
+| CodeBuddy | `Stop` | `SessionEnd`：`clear`、`logout`、`prompt_input_exit`、`other` | 事件与输入结构与 Claude Code 同构；`-p`（print）模式实测只触发 `SessionStart`、`UserPromptSubmit` 与 `Stop`，不触发 `SessionEnd` |
+| WorkBuddy | `Stop` | `SessionEnd`（与 CodeBuddy 同一引擎；桌面应用内未实测） | 无 CLI，按 `$HOME/.workbuddy` 目录探测；agent 以 `CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy` 启动，读同一份 `hooks` 事件表 |
 | OpenCode | `session.idle`（兼容）；`session.compacted` | `session.deleted` | `session.status` 迁移与 `session.idle` 弃用待后续处理；删除会话才结束 |
 | pi | `session.idle`（旧 `pi-yaml-hooks`）；原生插件用 `agent_settled`，旧版回退 `agent_end` | `session.deleted`（旧）；原生插件用 `session_shutdown`，`reload` 不收尾 | 原生插件见 [pi 专用插件](./08-pi-plugin.md#63-生命周期映射) |
 | DSH | `turn/end` | `agent/disposed`；插件卸载时对仍 live 的会话再触发一次兜底 `end` | 没有单会话关闭入口；归档不销毁运行时；退出应用依赖宿主释放 agent |
