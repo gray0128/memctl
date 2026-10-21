@@ -150,3 +150,27 @@
 - 未验证与遗留：
   - 本轮未在真实宿主会话内重跑 `prepare` → `propose` → `apply`；三条守卫由隔离单元测试与真实二进制集成测试覆盖。
   - `stage-h.md` 存在两节 `T102` 重复，属 `T102` 与 `T103` 归档时的既有重复，本轮未合并。
+
+## T115：CodeBuddy 与 WorkBuddy 会话格式接入（`H-2c`）
+
+- 目标与范围：为 `internal/corpus` 增加两个宿主的会话蒸馏。两者共用 CodeBuddy 会话格式，因此使用一个解析器、两个 agent 名；补齐实时采集、按 `sid` 定位、存量补扫、宿主回显过滤、毫秒时间戳与工具签名脱敏。不发布新版本，不改动 `memctl sync`/`end` 的命令行契约与既有的本地整理协议。
+- 对应契约：[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)、[05. 验收与交付](../05-validation-and-delivery.md#阶段-h-的实施顺序)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
+- 交付：
+  1. 新增 `internal/corpus/codebuddy.go`：读取每行的 `sessionId`/`cwd` 与毫秒时间戳，忽略 `session-meta` 的对话语义但取其会话 ID；保留 `input_text`/`output_text` 与 `function_call` 的工具名和参数目标；丢弃 `reasoning`、工具输出、`providerData.skipRun` 回显及 `<local-command-*>`、`<command-name>`、`<command-args>`、`<task-notification>` 等宿主消息；`summary` 标记 `truncated`；用户消息先剥离注入块再取 `<user_query>` 正文。
+  2. `internal/corpus/collect.go` 把 `codebuddy`、`workbuddy` 注册到同一解析器。
+  3. `internal/corpus/session.go` 增加按 `sid` 定位；`internal/corpus/backfill.go` 增加 `$HOME/.codebuddy/projects` 与 `$HOME/.workbuddy/projects` 两条按项目预过滤的补扫；新增保留 `_`、空格与非 ASCII 的 `codeBuddyDir` 转义。
+  4. `internal/corpus/redact.go` 与 `codex.go` 修正带属性的 `<system-reminder ...>`：此前 `data-role="user-context"` 这类形式既不被清理也不被前缀判定识别，WorkBuddy 的首条消息会整条丢失或泄漏注入块。
+  5. `internal/corpus/digest.go` 的 `boundTools` 对工具签名执行 `Redact`，避免命令参数中的凭据进入摘要。
+  6. 测试：`corpus_test.go` 覆盖两个宿主的摘要、`session-meta`、`summary`、毫秒日期、回显过滤、`<user_query>` 与工具脱敏；`backfill_test.go` 的 `backfillHome` 扩到七个宿主，补跨项目过滤、目录转义与 `LocateSession`。
+  7. 文档：`docs/12` §2.2.1、§2.2.2、§2.2.4、§2.2.5 与 §6.2 的 `H-2c`；`docs/05` 阶段 H；本文件与 `STATUS.md`。
+- 验证：
+  - `go test ./internal/corpus ./internal/dream ./internal/cli` 通过；`make test` 全绿，`tests/integration` 241.7 秒、`vitest` 104 项、两个插件 Node 测试通过。
+  - 真实 CodeBuddy 日志只读探针：13 个回合、日期 2026-10-21，`reasoning` 与工具输出未进入摘要；真实 WorkBuddy 日志的首条消息正确剥离带属性的注入块并取出 `<user_query>` 正文。
+  - 真实 `~/memory` 仓库运行 `dream --prepare`：12 个候选中含 3 个 `codebuddy` 会话（`cwdBase=memctl`），补扫链路贯通。
+  - 真实 Hook 复验：临时安装本机构建的二进制后，CodeBuddy `2.164.0` 的 headless 会话触发 `SessionStart`（`start --agent codebuddy`，3.16 秒、退出码 0）与 `Stop`（`sync --agent codebuddy`），生成含提问与回复的摘要；WorkBuddy `5.8.3` 的 sidecar 以 `CODEBUDDY_CONFIG_DIR=$HOME/.workbuddy` 启动，触发同名 Hook（`start` 8.5 秒、`sync`；sidecar 未登录，`Stop` 原因为 failed），仍生成摘要。两份摘要归档到 `/tmp/hook-verification/` 后从候选缓存移除，测试会话记录已删除，安装的二进制已还原为 `v0.11.1`。
+- 未验证与遗留：
+  - `-p` 与 sidecar 形态均不触发 `SessionEnd`；交互式退出的 `end` 未复验。
+  - WorkBuddy 桌面 GUI 内的 Hook 行为未复验，本轮使用其 sidecar。
+  - `CODEBUDDY_CONFIG_DIR` 指向其他配置根时补扫仍只查 `$HOME`；Windows 盘符与分隔符转义未验证。
+  - 工具签名不记录退出状态，与现有解析器一致。
