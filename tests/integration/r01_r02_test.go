@@ -65,6 +65,8 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"rewrite the entry in place",
 		"No change log in memory files",
 		"until: YYYY-MM-DD",
+		"cross-project preferences",
+		"notes/<topic>.md",
 		"## Organizing memory",
 		"memctl dream --prepare --json",
 		"only persist a `ready` proposal",

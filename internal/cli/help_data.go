@@ -118,8 +118,8 @@ var helpRootData = helpRoot{
 		{
 			Command: `printf '# Memory\n\n## Index\n- new entry\n' | memctl write MEMORY.md --base FILE_REVISION --stdin --agent my-agent --sid SESSION_ID`,
 			Note: loc(
-				"Replace FILE_REVISION with the value from step 2. SESSION_ID is the host session id; omit --sid only if you do not need a stable source tag.",
-				"用第 2 步得到的值替换 FILE_REVISION。SESSION_ID 是宿主会话 ID；不需要稳定来源标签时可省略 `--sid`。",
+				"Replace FILE_REVISION with the value from step 2. Project decisions and topic detail go to notes/<topic>.md; MEMORY.md holds only the index and cross-project preferences. SESSION_ID is the host session id; omit --sid only if you do not need a stable source tag.",
+				"用第 2 步得到的值替换 FILE_REVISION。项目决策与主题事实写入 `notes/<topic>.md`，`MEMORY.md` 只保留索引与跨项目偏好。SESSION_ID 是宿主会话 ID；不需要稳定来源标签时可省略 `--sid`。",
 			),
 		},
 		{
@@ -536,8 +536,8 @@ var helpCommandData = []helpCommand{
 				Note:    loc("Read the current file and take fileRevision from the JSON output.", "读取当前文件，并从 JSON 输出中取 fileRevision。"),
 			},
 			{
-				Command: `printf '# Memory\n\n## Index\n- new entry\n' | memctl write MEMORY.md --base FILE_REVISION --stdin --agent my-agent --sid "$SESSION_ID"`,
-				Note:    loc("Replace FILE_REVISION with the value from the previous step.", "用上一步得到的值替换 FILE_REVISION。"),
+				Command: `printf '# Topic\n\n- new entry\n' | memctl write notes/topic.md --base absent --stdin --agent my-agent --sid "$SESSION_ID"`,
+				Note:    loc("New project facts go to notes/<topic>.md; --base absent creates the file. Replace it with a fileRevision when updating an existing file, and add the [[link]] to the MEMORY.md index.", "项目事实写入 `notes/<topic>.md`；`--base absent` 表示新建文件。更新已有文件时改用它的 fileRevision，并在 `MEMORY.md` 索引中补 `[[链接]]`。"),
 			},
 		},
 		Notes: []localizedText{

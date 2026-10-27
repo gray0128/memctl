@@ -36,9 +36,10 @@ Report it to the user instead.
   last segment of that tag — as `sid` to `memory_write`. A stdio MCP server
   cannot observe the session any other way, so the commit records none without
   it.
-- Keep a fact in one place and link to it elsewhere. Never append a
+- Keep a fact in one place and link to it elsewhere. `MEMORY.md` holds only the
+  index and cross-project preferences; project decisions, events and topic
+  detail go to `notes/<topic>.md`, listed in that index. Never append a
   contradicting entry; see the rules below for rewriting versus appending.
-  Keep `MEMORY.md` short and list every new file in its index.
 
 ### After an entry stops being true
 
