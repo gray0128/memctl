@@ -237,15 +237,22 @@ var helpRootData = helpRoot{
 		{
 			Name: "AGENT_MEMORY_SID",
 			Description: loc(
-				"Session id for source tags and provenance. --sid wins; DSH_HOOK_SESSION_ID and Hook JSON are fallbacks.",
-				"用于来源标签和溯源信息的会话 ID。`--sid` 优先，`DSH_HOOK_SESSION_ID` 和 Hook JSON 是回退来源。",
+				"Session id for source tags and provenance. --sid wins; AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID and Hook JSON are fallbacks.",
+				"用于来源标签和溯源信息的会话 ID。`--sid` 优先，`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 和 Hook JSON 是回退来源。",
 			),
 		},
 		{
 			Name: "DSH_HOOK_SESSION_ID",
 			Description: loc(
-				"DSH session id fallback when no explicit --sid or AGENT_MEMORY_SID is set.",
-				"未设置 `--sid` 或 `AGENT_MEMORY_SID` 时，作为 DSH 会话 ID 的回退来源。",
+				"DSH hook session id fallback when no explicit --sid or AGENT_MEMORY_SID is set.",
+				"未设置 `--sid` 或 `AGENT_MEMORY_SID` 时，作为 DSH Hook 会话 ID 的回退来源。",
+			),
+		},
+		{
+			Name: "DSH_SESSION_ID",
+			Description: loc(
+				"DSH session id exported to session shells; another fallback before Hook JSON. MCP and hook child processes do not inherit it.",
+				"DSH 导出到会话 shell 的会话 ID，在 Hook JSON 之前作为回退。MCP 与 Hook 子进程不继承该变量。",
 			),
 		},
 		{
@@ -609,7 +616,7 @@ var helpCommandData = []helpCommand{
 		Flags: []helpItem{
 			{Name: "--stdin", Description: loc("Consume at most 1 MiB of Hook JSON. Invalid JSON exits 2.", "消费最多 1 MiB 的 Hook JSON。JSON 无效时返回 2。")},
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded in the session digest source tag and the session identity for capture provenance.", "会话摘要来源标签中的 Agent 名称，同时作为 capture 溯源的会话身份。")},
-			{Name: "--sid", Value: "ID", Description: loc("Session id recorded in the session digest source tag. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, then Hook JSON.", "会话摘要来源标签中的会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 和 Hook JSON。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id recorded in the session digest source tag. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, then Hook JSON.", "会话摘要来源标签中的会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 和 Hook JSON。")},
 			{Name: "--transcript", Value: "PATH", Description: loc("Absolute path of the host session log to distill into the local corpus cache. Takes precedence over the Hook JSON transcript_path.", "要蒸馏进本地会话摘要缓存的宿主会话日志绝对路径。优先于 Hook JSON 中的 `transcript_path`。")},
 		},
 		Output: []localizedText{
@@ -639,7 +646,7 @@ var helpCommandData = []helpCommand{
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name for session identity.", "用于会话身份的 Agent 名称。")},
-			{Name: "--sid", Value: "ID", Description: loc("Session id. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, then Hook JSON.", "会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 和 Hook JSON。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, then Hook JSON.", "会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 和 Hook JSON。")},
 			{Name: "--stdin", Description: loc("Read at most 1 MiB of Hook JSON. Invalid JSON exits 2.", "读取最多 1 MiB 的 Hook JSON。JSON 无效时返回 2。")},
 			{Name: "--json", Description: loc("Emit the SessionStart hookSpecificOutput envelope.", "输出 SessionStart 的 hookSpecificOutput envelope。")},
 			{Name: "--agy", Description: loc("Emit the Antigravity injectSteps envelope.", "输出 Antigravity 的 injectSteps envelope。")},
@@ -729,8 +736,8 @@ var helpCommandData = []helpCommand{
 		Usage:   []string{"memctl tag [--agent NAME] [--sid ID]"},
 		Summary: loc("Print the canonical session source URI.", "输出当前会话的规范来源 URI。"),
 		Description: loc(
-			"Prints `agent://<device>/<agent>/<sid>` for the current session. The agent comes from --agent or AGENT_MEMORY_AGENT; the device comes from AGENT_MEMORY_DEVICE or the hostname; the session id must come from --sid, AGENT_MEMORY_SID or DSH_HOOK_SESSION_ID. The command never reads stdin and never guesses a session from shared state.",
-			"输出当前会话的 `agent://<device>/<agent>/<sid>`。Agent 取自 `--agent` 或 `AGENT_MEMORY_AGENT`，设备取自 `AGENT_MEMORY_DEVICE` 或主机名，会话 ID 必须来自 `--sid`、`AGENT_MEMORY_SID` 或 `DSH_HOOK_SESSION_ID`。命令不读取 stdin，也不从共享状态推测会话。",
+			"Prints `agent://<device>/<agent>/<sid>` for the current session. The agent comes from --agent or AGENT_MEMORY_AGENT; the device comes from AGENT_MEMORY_DEVICE or the hostname; the session id must come from --sid, AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID or DSH_SESSION_ID. The command never reads stdin and never guesses a session from shared state.",
+			"输出当前会话的 `agent://<device>/<agent>/<sid>`。Agent 取自 `--agent` 或 `AGENT_MEMORY_AGENT`，设备取自 `AGENT_MEMORY_DEVICE` 或主机名，会话 ID 必须来自 `--sid`、`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 或 `DSH_SESSION_ID`。命令不读取 stdin，也不从共享状态推测会话。",
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name; falls back to AGENT_MEMORY_AGENT.", "Agent 名称；回退到 `AGENT_MEMORY_AGENT`。")},
@@ -746,7 +753,7 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl tag --agent claude-code --sid \"$AGENT_MEMORY_SID\""},
-			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID or DSH_HOOK_SESSION_ID is set.", "仅在设置了 `AGENT_MEMORY_SID` 或 `DSH_HOOK_SESSION_ID` 时可用。")},
+			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID or DSH_SESSION_ID is set.", "仅在设置了 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 或 `DSH_SESSION_ID` 时可用。")},
 		},
 		Notes: []localizedText{
 			loc("`wrap` exports AGENT_MEMORY_SID to its child, so a wrapped program can call tag without --sid.", "`wrap` 会向子进程导出 `AGENT_MEMORY_SID`，因此被包装程序可以不带 `--sid` 调用 `tag`。"),

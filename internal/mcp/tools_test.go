@@ -207,6 +207,59 @@ func TestM05MemoryWrite(t *testing.T) {
 	}
 }
 
+// TestM05SessionArgument covers the provenance fallback: a server started
+// without --sid — the DSH profile — accepts the session id the caller read from
+// the injected source tag, while a configured session always wins.
+func TestM05SessionArgument(t *testing.T) {
+	t.Run("call supplies the session", func(t *testing.T) {
+		service := &fakeService{applyResult: app.MutationResult{Commit: "abc"}}
+		server := NewServer(service, Session{Agent: "dsh", Device: "device-1"})
+		result, rpcErr := server.CallTool(context.Background(), "memory_write",
+			json.RawMessage(`{"path":"MEMORY.md","base":"sha256:abc","content":"x","sid":" session-4c79 "}`))
+		if rpcErr != nil || result.IsError {
+			t.Fatalf("unexpected failure: %v %+v", rpcErr, result)
+		}
+		if service.writes[0].SessionID != "session-4c79" {
+			t.Fatalf("session = %q, want the trimmed call value", service.writes[0].SessionID)
+		}
+	})
+
+	t.Run("configured session wins", func(t *testing.T) {
+		service := &fakeService{applyResult: app.MutationResult{Commit: "abc"}}
+		server := newTestServer(service)
+		if _, rpcErr := server.CallTool(context.Background(), "memory_write",
+			json.RawMessage(`{"path":"MEMORY.md","base":"sha256:abc","content":"x","sid":"other"}`)); rpcErr != nil {
+			t.Fatalf("unexpected protocol error: %v", rpcErr)
+		}
+		if service.writes[0].SessionID != "session-1" {
+			t.Fatalf("session = %q, want the configured session", service.writes[0].SessionID)
+		}
+	})
+
+	for name, sid := range map[string]string{
+		"control character": "session-1\nAgent: evil",
+		"oversized":         strings.Repeat("s", maxSessionArgumentBytes+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := &fakeService{}
+			server := NewServer(service, Session{Agent: "dsh", Device: "device-1"})
+			args, _ := json.Marshal(map[string]string{
+				"path": "MEMORY.md", "base": "sha256:abc", "content": "x", "sid": sid,
+			})
+			result, rpcErr := server.CallTool(context.Background(), "memory_write", args)
+			if rpcErr != nil {
+				t.Fatalf("unexpected protocol error: %v", rpcErr)
+			}
+			if !result.IsError || !strings.HasPrefix(result.Content[0].Text, "INVALID_ARGUMENT: ") {
+				t.Fatalf("unexpected result %+v", result)
+			}
+			if len(service.writes) != 0 {
+				t.Fatalf("an invalid sid must not reach the transaction, writes = %d", len(service.writes))
+			}
+		})
+	}
+}
+
 // TestM06RevisionMismatch covers M06: a stale baseline is reported and not
 // retried as if it were a busy lock.
 func TestM06RevisionMismatch(t *testing.T) {

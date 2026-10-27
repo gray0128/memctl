@@ -98,6 +98,15 @@ func TestResolveSIDPriority(t *testing.T) {
 	if got := ResolveSID("", func(string) string { return "" }, Input{SID: "payload"}); got != "payload" {
 		t.Fatalf("payload SID was not used: %q", got)
 	}
+	shell := func(key string) string {
+		if key == "DSH_SESSION_ID" {
+			return "session-shell"
+		}
+		return ""
+	}
+	if got := ResolveSID("", shell, Input{}); got != "session-shell" {
+		t.Fatalf("DSH session environment was not used: %q", got)
+	}
 	if got := ResolveSID("", func(string) string { return "" }, Input{}); got != "" {
 		t.Fatalf("empty identity resolved to %q, want empty", got)
 	}

@@ -285,6 +285,7 @@ memctl sync --agent dsh --sid <agent.id>
 ### 5.6 身份与配置
 
 - 会话 id 使用 `agent.id`，通过 `--sid` 显式传入。不依赖 `DSH_HOOK_SESSION_ID`，也不读取宿主 hooks JSON。
+- 写入工具走 MCP 通道：profile 里的 `mcp-client` 条目只写 `args: ["mcp","--agent","dsh"]`，子进程固定为应用级且不继承 `DSH_*`（宿主会清除），所以该通道的提交会话来自模型按注入的 `source` 标签传给 `memory_write` 的 `sid` 参数（见 [09. MCP 记忆工具 §4.2](./09-mcp-memory-tools.md#42-会话身份)）。插件生命周期内的 `start`/`sync`/`end` 仍用 `--sid`，两条路径的会话身份都是同一个 `agent.id`。
 - agent 名固定为 `dsh`；设备名、仓库路径、Git 凭据由 memctl 现有配置和环境决定。
 - memctl 路径按以下顺序解析：
   1. `MEMCTL_DSH_BIN` 环境变量。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/dream"
@@ -230,6 +231,10 @@ func (s *Server) Tools() []Tool {
 						"type":        "string",
 						"description": "Complete new file text. One bullet per entry, metadata at the end.",
 					},
+					"sid": map[string]any{
+						"type":        "string",
+						"description": "Session id of the calling agent session, copied from the source tag the host injected. Recorded as the commit session only when the server started without --sid; a stdio MCP server cannot observe the session otherwise.",
+					},
 				},
 				"required":             []string{"path", "base", "content"},
 				"additionalProperties": false,
@@ -260,6 +265,37 @@ type writeArgs struct {
 	Path    string `json:"path"`
 	Base    string `json:"base"`
 	Content string `json:"content"`
+	SID     string `json:"sid"`
+}
+
+// maxSessionArgumentBytes bounds a per-call session id. Every documented host
+// session id is far shorter; the bound only keeps a caller from writing an
+// arbitrarily large trailer into the commit message.
+const maxSessionArgumentBytes = 200
+
+// sessionFor returns the provenance session id of one write. A session fixed at
+// startup wins because the host configured it for the whole server; only a
+// server started without one — the DSH profile — accepts the id the model read
+// from the injected source tag. The value is rejected rather than sanitized: a
+// silent rewrite would record an identity the caller did not supply.
+func (s *Server) sessionFor(candidate string) (string, error) {
+	if s.session.SessionID != "" {
+		return s.session.SessionID, nil
+	}
+	sid := strings.TrimSpace(candidate)
+	if sid == "" {
+		return "", nil
+	}
+	if len(sid) > maxSessionArgumentBytes {
+		return "", memerr.New(memerr.InvalidArgument,
+			"sid exceeds %d bytes", maxSessionArgumentBytes)
+	}
+	for _, r := range sid {
+		if r < 0x20 || r == 0x7f {
+			return "", memerr.New(memerr.InvalidArgument, "sid contains a control character")
+		}
+	}
+	return sid, nil
 }
 
 // CallTool dispatches one tool call. A contract failure becomes an
@@ -365,9 +401,12 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 	if args.Base == "" {
 		return textResult("INVALID_ARGUMENT: base is required (a fileRevision from memory_read, or absent)", true), nil
 	}
+	sessionID, err := s.sessionFor(args.SID)
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
 
 	var result app.MutationResult
-	var err error
 	for attempt := 1; attempt <= writeAttempts; attempt++ {
 		result, err = s.service.Apply(ctx, app.MutationRequest{
 			Changes: []app.FileChange{{
@@ -377,7 +416,7 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 				RawContent:       args.Content,
 			}},
 			Agent:     s.session.Agent,
-			SessionID: s.session.SessionID,
+			SessionID: sessionID,
 			Device:    s.session.Device,
 		})
 		if err == nil || !isBusy(err) || attempt == writeAttempts {

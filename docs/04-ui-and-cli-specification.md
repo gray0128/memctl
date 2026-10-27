@@ -128,10 +128,11 @@ pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `
 | `AGENT_MEMORY_AGENT` | `unknown`；`--agent` 优先 |
 | `AGENT_MEMORY_DEVICE` | OS 主机名；探测失败使用 `unknown` 并提示 |
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
-| `DSH_HOOK_SESSION_ID` | dsh 的兼容身份来源 |
+| `DSH_HOOK_SESSION_ID` | dsh Hook 子进程的会话 ID；优先级高于 `DSH_SESSION_ID` |
+| `DSH_SESSION_ID` | dsh 导出到会话 shell 的会话 ID；MCP 与 Hook 子进程不继承该变量 |
 | `MEMCTL_LANG` | 无默认值；帮助语言 `en` 或 `zh`，接受带地区或编码的写法；优先于 `LC_ALL`/`LC_MESSAGES`/`LANG`，仅影响帮助文本 |
 
-SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如旧 `pi-yaml-hooks` 接入的 `PI_SESSION_ID`；原生 `memctl-pi` 直接传 `ctx.sessionManager.getSessionId()`，不读取该环境变量。
+SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → `DSH_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如旧 `pi-yaml-hooks` 接入的 `PI_SESSION_ID`；原生 `memctl-pi` 直接传 `ctx.sessionManager.getSessionId()`，不读取该环境变量。
 
 缺少 SID 时，start/context 仍可只读注入，但来源标签标为不可用，不做跨进程去重；`tag` 返回错误。受管写入允许人工或未知来源，不伪造 source。`wrap` 可以生成随机会话 ID，并向其子进程导出 `AGENT_MEMORY_SID`、`AGENT_MEMORY_AGENT` 和规范化仓库路径。
 

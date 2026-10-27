@@ -125,14 +125,15 @@ func firstStringField(fields map[string]json.RawMessage, keys []string) (string,
 }
 
 // ResolveSID returns the first non-empty session id among the explicit flag,
-// AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID and the payload. An empty result means
-// no stable session identity is available, so callers must not deduplicate
-// across processes or fabricate a source.
+// AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID and the payload. An
+// empty result means no stable session identity is available, so callers must
+// not deduplicate across processes or fabricate a source.
 func ResolveSID(explicit string, getenv func(string) string, in Input) string {
 	for _, candidate := range []string{
 		explicit,
 		getenv("AGENT_MEMORY_SID"),
 		getenv("DSH_HOOK_SESSION_ID"),
+		getenv("DSH_SESSION_ID"),
 		in.SID,
 	} {
 		if candidate != "" {

@@ -32,6 +32,10 @@ Report it to the user instead.
   A stale baseline is rejected instead of overwriting another update.
 - The `<tag>` is the source tag printed in this context. If it is reported as
   unavailable, do not invent one; leave the source off or ask the user.
+- When the host exposes the memory tools as MCP calls, pass the session id — the
+  last segment of that tag — as `sid` to `memory_write`. A stdio MCP server
+  cannot observe the session any other way, so the commit records none without
+  it.
 - Keep a fact in one place and link to it elsewhere. Never append a
   contradicting entry; see the rules below for rewriting versus appending.
   Keep `MEMORY.md` short and list every new file in its index.
