@@ -159,7 +159,7 @@
 - 对应契约：[04. CLI、UI 与分发 §2](./04-ui-and-cli-specification.md#2-环境变量与会话身份)、[07. dsh 专用插件 §5.6](./07-dsh-plugin.md#56-身份与配置)、[09. MCP 记忆工具 §4.2](./09-mcp-memory-tools.md#42-会话身份)。
 - 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.1。
 - 验证命令与结果：`go test ./internal/mcp ./internal/hookio ./internal/assets ./internal/cli` 通过（新增 `TestM05SessionArgument` 与 `DSH_SESSION_ID` 回退断言）。临时仓库端到端：`memctl mcp --agent dsh` 收到带 `sid` 的 `memory_write` 后提交为 `Agent: dsh` / `Session: session-e2e-2` / `Device: MacBookPro.local`；同一进程在环境存在 `DSH_SESSION_ID` 时优先采用环境值，证明配置优先于调用值。`go test ./...` 全绿（`internal/app` 72.3 秒、`tests/integration` 261.2 秒，其余包均通过）；`node --test plugins/dsh/test/*.test.js plugins/pi/test/*.test.js` 35 项通过。
-- 未验证与遗留：本机 `~/.agent-memory/bin/memctl` 仍是 `v0.12.0`，新参数要重装二进制并重启 DSH（MCP 子进程随应用启动）后才生效；生效前提是模型按指引传 `sid`，服务端无法校验该值是否属于当前会话；会话 ID 由调用方提供，属模型可写字段，审计只能如实记录不能证明归属。
+- 未验证与遗留：本机 `~/.agent-memory/bin/memctl` 已原子替换为 `v0.12.0-3-g5a78ce1`（旧版备份为 `memctl.v0.12.0`），但运行中的 DSH 仍持有旧 MCP 子进程（`lsof` 中 txt 大小 10146194，新版 10212754），需重启应用后新参数与指引才生效；沙箱内的 `kill` 与同一内容重写 profile 都未触发重连。生效前提是模型按指引传 `sid`，服务端无法校验该值是否属于当前会话；会话 ID 由调用方提供，属模型可写字段，审计只能如实记录不能证明归属。
 
 ## 近期待办与下一步
 
@@ -167,6 +167,7 @@
 
 - 阶段 G（[GitHub Actions Dreaming 迁移](./11-github-actions-dreaming.md)）：`G-1`–`G-3` 已完成（`T082`、`T083`），`T085`/`T086` 修复了真实运行暴露的工作流校验和与 worker 仓库定位缺陷，`v0.7.2` 在 `gray0128/agent-memory-repo` 完成首次真实端到端运行（`G-4` 部分完成）。剩余：验证一次带实际文件变更的提案被 `apply` 提交；清理诊断仓库 `gray0128/memctl-dream-diag`。
 - `memctl mcp` 与 `install --status` 的 `mcp:` 块已随 `v0.6.0` 发布；本机 `desktop` profile 已插入 `@deepseek-ai/dsh-mcp-client` 条目并派生 `memctl --agent dsh` 子进程，DSH 的 MCP 通道已生效；其他 DSH 用户仍需按 [5.2](./09-mcp-memory-tools.md#52-各宿主的注册命令) 手工插入该条目。
+- `T118` 之后重启 DSH 一次即可让 MCP 子进程载入新二进制：`memory_write` 会出现可选 `sid`，注入指引会带上「MCP 写入需传会话 ID」；下次会话写入应出现 `Session:` trailer，可用审计视图或 `git log` 复核。
 - 插件包：`memctl-pi@0.5.2`、`memctl-dsh@0.5.3` 均在 npm；`memctl-dsh` 的 `latest` 为 `0.5.3`（先单独发布到 npm，`v0.9.1` 起随 Release 附带），`memctl-pi` 为 `0.5.2`。本机 `desktop` profile 已升级到 `memctl-dsh@0.5.3`，`install --status` 返回 `dsh: configured host=dsh@0.2.1-rc.2 plugin@0.5.3`；`pi` 保持 `plugin@0.5.2`。`memctl-dsh` 之前遗留的 `0.0.0-stage` 占位版本已清理。
 - 宿主侧写入已覆盖 DSH、Codex、pi、OpenCode、Command Code 与 Antigravity；Grok 需显式 `read_write`，Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./09-mcp-memory-tools.md#62-真实验证边界)。
 - DSH 界面 npm 包名安装与 `desktop` profile `0.5.2` 已完成；绝对目录界面安装仍未验证；`memctl-dsh@0.5.3` 已发布到 npm 并用 `dsh plugin add` 升级本机 `desktop`，真实会话仍待在新版本上复验。
