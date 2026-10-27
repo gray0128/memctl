@@ -329,3 +329,14 @@
 - 附件与校验：独立目录 `/tmp/memctl-v0.13.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.13.0`、`commit: 8e9310e`；产物 `memctl-darwin-arm64 version` 为 `v0.13.0`。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.13.0`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: configured host=dsh@0.2.1-rc.3 plugin@0.5.3`、`pi: configured host=pi@1.4.0 plugin@0.5.2`、`codex: configured host=codex@0.160.0`。
 - 未验证与遗留：会话 ID 仍由模型按指引传入 `sid`，服务端无法校验其归属；其他机器升级后需要重启宿主应用才会重新派生 MCP 子进程；平台验证范围与 `v0.12.0` 相同（仅 darwin/arm64 运行时验证）。
+
+## T121：发布 `v0.13.1`
+
+- 目标与范围：发布 `v0.13.1`，把 `T120` 的记忆写入位置契约带入 Release：项目决策、事件与主题事实一律写入 `notes/<topic>.md`，`MEMORY.md` 只保留索引与跨项目偏好。补丁版本：只改契约文档、内嵌指引、Skill 与 CLI 说明/示例，没有命令、接口或数据格式变化；插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
+- 对应契约：[10. 记忆更新与过期 §3.2](../10-memory-lifecycle.md#32-更新规则)、[§7](../10-memory-lifecycle.md#7-已确认的决策与剩余问题)、[04. CLI、UI 与分发 §6.1](../04-ui-and-cli-specification.md#61-发布入口)。
+- 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.3，Node v26.10.0。
+- 发布前检查：`T120` 的 `go test ./...` 全绿（`internal/app` 60.2 秒、`tests/integration` 207.1 秒）；发布准备提交 `8e3afe0`。
+- 发布：推送附注标签 `v0.13.1`，[运行 40453269774](https://github.com/gray0128/memctl/actions/runs/40453269774) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.13.1](https://github.com/gray0128/memctl/releases/tag/v0.13.1)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.13.1` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.13.1`、`commit: 8e3afe0`；产物 `memctl-darwin-arm64 version` 为 `v0.13.1`。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.13.1`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: configured host=dsh@0.2.1-rc.3 plugin@0.5.3`、`pi: configured host=pi@1.4.0 plugin@0.5.2`、`codex: configured host=codex@0.160.0`；隔离仓库内 `start` 注入已含 `cross-project preferences` 与 `notes/<topic>.md`。
+- 未验证与遗留：已有会话的注入文本在会话启动时固定，需新会话才带上新规则；本机 `~/.agents/skills/memctl` 仍是 2026-10-19 的安装副本；宿主侧对旧记忆的整改仍依赖用户应用待审阅的 `dream` 提案（`dp-b18ca88…`）。
