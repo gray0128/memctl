@@ -318,3 +318,14 @@
 - 附件与校验：独立目录 `/tmp/memctl-v0.12.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK；`RELEASE-INFO.txt` 记录 `version: v0.12.0`、`commit: 5f4ce50`；产物 `memctl-darwin-arm64 version` 为 `v0.12.0`。
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.12.0`，`update --check` 返回 `up to date`，`install --status` 仍为 `codebuddy: configured host=codebuddy@2.164.0` 与 `workbuddy: configured host=app`。
 - 未验证与遗留：`T115` 记录的 `SessionEnd`（交互式退出）、WorkBuddy 桌面 GUI 会话、`CODEBUDDY_CONFIG_DIR` 自定义根与 Windows 盘符转义仍未验证；平台验证范围与 `v0.11.1` 相同。
+
+## T119：发布 `v0.13.0`
+
+- 目标与范围：发布 `v0.13.0`，把 `T118` 的 MCP 写入会话溯源带入 Release。版本号按次版本递增：`memory_write` 新增可选 `sid` 参数，`ResolveSID` 增加 `DSH_SESSION_ID` 回退，属向后兼容的能力增量；旧客户端不传 `sid` 时行为与 `v0.12.0` 一致。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
+- 对应契约：[04. CLI、UI 与分发](../04-ui-and-cli-specification.md#61-发布入口)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)、[09. MCP 记忆工具 §4.2](../09-mcp-memory-tools.md#42-会话身份)。
+- 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.1，Node v26.10.0。
+- 发布前检查：`T118` 的 `go test ./...` 全绿（`internal/app` 72.3 秒、`tests/integration` 261.2 秒），两个插件 Node 测试 35 项通过；重启 DSH 后真实写入提交 `c7a9e03` 记录 `Session: session-4c79e553-a149-429d-b2c4-18a2e22f5612`；发布准备提交 `8e9310e`。
+- 发布：推送附注标签 `v0.13.0`，[运行 40437719922](https://github.com/gray0128/memctl/actions/runs/40437719922) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.13.0](https://github.com/gray0128/memctl/releases/tag/v0.13.0)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.13.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.13.0`、`commit: 8e9310e`；产物 `memctl-darwin-arm64 version` 为 `v0.13.0`。
+- 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.13.0`，`update --check` 返回 `up to date`，`install --status` 为 `dsh: configured host=dsh@0.2.1-rc.3 plugin@0.5.3`、`pi: configured host=pi@1.4.0 plugin@0.5.2`、`codex: configured host=codex@0.160.0`。
+- 未验证与遗留：会话 ID 仍由模型按指引传入 `sid`，服务端无法校验其归属；其他机器升级后需要重启宿主应用才会重新派生 MCP 子进程；平台验证范围与 `v0.12.0` 相同（仅 darwin/arm64 运行时验证）。
