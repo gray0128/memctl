@@ -114,7 +114,7 @@ CLI dream --runner <provider>          POST /api/v1/dream:preview
    - **状态型记忆**（偏好、配置、当前状态、项目现状）：合并完全重复项；同一事实若有新旧两条且新条目有更新的 `added` 日期，就地保留最新事实并移除已失效旧值，不写变更日志；若两条记忆相似但矛盾且无法从日期或上下文判断先后，**保留两条原文及各自元数据**，并在 `warnings` 中说明矛盾点。
    - **事件型记忆**（决策及理由、发布记录、事故排查、架构迁移、带明确历史日期的事项）：**只增不改、禁止删除**；仅允许将其从膨胀的 `MEMORY.md` 拆分或归入对应主题文件，且必须保留原始事实文本、`source` 与 `added` 元数据，并在 `MEMORY.md` 保持 `[[path]]` 链接可达。
    - **有时效型记忆**（带 `until: YYYY-MM-DD`）：仅当静态分析已标记为到期（`until < today`）时允许移除；未到期条目原样保留。
-   - **格式与安全边界**：保持每条记忆单行 `- <fact> [source: <tag>; added: YYYY-MM-DD]` 格式；保持根相对 `[[path]]` 链接语法；不虚构事实、不伪造 `source` 标签；只输出符合 Schema 的 JSON 对象。
+   - **格式与安全边界**：保持每条记忆单行 `- <fact> [source: <tag>; added: YYYY-MM-DD]` 格式；保持根相对 `[[path]]` 链接语法；链接目标可以是任意受管文件，同一事实已在某个主题文件定义时，另一个主题文件只写 `[[path]]` 而不复制条目正文；不虚构事实、不伪造 `source` 标签；只输出符合 Schema 的 JSON 对象。
 2. **输入载荷（User Message JSON）**：
    - `today`：当前 UTC 日期（`YYYY-MM-DD`）；
    - `entryFile`：当前 `MEMORY.md` 全文；

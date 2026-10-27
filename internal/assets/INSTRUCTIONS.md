@@ -38,8 +38,11 @@ Report it to the user instead.
   it.
 - Keep a fact in one place and link to it elsewhere. `MEMORY.md` holds only the
   index and cross-project preferences; project decisions, events and topic
-  detail go to `notes/<topic>.md`, listed in that index. Never append a
-  contradicting entry; see the rules below for rewriting versus appending.
+  detail go to `notes/<topic>.md`, listed in that index. A link target is any
+  managed file, not only `MEMORY.md`: when a topic file already states a fact,
+  link to it from the other topic file with `[[path]]` instead of copying the
+  entry. Never append a contradicting entry; see the rules below for rewriting
+  versus appending.
 
 ### After an entry stops being true
 

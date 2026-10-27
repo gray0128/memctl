@@ -67,6 +67,8 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"until: YYYY-MM-DD",
 		"cross-project preferences",
 		"notes/<topic>.md",
+		"A link target is any",
+		"not only `MEMORY.md`",
 		"## Organizing memory",
 		"memctl dream --prepare --json",
 		"only persist a `ready` proposal",

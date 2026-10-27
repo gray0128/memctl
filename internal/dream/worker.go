@@ -802,6 +802,9 @@ Rules by memory class:
 Format rules:
 - Keep one bullet per entry on one line: "- <fact> [source: <tag>; added: YYYY-MM-DD]".
 - Keep root-relative [[link]] syntax and do not invent facts or source tags.
+- A [[link]] target is any managed file, not only MEMORY.md. When a fact is
+  already defined in another topic file, write the [[path]] link there instead
+  of copying the entry text.
 - Only touch files in batchFiles plus MEMORY.md; never create or delete MEMORY.md.
 - Assume "create" means the path does not exist and "update" means it does.
 
@@ -824,4 +827,6 @@ Requirements:
   [[path]] link (the .md suffix is optional).
 - Keep the MEMORY.md heading structure and keep every existing fact line.
 - Do not invent facts. Do not delete a linked file. Keep one bullet per line.
+- Do not delete existing [[path]] links; a topic-to-topic link is as valid as
+  an index link and is not an orphan marker.
 Return only the JSON object, with no prose and no Markdown fence.`

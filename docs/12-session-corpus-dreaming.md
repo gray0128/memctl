@@ -260,6 +260,7 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
 
    - 每条 `newMemories[].fact` 拼装出的条目行（`- <fact> [source: ...; added: ...]`，含可选的 `; until: ...`）必须**逐字出现在** `files[]` 中 `targetPath` 的目标内容里（目标文件不存在时，视为该文件必须由 `files[]` 创建）。未出现即返回 `INVALID_ARGUMENT`，提示补齐 `files[]`。
    - Go 不向 `files[]` 注入条目、不自动创建文件、不自动补 `[[targetPath]]` 索引链接。索引是否齐全由 §2.3 步骤 3 的断链与孤立文件校验判定：新出现的断链或不可达文件使 `propose` 返回 `UNSUPPORTED`，消息列出链接问题与 `ORPHAN_FILE <path>`，由当前 Agent 修正后重试。
+   - 跨主题互链由当前 Agent 在 `files[]` 中自行给出：同一事实已在某个主题文件定义时，另一个主题文件只写 `[[path]]` 而不复制条目正文。Go 侧只校验链接可解析与整体可达，不替 Agent 生成这类链接，也不把主题文件之间的链接判为孤立标记；可达性仍是 [02 §1.2](./02-domain-models-and-contracts.md#12-格式保真) 定义的从 `MEMORY.md` 出发的传递闭包。
    - 由此保证 `patchHash` 只取决于 `files[]`：同一份 `files[]` 无论 `newMemories[]` 顺序如何，产出的提案内容与哈希完全一致。
 4. **结构化输入（`DreamProposeInput`）**：
    Agent 在 `files[]` 中的新条目行必须严格照抄 Go 会拼出的形式：`- <fact> [source: <sourceTag>; added: <date>]`，其中 `sourceTag` 只能取 `prepare` 返回的 `sessions[].sourceTag`，`date` 只能取所引用会话中最新 `date`（`time_limited` 另加 `; until: <YYYY-MM-DD>`）。Agent 不得编造 `agent://`、`https://` 或其他来源，也不得省略 `added`；`newMemories[].fact` 不带前导 `- `。Go 按同样规则重新拼装后逐字比对，不一致即拒绝。

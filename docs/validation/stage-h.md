@@ -174,3 +174,21 @@
   - WorkBuddy 桌面 GUI 内的 Hook 行为未复验，本轮使用其 sidecar。
   - `CODEBUDDY_CONFIG_DIR` 指向其他配置根时补扫仍只查 `$HOME`；Windows 盘符与分隔符转义未验证。
   - 工具签名不记录退出状态，与现有解析器一致。
+
+## T120：记忆写入位置契约收紧（项目事实下沉 `notes/`）
+
+- 目标与范围：修掉「所有记忆都写进 `MEMORY.md`」的根因。不是代码缺陷：写入路径没有默认值，是契约允许 event 型条目留在入口文件、注入面只有 `MEMORY.md`、唯一护栏在 100 行才触发。本轮按 2026-10-27 用户确认收紧口径。
+- 改动：`docs/10` §1 结论、§3.2 新增「写入位置」规则、§7 的事件型条目决策改为「一律写入 `notes/`，入口文件只保留索引与跨项目偏好」；`internal/assets/INSTRUCTIONS.md` 的 Writing 段改为同一规则；`skills/memctl` 的 `SKILL.md` 与 `references/memory-conventions.md` 同步；`help` 的快速入门说明与 `write` 示例改以 `notes/<topic>.md --base absent` 演示；`tests/integration/r01_r02_test.go` 增加 `cross-project preferences` 与 `notes/<topic>.md` 断言。
+- 对应契约：[10. 记忆更新与过期 §3.2](../10-memory-lifecycle.md#32-更新规则)、[§7](../10-memory-lifecycle.md#7-已确认的决策与剩余问题)、[04. CLI、UI 与分发 §2](../04-ui-and-cli-specification.md#2-环境变量与会话身份)。
+- 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.3。
+- 验证命令与结果：`go test ./...` 全绿（`internal/app` 60.2 秒、`tests/integration` 207.1 秒）；`go vet ./internal/cli` 通过。
+- 未验证与遗留：`T118` 的重启后真实验证证据已归档到 `T119`（提交 `c7a9e03`）；新指引要随下一次二进制发布才会进入宿主注入，本机 `v0.13.0` 仍是旧文本；本机 `~/.agents/skills/memctl` 是 2026-10-19 的安装副本，需重新安装才与仓库一致；`doctor`/`propose` 的入口膨胀检查仍只在 100 行时告警，未增加「同一项目条目数」提示。
+
+## T117：批量整理入口规则写入内嵌默认指引
+
+- 目标与范围：把批量整理的入口规则写入内嵌默认指引，避免 Agent 在「整理记忆」时直接用 `memctl write` 改写主库。只改注入文本、测试断言与契约描述，不改变命令、协议或提案机制。
+- 改动：`internal/assets/INSTRUCTIONS.md` 新增「Organizing memory」小节：单条事实仍按 Writing 规则写入；整理、去重、重构与跨会话提炼先执行 `memctl dream --prepare`，再用 `--propose` 提交完整目标文件，只持久化 `ready` 提案；展示提案 id、`patchHash` 与 Diff 后等待用户审查，Agent 不自行 `--apply`，MCP 没有 apply 工具。`tests/integration/r01_r02_test.go` 增加标题与关键句断言；`04` 第 6 节、`05` 的 `R01`、`10` 第 4/6 节与 `12` §2.3 同步该规则；`skills/memctl` 原本已有同一流程，未改动。
+- 对应契约：[04. CLI、UI 与分发](../04-ui-and-cli-specification.md#6-单文件打包)、[05. 验收与交付](../05-validation-and-delivery.md#2-核心测试矩阵)、[10. 记忆更新与过期](../10-memory-lifecycle.md#4-当前实现边界)、[12. 跨会话新记忆提炼](../12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)。
+- 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
+- 验证命令与结果：`go test ./tests/integration -run TestR01EmbeddedInstructionsFromEmptyHome -count=1` 通过（3.7 秒）；`make test` 全绿（`tests/integration` 254.6 秒，前端与两个插件测试通过）。
+- 未验证与遗留：断言只证明注入文本包含关键句，模型是否始终遵守仍依赖运行时判断；本机 `~/.agents/skills/memctl` 仍是 2026-10-19 的旧版（无 §6），需重新安装后 Skill 侧指引才会与仓库一致。该记录在提交 `82ce51b` 中被覆盖，`T122` 补回归档。
