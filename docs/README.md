@@ -23,6 +23,7 @@
 | [11. GitHub Actions Dreaming](./11-github-actions-dreaming.md) | 基于 GitHub Actions 的远端整理架构、分支协议、多步结构化调用、内置提供商与验收 |
 | [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md) | 本地当前 Agent 交互式整理：本地会话确定性蒸馏与脱敏缓存、`dream --prepare`/`--propose` 与 MCP 工具、来源绑定守卫与验收 |
 | [13. Delta 宿主接入](./13-delta-integration.md) | Delta 的接入面调研、无 Hook 下的接入方案、`DELTA_CURRENT_THREAD_ID` 会话身份、适配器契约与验收 |
+| [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md) | Delta 会话蒸馏的项目归属：cwd 归一化到项目根、实测证据、与现有实现的差距、风险与验收 |
 | [开发状态](./STATUS.md) | 当前事实、任务总表与最近一轮完成记录 |
 
 同一规则只在表中对应文档定义，其他文档通过链接引用。流程变更需同步调整契约和验收项。
