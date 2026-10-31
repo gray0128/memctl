@@ -22,8 +22,9 @@
   - 存量补扫：`commandcode`、`grok` 的日志目录存在但字段结构未核对，二者与 `opencode` 一样不进入补扫；`antigravity` 的工作目录只从 `run_command` 的 `args.Cwd` 反推，完全没有执行命令的会话无法判定项目，会被跳过。
   - Dreaming 与自更新：真实 GitHub Actions 与真实 DeepSeek 端点已在 `gray0128/agent-memory-repo` 成功跑通一次（运行 39226384745，提案 `dp-9047541…`）；该次模型未产生文件改动，因此「带实际变更的提案被 apply 提交」尚未在真实环境验证；诊断仓库 `gray0128/memctl-dream-diag` 待删除（需 `delete_repo` scope）；`update` 仅在 darwin/arm64 真实执行。
 - 已知限制：MCP 写入的会话身份由模型按注入指引传入 `sid`，服务端只做长度与字符校验，无法证明该值属于当前会话；模型不传时提交仍只记录 `Agent` 与 `Device`。pi 前台 in-process 子代理不触发会话生命周期，不注入记忆也不单独同步；`pi -p` 的短生命周期只保证 `end` 最终同步；阶段 C 的 `P3-6`、`P3-7`、`P3-13`；阶段 D 的 `P3-11`–`P3-16` 与 `P3-1`、`P3-18` 剩余部分；组件级 DOM 测试缺失；知识图谱密集同名孤立节点簇的标签拥挤；来源 URI 使用浏览器原生标题提示；`memctl-dsh` 没有独立 GitHub 仓库或 Discover 索引；`workspace-write` 会话内 Agent 无法直接执行 `memctl read/write`，记忆更新需经 MCP 通道（`T071`–`T073`）或放宽会话沙箱；Codex 需 `default_tools_approval_mode = "approve"`，pi 需 `--exposure direct`，Grok 的 `workspace` profile 会阻断 MCP 子进程并需要 `read_write`，pi 本身没有文件沙箱。
+- 发布状态：`T127` 的 Delta 会话蒸馏适配（`ResolveProjectRoot` 与 `internal/corpus/delta.go`）已合入 `main`，但还没有包含它的发布；`v0.14.0` 只带到 `T123` 的宿主接入。其他机器要等到下一次发布才能用上 Delta 摘要。
 - 发布入口：唯一入口是推送 `v*` 标签，Release 附件只由流水线产生；本地 `make release` 只用于验证构建链路，不构成发布步骤。见 [发布入口](./04-ui-and-cli-specification.md#61-发布入口)。
-- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 在发布后升级到 `v0.13.1`（需用 `mv` 原子替换，直接 `cp` 覆盖运行中的二进制会被 macOS 杀掉）。CI 的 `verify` 分片作业与 `build` 作业并行，分别运行 `scripts/test-shard.sh` 与 `make release-dist`，`publish` 依赖两者；集成测试在同一进程内共享一次二进制构建。
+- 构建基线：Node v26.10.0 / npm 11.19.1；`web/dist`、`bin/`、`dist/` 不提交，Go 构建与测试前先执行 `make ui`。本机 `~/.agent-memory/bin/memctl` 在发布后升级到 `v0.14.0`（需用 `mv` 原子替换，直接 `cp` 覆盖运行中的二进制会被 macOS 杀掉）。CI 的 `verify` 分片作业与 `build` 作业并行，分别运行 `scripts/test-shard.sh` 与 `make release-dist`，`publish` 依赖两者；集成测试在同一进程内共享一次二进制构建。
 
 ## 任务
 
@@ -173,32 +174,9 @@
 - 验证命令与结果：`go build ./...`、`go vet ./...` 通过；`make test` 全绿（前端 18 个文件 104 项、`plugins/dsh` 与 `plugins/pi` 的 Node 测试、`tests/integration` 203.8 秒）；`scripts/balance-test-shards.sh` 重新生成 `scripts/test-shards.txt`，153 项全部有分片归属（新增 4 个测试在其中）。验收：`X10`–`X14` 全部通过——`X11` 的九个分支由 `TestResolveProjectRootCoversX11` 覆盖，`X10`/`X12` 用真实 `git worktree` 布局，`X13`/`X14` 用假 `delta` 可执行文件端到端跑 `dream --prepare`。真机复核：本机 Delta 0.23.0 终端内采集当前线程成功，2.13 秒、14 回合、`cwdBase=memctl`、正文不含思考段，运行后 `pgrep -f 'delta thread watch'` 为 0。
 - 未验证与遗留：只有 darwin/arm64 与 Delta 0.23.0；共享线程、子智能体线程、归档线程与 Cloud Runner 线程未复验；watch 在本机登录态下验证，未登录环境未复测；8 MiB 读取上限对持续增长的长线程余量已不足 15%，上限值仍待真实使用数据再定；`install delta` 的 `step:` 未增加「`dream --prepare` 会采集当前线程」的说明。
 
-## 最近一轮完成记录（T125）
-
-- 目标与范围：调研 Delta 会话蒸馏能否用「当前工作目录」确定项目归属，输出可行性报告。只做调研与文档，不实现采集器。
-- 结论：cwd 方向可行，但必须先把 cwd 归一化到项目根；直接拿进程 cwd 当项目键会按线程碎片化。
-- 实测证据：本机 Delta 0.23.0 上，同一仓库 `memctl` 的原仓库与两个线程 checkout 得到 3 个不同 `cwdKey`；归一化到项目根后三者收敛为同一 key，且与既有 57 条 digest 记录的 `cwdKey` 逐字节相同。归一化有两条互相独立的规则（`--git-common-dir` 截断与 `--show-toplevel` 截断），3 个真实样本结论一致。另有 202 份现有 digest、6 个 Delta 线程的样本量。
-- 差距：cwd 只解决项目归属。Delta 没有会话日志文件（只有 DeltaDB 与 CLI，官方要求不直读 DB）、`thread show` 单次最多 20 条且无总数字段、assistant `buffer` 混入 `Thought N times…` 与 `Thinking` 段而 `MaxTurnTextBytes = 1024` 可能把正文整段截掉。
-- 改动：新增 [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md)（结论、实测表格、两阶段推荐方案、6 项风险、`X10`–`X13` 验收建议）；`docs/README.md` 与 `docs/01` 目录清单登记；`docs/12` §2.2 的 `delta` 行改为指向该报告。
-- 对应契约：[14. Delta cwd 可行性](./14-delta-cwd-feasibility.md)、[12 §2.2](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)、[13 §7](./13-delta-integration.md#7-未验证与后续)。
-- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3。
-- 验证命令与结果：文档链接与锚点全量校验通过（`docs/14`、`docs/12`、`docs/README.md` 均 0 问题）；实测命令见报告中各表格，均可复跑。
-- 未验证与遗留：样本仅本机 6 个线程，未覆盖 monorepo 与 Windows 路径；采集器未实现；当前线程仍须 `env -u DELTA_CURRENT_THREAD_ID` 才能读出，不宜写进契约。
-
-## 最近一轮完成记录（T124）
-
-- 目标与范围：发布 `v0.14.0`，把 `T123` 的 Delta 宿主接入带入 Release。版本号按次版本递增：新增 `DELTA_CURRENT_THREAD_ID` 会话身份回退、`install` 的 `delta` 适配器与 `mcp:` 状态说明，属向后兼容的能力增量；没有命令参数、接口或数据格式变化。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
-- 对应契约：[13. Delta 宿主接入](./13-delta-integration.md)、[04 §6.1 发布入口](./04-ui-and-cli-specification.md#61-发布入口)、[05 §4 发布前检查](./05-validation-and-delivery.md#4-发布前检查)。
-- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3，Node v26.12.1 / npm 11.20.0。
-- 发布前检查：`make test` 全绿（前端 18 个文件 104 项、`plugins/dsh` 与 `plugins/pi` 的 Node 测试、`tests/integration` 194.7 秒）；`scripts/balance-test-shards.sh` 重新生成 `scripts/test-shards.txt`，146 个集成测试全部有分片归属、无遗漏无冗余（新增 `TestDeltaThreadIDProvidesTheSessionIdentity` 与 `TestDeltaAdapterStatusReportsNoManagedConfig`）；`make release` 验证构建链路产出四个候选二进制与两个插件 tarball，本地产物不参与发布校验。
-- 发布：推送附注标签 `v0.14.0`，[运行 41179594733](https://github.com/gray0128/memctl/actions/runs/41179594733) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.14.0](https://github.com/gray0128/memctl/releases/tag/v0.14.0)，发布准备提交 `89b2e1c`。
-- 附件与校验：独立目录 `/tmp/memctl-v0.14.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.14.0`、`commit: 89b2e1c…`、`go1.27.1 darwin/arm64`；产物 `memctl-darwin-arm64 version` 为 `memctl v0.14.0`，`install --status` 输出 `delta: configured host=delta@0.23.0`。
-- 本机升级：`mv` 原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.14.0`，`update --check` 返回 `up to date`，`install --status` 为 `codex@0.160.0`、`pi@1.4.0 plugin@0.5.2`、`dsh@0.2.1-rc.5 plugin@0.5.3`、`delta@0.23.0`。
-- 未验证与遗留：真实 Delta 会话内的端到端执行仍未验证（模型是否按 Skill 主动写入、审计视图是否按线程追溯）；平台范围与上一版相同，仅 darwin/arm64 运行时验证；`internal/corpus` 的 Delta 会话蒸馏仍未实现，其 cwd 方案可行性见 `T125` 与 [14](./14-delta-cwd-feasibility.md)。
-
 ## 近期待办与下一步
 
-- Delta（[13](./13-delta-integration.md)、[14](./14-delta-cwd-feasibility.md)、[15](./15-delta-corpus-adaptation.md)）：宿主接入随 `v0.14.0` 发布，会话蒸馏适配方案由 `T126` 定义。剩余事项按成本排序：① `corpus.ProjectRoot` 落地（`X10`–`X12`，对非 Delta 宿主为恒等变换）；② `internal/corpus/delta.go` 采集器落地（`X13`–`X14`，依赖①）；③ 真实 Delta 会话内验证 Skill 自动加载与审计追溯，尚未做过。
+- Delta（[13](./13-delta-integration.md)、[14](./14-delta-cwd-feasibility.md)、[15](./15-delta-corpus-adaptation.md)）：宿主接入随 `v0.14.0` 发布；会话蒸馏适配由 `T126` 定义、`T127` 实现并验收 `X10`–`X14`，但**尚未发布**，下一次发布才把该能力带给其他机器。剩余事项：① 发布含 `T127` 的版本（采集器与 `ResolveProjectRoot` 已在 `main`）；② 真实 Delta 会话内验证 Skill 自动加载与审计追溯，尚未做过；③ 共享线程、子智能体线程、归档线程与 Cloud Runner 线程各复验一次；④ `MaxDeltaStreamBytes` 沿用 8 MiB，对持续增长的长线程余量不足 15%，上限值待真实使用数据再定。
 
 - 阶段 H（[12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）：`H-1`–`H-4`、`H-2c` 与 `T104` 补遗全部完成（`T098`、`T099`、`T100`、`T101`、`T102`、`T103`、`T104`、`T115`），仅在本地当前 Agent 内交互式整理，不动既有 GitHub Actions Dreaming。`T104` 已把 `propose` 的父目录前置校验、新增孤立文件/断链拒绝与 `MEMORY.md` 膨胀警告补齐。剩余候选：Skill 在真实宿主会话中的自动触发（既有端到端验收由本会话手工执行命令）。
 
@@ -213,7 +191,6 @@
 - 构建提速的后续项：按实际 CI 耗时调整分片数；消除 `a4_credentials_test.go` 等测试的进程级环境依赖以便 `t.Parallel()`；新增或重命名集成测试后重新生成 `scripts/test-shards.txt`。
 - 审计视图：提交来源只取提交说明末尾的 `Agent:`/`Session:`/`Device:` trailer，旧版本写入的历史提交没有 trailer，界面显示「未记录来源」，本轮不做历史改写；游标分页无总数，页码只列已访问页。`T118` 起 DSH 的 MCP 写入在模型传入 `sid` 时记录会话，2026-10-27 之前的两条 dsh 提交仍无会话。
 - `T091` 已拆出「整理」与「客户端接入」并展示 MCP 状态，`T092` 已发布 `v0.8.0`；此前记录的 `skills update -g` 未把本机副本更新到仓库版本，按上一条重新安装后再复核。
-- Delta 会话蒸馏（[15](./15-delta-corpus-adaptation.md)）：适配方案已定义，采集器未实现。按依赖顺序：① 先落 `corpus.ProjectRoot`（两个阶段共用的项目键归一化），配 `X10`–`X12`；② 再落 `internal/corpus/delta.go`（`parseDelta`、`DeltaRunner`、`CollectDelta`、`DeltaCollectBudget`）并接入 `dream.refreshCurrentSession`，配 `X13`–`X14`；③ 落地前补测归档线程、共享线程与未登录环境。
 - `T093` 已收口：发布 `memctl-pi@0.5.2` 后 npm 索引恢复正常（`score.final` 从 0 回到约 19）。pi.dev 目录仍不收录，原因是它只索引 npm search 前 5250 个可枚举名称，而本包月下载 21 次排在窗口外；这需要真实装机量，不是本项目可修的配置问题。
 - 记忆过期规则已全部落地：隐藏期 30 天、三个读取入口统一过滤、事件型条目留在 `MEMORY.md`/`notes/`（用户 2026-10-19 确认）；读取侧、`EXPIRED_ENTRY` 诊断、`DELETION_DEFERRED` 闸门、Dreaming 提案校验与清理路径均已实现。批量清理由 Dreaming 提案统一发起（用户 2026-10-19 确认）。`doctor` 的过期提示按「仍在隐藏期」与「可删除」分阶段给出可删除日期。
 - 未验证项与已知限制见[当前事实](#当前事实)；界面重设计的视觉结论以 [第二轮 UI/UX 验证](./validation/ui-ux-verification.md#5-第二轮验证v011-发布后复验) 与 [收口复验](./validation/ui-ux-verification.md#6-第二轮问题的收口与复验t044) 为准。
