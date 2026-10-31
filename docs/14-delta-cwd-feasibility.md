@@ -1,6 +1,6 @@
 # 14. Delta 会话蒸馏的 cwd 方案可行性
 
-> 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64），未实现。本文只回答一个问题：能否用「当前工作目录」给 Delta 会话确定项目归属，从而接入 [12](./12-session-corpus-dreaming.md) 的本地会话蒸馏。结论见 §1，取舍与剩余风险见 §5、§6。宿主接入面见 [13. Delta 宿主接入](./13-delta-integration.md)。
+> 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64），未实现。本文只回答一个问题：能否用「当前工作目录」给 Delta 会话确定项目归属，从而接入 [12](./12-session-corpus-dreaming.md) 的本地会话蒸馏。结论见 §1，取舍与剩余风险见 §5、§6。宿主接入面见 [13. Delta 宿主接入](./13-delta-integration.md)。本文 §4、§4.1、§4.2 与 §6 中关于分页、Thinking 混入与当前线程可读性的三项判断已被后续实测推翻，以 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md#6-对-14-的三处更正) 为准；§3、§5 第一步的 `ProjectRoot` 结论保持不变。
 
 ## 1. 结论
 
@@ -96,11 +96,13 @@ The user asks whether Delta loads skills from …
 
 **第一步（建议采纳）：把 cwd 归一化写进契约，作为 Delta 的项目键来源。**
 
-- 新增 `corpus.ProjectRoot(cwd)`：先 `git rev-parse --git-common-dir`，命中 `/.delta/clones/` 则截断；否则落在 `/.delta/worktrees/` 则截断；都不命中时原样返回。
+- 新增 `corpus.ProjectRoot(cwd)`：先 `git rev-parse --git-common-dir`，命中 `/.delta/clones/` 则截断；否则落在 `/.delta/worktrees/` 则截断；都不命中时原样返回。实现细节（`--path-format=absolute` 不可省、候选路径需存在）见 [15 §3.1](./15-delta-corpus-adaptation.md#31-corpusprojectrootcwd)。
 - `dream --prepare` 的 `Cwd` 与 `sync` 的 cwd 都过这一层，Delta 与其它宿主共用同一条规则。这对现有宿主是恒等变换（它们的日志 `cwd` 本来就是项目根），风险仅限于「Agent 在 Delta 线程里 cd 到子目录」——归一化到仓库根正是期望行为。
 - 这条改动**不引入 Delta 专属分支**，也不新增依赖，可独立验证。
 
 **第二步（需单独决策）：新增 Delta 采集器。**
+
+> 本节与下文的读取路径已被 [15 §2](./15-delta-corpus-adaptation.md#2-读取路径) 取代：实测确认 `delta thread watch <id> --json` 一次读完、正文与思考段分属不同事件，因此分页器与 Thinking 剥离规则都不需要，当前线程也不需要绕行环境变量。采集器契约以 [15 §4](./15-delta-corpus-adaptation.md#4-采集器契约) 为准。
 
 - 新增 `internal/corpus/delta.go`：`parseDelta` 消费 CLI 的分页结果，`LocateSession` 对 `delta` 返回空（无文件），改由一个新的 `CollectThread(threadID, cwd)` 入口驱动。
 - 需要解决的问题：分页器（最多 20 条/次、试错读总数）、Thinking 剥离规则、`LiveBudget` 与 CLI 延迟的匹配（0.2–0.3 秒/次 × N 页）、以及「哪些线程属于当前项目」的筛选（用 §3.2 的归一化根与线程 checkout 的 `git-common-dir` 比对）。
@@ -113,7 +115,7 @@ The user asks whether Delta loads skills from …
 | Agent 不在项目目录内执行 | 用户在 Delta 里 `cd /tmp` 后让 Agent 写记忆 | 归一化失败时返回空 cwd，该会话不生成摘要（保持现状的静默跳过），不落到错误项目 |
 | monorepo 子目录 | `--show-toplevel` 会收敛到仓库根，丢掉子包 | 与现有宿主行为一致（日志 `cwd` 通常也是仓库根），不在本轮扩展 |
 | 非 Git 目录 | `/tmp`、`~/` 执行 `git rev-parse` 返回 128 | 归一化函数原样返回，保持 `CwdKey` 语义不变 |
-| 当前线程读不到 | `thread show <当前线程>` 报错，须 `env -u DELTA_CURRENT_THREAD_ID` | 这是 CLI 的边界行为，不宜写进契约；第一步不依赖它，第二步需等 Delta 提供稳定入口 |
+| 当前线程读不到 | `thread show <当前线程>` 报错，须 `env -u DELTA_CURRENT_THREAD_ID`（后续实测：`thread watch` 无此限制，见 [15 §2](./15-delta-corpus-adaptation.md#2-读取路径)） | 这是 `thread show` 的边界行为，不宜写进契约；第一步不依赖它 |
 | 直读 DeltaDB | 官方要求只用 CLI | 不采用，即使 SQLite 里字段更全 |
 | 未验证 | 只在 darwin/arm64 与 Delta 0.23.0 实测，样本 6 个线程 | 落地前需在 2–3 个真实项目、含 monorepo 的仓库复测 |
 
@@ -124,11 +126,11 @@ The user asks whether Delta loads skills from …
 | `X10` | 在 Delta 线程 checkout 内与在原仓库内分别执行 `dream --prepare` | 两者算出同一个 `cwdKey`；与既有 digest 记录一致；不新增项目键 |
 | `X11` | cwd 位于 `/.delta/worktrees/<id>/<repo>`、`/.delta/clones/<id>/<repo>.git` 的兄弟路径、非 Git 目录、monorepo 子目录 | 前两者归一到同一项目根；非 Git 目录原样返回；monorepo 收敛到仓库根 |
 | `X12` | Agent 在非项目目录执行 `memctl sync` | 不写入 digest，不落到其他项目，退出码不变 |
-| `X13`（第二步） | 采集一个含 40+ 消息、混入 Thinking 的 Delta 线程 | 分页取全；Thinking 剥离后 assistant 正文非空；单条消息截断不丢失正文；整个采集在预算内 |
+| `X13`（第二步） | 采集一个含 40+ 消息、含 `agent_thought` 的 Delta 线程 | 以 [15 §8](./15-delta-corpus-adaptation.md#8-验收) 的 `X13` 为准：不分页取全、正文不含 `Thinking`、保留最长段落、子进程在 `live` 后退出 |
 
 ## 8. 结论摘要
 
 - cwd 方向可行，条件是**归一化到项目根**，否则同一仓库会按线程数碎片化。
 - 归一化只需要标准 Git 元数据，两条独立规则互相印证，且与现有 57 条 digest 完全对齐。
-- cwd 只解决项目归属；会话日志缺失、CLI 分页、Thinking 混入是另外三项成本，属第二步。
-- 建议先落第一步（纯函数 + 契约 + `X10`–`X12`），再单独评估第二步是否值得。
+- cwd 只解决项目归属；会话日志缺失、CLI 分页、Thinking 混入是另外三项成本，属第二步。其中后两项已被 [15](./15-delta-corpus-adaptation.md) 的实测推翻。
+- 建议先落第一步（纯函数 + 契约 + `X10`–`X12`），再单独评估第二步是否值得；第二步的具体契约见 [15](./15-delta-corpus-adaptation.md)。

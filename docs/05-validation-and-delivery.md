@@ -208,6 +208,7 @@
 | I10 | pi 版本与降级 | 低于下界或无法解析的 pi 版本不被报告为 `configured`；`sections` 缺失时回退，不静默失效 |
 | `M01–M12` | MCP 记忆工具：协议、工具、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
 | `X01–X03` | Delta 宿主：无 Hook 时的会话身份与适配器输出 | 逐项定义见 [Delta 宿主接入的验收](./13-delta-integration.md#6-验收) |
+| `X10–X14` | Delta 会话蒸馏：`ProjectRoot` 归一化、当前线程采集与失败降级 | 逐项定义见 [Delta 会话蒸馏适配的验收](./15-delta-corpus-adaptation.md#8-验收) |
 | R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md；默认指引含条目失效的判定规则（状态型改写、事件型追加、禁止 changelog）、批量整理走 Dreaming 提案的规定（`--prepare` → `--propose`，确认前不改主库、不自行 `--apply`）与跨主题互链规则（链接目标可以是任意受管文件，不限于 `MEMORY.md`） |
 | R02 | 无 Git、Dreaming 前置条件缺失（未知提供商、无远端或缺少工作流）、凭据环境缺失 | 分别给出针对性错误；不影响无关功能 |
 | R03 | 干净检出后使用已记录工具链构建，执行 `version/help` 与未知命令 | 实际构建与测试入口可用；version/help 不访问仓库、不要求 Git 或 Node.js；未知命令返回用法错误，无占位成功结果 |

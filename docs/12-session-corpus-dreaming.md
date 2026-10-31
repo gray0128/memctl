@@ -64,7 +64,7 @@ flowchart TB
 | `workbuddy` | Hook stdin 的 `"transcript_path"`（headless sidecar 已验证 `SessionStart`/`Stop` 采集） | `$HOME/.workbuddy/projects/*/*.jsonl`（目录转义与 `codebuddy` 相同） | 与 `codebuddy` 共用格式；新会话首行可能是 `type="session-meta"`，只提供 `sessionId`、不含 `cwd`，不作为对话内容 | 已核对（本机 WorkBuddy 日志与 sidecar 会话） |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
 | `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 不扫描：`$HOME/.commandcode/projects`、`$HOME/.grok/projects` 等目录存在，但字段结构未核对 | 不解析：`H-2b` 只实现「探测失败静默跳过」，不打开这些目录，也不猜测字段 | 未核对格式，静默跳过 |
-| `delta` | 无 Hook；`DELTA_CURRENT_THREAD_ID` 只能提供会话 ID，不提供日志路径 | 不扫描：`delta thread list`/`thread show` 不暴露工作目录，无法先按项目收窄；当前线程需绕开 `DELTA_CURRENT_THREAD_ID` 才能读取，且官方要求不直接读写 DeltaDB | 未实现：项目归属的替代规则已有可行性结论——把进程 cwd 归一化到项目根即可与现有 `cwdKey` 对齐；会话日志缺失、CLI 分页与 Thinking 混入仍待评估，见 [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md#1-结论) | 未支持，静默跳过 |
+| `delta` | 无 Hook；`DELTA_CURRENT_THREAD_ID` 只能提供会话 ID，不提供日志路径 | 不扫描：`delta thread list`/`thread show` 不暴露工作目录，`thread search --edited-path` 的路径是仓库根相对、不含仓库标识，无法先按项目收窄 | 采集入口为 `delta thread watch <id> --json`（结构化 JSONL，`agent_message` 与 `agent_thought` 分属不同事件），项目归属由进程 cwd 经 `ProjectRoot` 归一化到项目根；只采当前线程，详见 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md#4-采集器契约) | 未实现，方案已定义 |
 
 `dsh` 的会话记录是 zstd 压缩流，标准库不提供 zstd 解码。`H-2a` 因此引入 `github.com/klauspost/compress/zstd`（v1.20.3，纯 Go、无 cgo，BSD-3-Clause），由 `internal/corpus` 直接解码，不由 `memctl-dsh` 插件代劳：会话文件存在 `v3`、`v4` 与未分片三种形态，选择高版本、定位目录与判断可读性都要读取首行元数据，这些逻辑放在 Go 侧只有一处实现；放进插件则要在 Node 侧再实现一遍同样的版本选择，并让插件为每次 `sync` 多传一份明文副本。
 

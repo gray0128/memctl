@@ -112,7 +112,7 @@ Git 引擎沿用用户已有签名和 hooks 策略，不默认设置 `commit.gpg
 | `internal/syncer` | 同步请求 → 本地与远端状态 | 编排 fetch、rebase、push，通过 app 的仓库执行上下文互斥 |
 | `internal/state`、`lock` | 仓库身份 → 状态、恢复记录、锁 | 原子状态写入和内核锁；PID 仅供诊断，不能决定锁是否仍有效 |
 | `internal/doctor` | vault 快照 → 诊断和修复计划 | 默认只读；修复计划交 app 提交 |
-| `internal/corpus` | 宿主会话日志路径或 payload、会话身份、当前项目 → 脱敏 `SessionDigest` 缓存 | 纯确定性提取用户/助手文本与工具签名，剔除大输出并正则脱敏凭据，写入 `$STATE/repos/<repoId>/cache/corpus/`；0 次模型调用，失败静默跳过，不阻塞 Hook；格式未核对的宿主必须静默跳过而不是猜测字段。存量补扫入口 `Backfill` 按项目预过滤本机各宿主会话目录（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`），只补齐缓存，不做项目筛选与分批（属 `internal/dream`） |
+| `internal/corpus` | 宿主会话日志路径或 payload、会话身份、当前项目 → 脱敏 `SessionDigest` 缓存 | 纯确定性提取用户/助手文本与工具签名，剔除大输出并正则脱敏凭据，写入 `$STATE/repos/<repoId>/cache/corpus/`；0 次模型调用，失败静默跳过，不阻塞 Hook；格式未核对的宿主必须静默跳过而不是猜测字段。存量补扫入口 `Backfill` 按项目预过滤本机各宿主会话目录（`MaxBackfillFilesPerRun`、`MaxBackfillFileBytes`、`BackfillBudget`），只补齐缓存，不做项目筛选与分批（属 `internal/dream`）。`ProjectRoot` 把由进程 cwd 推导的项目键归一到项目根（Delta 线程 checkout 为唯一非恒等变换的场景，见 [15](./15-delta-corpus-adaptation.md#3-项目归属)） |
 | `internal/dream` | 固定基线、未消费会话摘要或模型提供商 → 提案；worker 模式执行远端多步整理 | 支持两条提案生成路径：1) 本地当前 Agent 交互式整理（`prepare`/`propose`，本地基线固定不校验远端前置条件，`prepare` 把会话列表写成快照供 `propose` 解析下标，由 Go 代码执行 `sessionIndices` 来源绑定守卫、30 天删除闸门与链接校验）；2) 既有 GitHub Actions 远端整理（`dream/req`、`dream/res` 与 `--worker`）；共用提案持久化、列举与 `ApplyDream` 提交闭环，本地提案的消费写回按摘要内容哈希幂等执行 |
 | `internal/adapters` | 探测环境、已知宿主版本与配置 → 安装计划、检测结果及安装后状态 | 按配置路径独立加锁，保留语义定点更新 JSON/JSONC/YAML/TOML，备份并支持中断恢复；不持仓库锁等待配置安装 |
 | `internal/server` | HTTP → app 请求、SSE、adapter 探测与安装、MCP 通道状态 | 鉴权、请求限制和响应转换，不重复加锁；安装只把 `expectedConfigRevisions` 转换成配置基线，不重复实现合并与恢复；MCP 状态复用 `internal/mcp` 的探测与注册表 |
@@ -146,6 +146,7 @@ memctl/
     12-session-corpus-dreaming.md # 跨会话新记忆提炼（本地当前 Agent 交互式整理方案）
     13-delta-integration.md # Delta 宿主接入（无 Hook 宿主的接入面与适配器契约）
     14-delta-cwd-feasibility.md # Delta 会话蒸馏的 cwd 方案可行性
+    15-delta-corpus-adaptation.md # Delta 会话蒸馏适配方案（watch 读取路径与采集器契约）
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配

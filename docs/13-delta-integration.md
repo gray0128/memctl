@@ -86,5 +86,5 @@ Delta 的适配器是一个只探测、不受管文件的条目，字段语义�
 - 真实 Delta 会话中的端到端验证：Skill 是否被自动加载并触发受管写入、提交在审计视图中是否可追溯。本轮验证的是命令行为与适配器输出，不是模型在真实会话中的执行。
 - 平台：只在 darwin/arm64 验证。Windows 与 Linux 上的 Delta、以及 Delta Web 的终端行为未验证。
 - 版本：只验证 Delta 0.23.0。更低版本可能没有 `DELTA_CURRENT_THREAD_ID`，更高版本可能改变 CLI 契约或环境变量。
-- `internal/corpus` 的 Delta 会话蒸馏未实现。`delta thread list` 与 `thread show` 不暴露工作目录，无法满足 [12](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus) 的「先按项目收窄」规则；当前线程也要绕开 `DELTA_CURRENT_THREAD_ID` 才能读取，而官方要求不直接读写 DeltaDB。要支持它，需要先定义按线程筛选项目的替代规则。
-- Delta 会话结束不触发 `end`，因此会话摘要只在 Agent 主动执行 `sync` 时产生；不为此新增轮询或后台进程。
+- `internal/corpus` 的 Delta 会话蒸馏未实现。`delta thread list` 与 `thread show` 不暴露工作目录，无法直接满足 [12](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus) 的「先按项目收窄」规则，官方也要求不直接读写 DeltaDB。适配方案（`thread watch` 读取路径、`ProjectRoot` 项目归属、只采当前线程、`dream --prepare` 触发）已在 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md) 中定义，尚未实现；它推翻了 [14](./14-delta-cwd-feasibility.md) 的分页与 Thinking 两项成本估算。
+- Delta 会话结束不触发 `end`，因此 Delta 的会话摘要不在 `sync` 时产生；按 [15 §4.1](./15-delta-corpus-adaptation.md#41-入口与触发) 只在 Agent 执行 `dream --prepare` 时采集当前线程，不为此新增轮询或后台进程。

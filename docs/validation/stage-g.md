@@ -290,7 +290,7 @@
 ## T113：更正 WorkBuddy 的 MCP 文件路径并修复失败写入遗留事务
 
 - 目标与范围：两处更正。第一，WorkBuddy 的用户级 MCP 文件是 `<configDir>/mcp.json`：应用代码里的 `UserMcpFile` 使用常量 `mcp.json`，`.mcp.json` 只被插件与专家包读取，原提示写成 `~/.workbuddy/.mcp.json` 会让人写到永不加载的位置，附带的 `CODEBUDDY_CONFIG_DIR` 说明也是从 sidecar 推断的。第二，`commit` 的写入循环在 `WriteAtomic` 失败时直接返回，事务记录留在 pending，之后所有命令都要求先 `memctl recover --rollback`；现在改为调用 `session.abort` 回滚并删除记录。
-- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#6-受管写入与同步)。
+- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#2-受管写入事务)。
 - 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
 - 证据：WorkBuddy 应用包内 `UserMcpFile.get filePath()` 返回 `join(getConfigDir(), "mcp.json")`，`migrateMcpJsonPaths` 同样读 `mcp.json`；`.mcp.json` 仅出现在 `readPluginMcpConfig` 与 `readExpertMcpServers`。按 `~/.workbuddy/mcp.json` 写入后，管道握手返回 `serverInfo memctl v0.11.0` 与五个工具。
 - 检查：新增 `TestWriteFailureLeavesNoPendingTransaction`，在修复前能复现「failed write left a transaction record」，修复后通过；`go test ./internal/app ./internal/mcp ./internal/cli` 通过；`make test` 全量通过。
@@ -299,7 +299,7 @@
 ## T114：发布 `v0.11.1`
 
 - 目标与范围：发布 `v0.11.1`，把 `T113` 的两处修复带入发布：WorkBuddy 用户级 MCP 文件更正为 `~/.workbuddy/mcp.json`（`.mcp.json` 只用于插件与专家包），以及受管写入失败时回滚事务、不再遗留 pending 记录。版本号按补丁级递增：没有新增命令或接口。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`。
-- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#6-受管写入与同步)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)。
+- 对应契约：[09. MCP 记忆工具](../09-mcp-memory-tools.md#52-各宿主的注册命令)、[03. 工作流与数据流](../03-workflows-and-dataflows.md#2-受管写入事务)、[05. 验收与交付](../05-validation-and-delivery.md#4-发布前检查)。
 - 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1，Node v26.10.0。
 - 发布前检查：`make test` 全绿，含 `tests/integration`（228.3 秒）、`vitest run` 与两个插件的 Node 测试。
 - 发布：发布准备提交 `24f9a4d`，附注标签 `v0.11.1`。[运行 39554914156](https://github.com/gray0128/memctl/actions/runs/39554914156) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，创建 [Release v0.11.1](https://github.com/gray0128/memctl/releases/tag/v0.11.1)。

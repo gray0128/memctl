@@ -213,3 +213,26 @@
 - 验证命令与结果：`go build ./...`、`go vet ./...` 通过；`go test ./...` 全绿（`tests/integration` 191.8 秒）；`web` 侧 `npm test` 18 个文件 104 项通过；`plugins/dsh` 与 `plugins/pi` 的 Node 单元测试通过。新增测试覆盖 `X01`–`X03`：`TestDeltaThreadIDProvidesTheSessionIdentity`（`tag`、`context --stdin` 与不带 `--sid` 的 `write` 都取得线程 ID，提交含 `Session:` trailer）、`TestDeltaIsDetectedWithoutWritingAnyConfig`、`TestDeltaAdapterStatusReportsNoManagedConfig`、`TestM09InstallStatusReportsMCP` 的 Delta 条目与 `hookio` 的优先级单测。
 - 真实环境复核：本机 `./bin/memctl install --status` 输出 `delta: configured host=delta@0.23.0` 与三条 `step:`，`mcp:` 块为 Delta 输出不支持说明；在本轮 Delta 终端内（未传 `--sid`）执行 `tag --agent delta` 得到 `agent://MacBookPro.local/delta/<thread>`，对探针仓库执行 `write` 后提交说明含该线程的 `Session:` trailer。
 - 未验证与遗留：真实 Delta 会话内的端到端执行（模型是否按 Skill 主动写入、审计视图是否按线程追溯）未验证，本轮验证的是命令与适配器行为；只在 darwin/arm64 与 Delta 0.23.0 上验证；`internal/corpus` 的 Delta 会话蒸馏未实现，原因是 CLI 不暴露工作目录，无法满足先按项目收窄的规则；Delta 无 `end`，会话摘要只在主动 `sync` 时产生。
+
+## T124：发布 `v0.14.0`
+
+- 目标与范围：发布 `v0.14.0`，把 `T123` 的 Delta 宿主接入带入 Release。版本号按次版本递增：新增 `DELTA_CURRENT_THREAD_ID` 会话身份回退、`install` 的 `delta` 适配器与 `mcp:` 状态说明，属向后兼容的能力增量；没有命令参数、接口或数据格式变化。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
+- 对应契约：[13. Delta 宿主接入](../13-delta-integration.md)、[04 §6.1 发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[05 §4 发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3，Node v26.12.1 / npm 11.20.0。
+- 发布前检查：`make test` 全绿（前端 18 个文件 104 项、`plugins/dsh` 与 `plugins/pi` 的 Node 测试、`tests/integration` 194.7 秒）；`scripts/balance-test-shards.sh` 重新生成 `scripts/test-shards.txt`，146 个集成测试全部有分片归属、无遗漏无冗余（新增 `TestDeltaThreadIDProvidesTheSessionIdentity` 与 `TestDeltaAdapterStatusReportsNoManagedConfig`）；`make release` 验证构建链路产出四个候选二进制与两个插件 tarball，本地产物不参与发布校验。
+- 发布：推送附注标签 `v0.14.0`，[运行 41179594733](https://github.com/gray0128/memctl/actions/runs/41179594733) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.14.0](https://github.com/gray0128/memctl/releases/tag/v0.14.0)，发布准备提交 `89b2e1c`。
+- 附件与校验：独立目录 `/tmp/memctl-v0.14.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.14.0`、`commit: 89b2e1c…`、`go1.27.1 darwin/arm64`；产物 `memctl-darwin-arm64 version` 为 `memctl v0.14.0`，`install --status` 输出 `delta: configured host=delta@0.23.0`。
+- 本机升级：`mv` 原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.14.0`，`update --check` 返回 `up to date`，`install --status` 为 `codex@0.160.0`、`pi@1.4.0 plugin@0.5.2`、`dsh@0.2.1-rc.5 plugin@0.5.3`、`delta@0.23.0`。
+- 未验证与遗留：真实 Delta 会话内的端到端执行仍未验证（模型是否按 Skill 主动写入、审计视图是否按线程追溯）；平台范围与上一版相同，仅 darwin/arm64 运行时验证；`internal/corpus` 的 Delta 会话蒸馏仍未实现，其 cwd 方案可行性见 `T125` 与 [14](../14-delta-cwd-feasibility.md)。
+
+## T125：Delta 会话蒸馏的 cwd 方案可行性调研
+
+- 目标与范围：调研 Delta 会话蒸馏能否用「当前工作目录」确定项目归属，输出可行性报告。只做调研与文档，不实现采集器。
+- 结论：cwd 方向可行，但必须先把 cwd 归一化到项目根；直接拿进程 cwd 当项目键会按线程碎片化。
+- 实测证据：本机 Delta 0.23.0 上，同一仓库 `memctl` 的原仓库与两个线程 checkout 得到 3 个不同 `cwdKey`；归一化到项目根后三者收敛为同一 key，且与既有 57 条 digest 记录的 `cwdKey` 逐字节相同。归一化有两条互相独立的规则（`--git-common-dir` 截断与 `--show-toplevel` 截断），3 个真实样本结论一致。另有 202 份现有 digest、6 个 Delta 线程的样本量。
+- 差距：cwd 只解决项目归属。Delta 没有会话日志文件（只有 DeltaDB 与 CLI，官方要求不直读 DB）、`thread show` 单次最多 20 条且无总数字段、assistant `buffer` 混入 `Thought N times…` 与 `Thinking` 段而 `MaxTurnTextBytes = 1024` 可能把正文整段截掉。后两项已在 `T126` 中被实测推翻。
+- 改动：新增 [14. Delta cwd 可行性](../14-delta-cwd-feasibility.md)（结论、实测表格、两阶段推荐方案、6 项风险、`X10`–`X13` 验收建议）；`docs/README.md` 与 `docs/01` 目录清单登记；`docs/12` §2.2 的 `delta` 行改为指向该报告。
+- 对应契约：[14. Delta cwd 可行性](../14-delta-cwd-feasibility.md)、[12 §2.2](../12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)、[13 §7](../13-delta-integration.md#7-未验证与后续)。
+- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3。
+- 验证命令与结果：文档链接与锚点全量校验通过（`docs/14`、`docs/12`、`docs/README.md` 均 0 问题）；实测命令见报告中各表格，均可复跑。
+- 未验证与遗留：样本仅本机 6 个线程，未覆盖 monorepo 与 Windows 路径；采集器未实现；当前线程仍须 `env -u DELTA_CURRENT_THREAD_ID` 才能读出（该判断已由 `T126` 推翻）。
