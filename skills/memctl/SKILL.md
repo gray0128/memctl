@@ -73,7 +73,7 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 IO_FAILED: cannot open repository lock
 ```
 
-这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_write` 工具时改用它；查事实位置用 `memory_entries`，读基线用 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
+这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_write` 工具时改用它；查事实位置用 `memory_entries`，读基线用 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
 Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能改走 MCP，直接在终端执行 `memctl`；会话身份由 Delta 注入的 `DELTA_CURRENT_THREAD_ID` 提供，`write` 不必再手动传 `--sid`。
 

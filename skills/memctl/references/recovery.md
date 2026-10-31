@@ -74,6 +74,6 @@
 
 - `memory_entries` 按关键词、文件、来源与日期检索条目，返回 `revision`、`items`、`total`；它只读，不建索引、不做语义检索。用它定位事实所在文件，再读取该文件。
 - `memory_read` 返回 `filePath`、`fileRevision`、`rawContent`。
-- `memory_write` 参数为 `path`、`base`、`content`；错误通过 `isError` 与 `CODE: message` 返回，处置规则与 CLI 相同。
+- `memory_write` 参数为 `path`、`base`、`content` 与可选的 `sid`；错误通过 `isError` 与 `CODE: message` 返回，处置规则与 CLI 相同。
 - `memory_write` 不创建缺失的父目录；写入新路径前确认目录已存在。
 - 通道是否可用、某宿主的注册命令：`memctl install --status` 末尾的 `mcp:` 块，或本机 Web UI 的「客户端接入」视图。
