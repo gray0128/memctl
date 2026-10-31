@@ -250,3 +250,16 @@
 - 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0（CLI 契约 `min=8,max=8`），Go 1.27.3。
 - 验证命令与结果：文档链接与锚点全量校验（38 个 Markdown 文件、含根 `README.md` 与 Skill）0 问题；`git diff --check` 无空白与冲突标记；表内数字均可复跑（`delta thread watch <id> --json`、`delta thread show <id> --format messages/summarize/full --json`、`delta thread list/search/worktree list/tree`、`git rev-parse --path-format=absolute --git-common-dir --show-toplevel`）；`go test ./...` 未重跑，本轮无代码变更。
 - 未验证与遗留：采集器未实现；只在 darwin/arm64 与 Delta 0.23.0 实测，样本为本机 8 个线程（7 个有用户消息），未覆盖共享线程、子智能体线程、归档线程与 Cloud Runner 线程；watch 在本机登录态下验证，未在未登录环境复测；调研期间线程 5 的 watch 输出从 6.2 MB 增长到 7.0 MB（8 MiB 上限的 85%），上限值与长线程的取舍列入实施前待定项。
+
+## T127：实现 Delta 会话蒸馏适配
+
+- 目标与范围：按 [15](../15-delta-corpus-adaptation.md) 的两步顺序实现 Delta 会话蒸馏适配。第一步把进程 cwd 归一化到项目根；第二步新增 Delta 采集器并接入 `dream --prepare`。不改 CLI 参数、数据格式与既有宿主行为。
+- 第一步：`internal/corpus/corpus.go` 新增 `ResolveProjectRoot(ctx, run, cwd)`，调 `git rev-parse --path-format=absolute --git-common-dir --show-toplevel`，按 `/.delta/clones/` 与 `/.delta/worktrees/` 两条规则截断，候选路径不存在或 Git 输出形状异常时原样返回。调用点是 `dream.PrepareLocal` 与 `cli.collectCorpus`；`--path-format=absolute` 不可省（普通仓库子目录下 `--git-common-dir` 返回相对路径，两条规则都不命中）。
+- 第二步：新增 `internal/corpus/delta.go`（`parseDelta`、`CollectDelta`、`DeltaRequest`、`DeltaCollectBudget = 4 s`）、`delta_cli.go`（`DeltaCLIRunner`、`deltaStream`）、`delta_proc_unix.go`/`delta_proc_other.go`（进程组，与 `internal/git` 同一做法）；`parsers` 注册 `delta`；`dream.Service` 新增可注入 `DeltaRunner`，`collectCurrentSession` 在 `agent == "delta"` 时走流式路径。`Collector.Collect` 的摘要组装抽成 `digestFrom`，文件与流两条入口共用同一段限额与脱敏逻辑。
+- 回合规则：同回合保留最长的 `agent_message`，等长取最晚；未读到 `live` 标记的流判为不完整，不写缓存。工具签名取 `name: <rawInput 的 command/path/...> (<status>)`，`rawOutput`/`content` 丢弃。
+- 缺陷修复：子进程派生的孙进程持有 stdout 管道导致在 `live` 前中断时阻塞 30 秒，改为独立进程组并在超时向整组发 SIGKILL，并在 `X14` 中增加耗时上限断言。
+- 验收：`X10`–`X14` 全部通过（`TestResolveProjectRootCoversX11` 覆盖 `X11` 的九个分支，`X10`/`X12` 用真实 `git worktree` 布局，`X13`/`X14` 用桩可执行文件端到端跑 `dream --prepare`）。
+- 对应契约：[15. Delta 会话蒸馏适配](../15-delta-corpus-adaptation.md)、[05 核心测试矩阵](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3。
+- 验证命令与结果：`go build ./...`、`go vet ./...` 通过；`make test` 全绿；真机 Delta 0.23.0 终端内采集当前线程 2.13 秒 / 14 回合、无残留进程。
+- 未验证与遗留：仅在 darwin/arm64 与 Delta 0.23.0 实测；共享线程、子智能体线程、归档线程与 Cloud Runner 线程未复验；长线程余量待真实数据再定。

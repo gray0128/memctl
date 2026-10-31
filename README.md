@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理（在记忆仓库的 GitHub Actions 中运行）。
 
-当前版本 `v0.14.0`。逐版改动见 [开发状态](./docs/STATUS.md)，发布产物见 [Releases](https://github.com/gray0128/memctl/releases)。
+当前版本 `v0.15.0`。逐版改动见 [开发状态](./docs/STATUS.md)，发布产物见 [Releases](https://github.com/gray0128/memctl/releases)。
 
 运行时依赖系统 Git；Node.js 仅用于前端构建；Dreaming 整理在记忆仓库远端的 GitHub Actions 中调用模型提供商，本地不读取模型凭据。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
