@@ -263,3 +263,14 @@
 - 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3。
 - 验证命令与结果：`go build ./...`、`go vet ./...` 通过；`make test` 全绿；真机 Delta 0.23.0 终端内采集当前线程 2.13 秒 / 14 回合、无残留进程。
 - 未验证与遗留：仅在 darwin/arm64 与 Delta 0.23.0 实测；共享线程、子智能体线程、归档线程与 Cloud Runner 线程未复验；长线程余量待真实数据再定。
+
+## T128：发布 `v0.15.0`
+
+- 目标与范围：发布 `v0.15.0`，带入 `T127` 的 Delta 会话蒸馏适配与 `skills/memctl/` 的 MCP 规范同步。版本号按次版本递增：新增 Delta 当前线程采集（`ResolveProjectRoot` 归一化与流式采集器），属于向后兼容的能力增量；同步 Skill 中 `memory_write` 的 `sid` 参数说明；没有破坏性命令、接口或数据格式变化。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
+- 对应契约：[15. Delta 会话蒸馏适配](../15-delta-corpus-adaptation.md)、[04 §6.1 发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[05 §4 发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[09. MCP 记忆工具 §4.2](../09-mcp-memory-tools.md#42-会话身份)。
+- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3，Node v26.12.1 / npm 11.20.0。
+- 发布前检查：`make test` 全绿（前端 18 个文件 104 项、`plugins/dsh` 与 `plugins/pi` 的 Node 测试、Go 全包与 `tests/integration` 203.8 秒）；`scripts/test-shards.txt` 153 项测试覆盖完整。发布准备提交 `39d1f8a`。
+- 发布：推送附注标签 `v0.15.0`，[运行 41201892524](https://github.com/gray0128/memctl/actions/runs/41201892524) 的 `verify`、`build` 与 `publish` 全部成功，创建 [Release v0.15.0](https://github.com/gray0128/memctl/releases/tag/v0.15.0)。
+- 附件与校验：独立目录 `/tmp/memctl-v0.15.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.15.0`、`commit: 39d1f8a…`、`go1.27.1 darwin/arm64`；产物 `memctl-darwin-arm64 version` 为 `memctl v0.15.0`，`install --status` 正常输出。
+- 本机升级：`mv` 原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.15.0`，`update --check` 返回 `up to date`。
+- 未验证与遗留：共享线程、子智能体线程、归档线程与 Cloud Runner 线程未复验；长线程余量待真实数据再定。
