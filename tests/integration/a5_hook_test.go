@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -396,4 +397,63 @@ func readSessionRecord(t *testing.T, home, repo, agent, sid string) state.Sessio
 		t.Fatalf("decode session record: %v", err)
 	}
 	return record
+}
+
+// TestDeltaThreadIDProvidesTheSessionIdentity covers the Delta host: it has no
+// lifecycle hook, so the only session identity is DELTA_CURRENT_THREAD_ID,
+// which Delta injects into every command the agent runs. The variable must feed
+// the same provenance path as the DSH variables: a bare `tag` resolves, and a
+// managed write records the thread as the Session trailer. See
+// docs/13-delta-integration.md section 4.
+func TestDeltaThreadIDProvidesTheSessionIdentity(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	home, repo, baseEnv := a5LocalRepo(t, bin, root, "home")
+	thread := "delta-thread-abc"
+	env := envWith(baseEnv, "AGENT_MEMORY_SID=", "DELTA_CURRENT_THREAD_ID="+thread)
+
+	tag := runMemctlStdin(t, bin, home, env, "", "tag", "--agent", "delta")
+	if tag.code != 0 {
+		t.Fatalf("tag: code=%d stderr=%q", tag.code, tag.stderr)
+	}
+	if want := "agent://test-device/delta/" + thread; !strings.Contains(tag.stdout, want) {
+		t.Fatalf("tag = %q, want %q", tag.stdout, want)
+	}
+
+	// The context body must report the injected thread instead of an
+	// unavailable source tag. The agent name comes from AGENT_MEMORY_AGENT of
+	// the harness, so only the session segment proves the Delta fallback.
+	context := runMemctlStdin(t, bin, home, env, `{}`, "context", "--json", "--stdin")
+	if context.code != 0 {
+		t.Fatalf("context: code=%d stderr=%q", context.code, context.stderr)
+	}
+	body := decodeEnvelope(t, context.stdout).HookSpecificOutput.AdditionalContext
+	if want := "source tag: agent://test-device/test-agent/" + thread + "\n"; !strings.Contains(body, want) {
+		t.Fatalf("context did not report %q:\n%s", want, body)
+	}
+
+	// A managed write without --sid must carry the thread into the commit
+	// trailer, which is what the audit view reads.
+	read := runMemctlStdin(t, bin, home, env, "", "read", "MEMORY.md", "--json")
+	if read.code != 0 {
+		t.Fatalf("read: code=%d stderr=%q", read.code, read.stderr)
+	}
+	var payload writeReadPayload
+	if err := json.Unmarshal([]byte(read.stdout), &payload); err != nil {
+		t.Fatalf("decode read: %v\n%s", err, read.stdout)
+	}
+	write := runMemctlStdin(t, bin, home, env, "# Memory\n\n## Index\n- probe\n",
+		"write", "MEMORY.md", "--base", payload.FileRevision, "--stdin", "--agent", "delta")
+	if write.code != 0 {
+		t.Fatalf("write: code=%d stderr=%q", write.code, write.stderr)
+	}
+	log := exec.Command("git", "-C", repo, "log", "-1", "--format=%B")
+	log.Env = os.Environ()
+	out, err := log.Output()
+	if err != nil {
+		t.Fatalf("git log: %v", err)
+	}
+	if !strings.Contains(string(out), "Session: "+thread) {
+		t.Fatalf("commit trailer is missing the Delta thread:\n%s", out)
+	}
 }

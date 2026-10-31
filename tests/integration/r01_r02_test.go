@@ -73,6 +73,9 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"memctl dream --prepare --json",
 		"only persist a `ready` proposal",
 		"Do not apply a proposal yourself",
+		// The session id fallback is documented inline so an agent on a host
+		// without a lifecycle hook still records provenance.
+		"DELTA_CURRENT_THREAD_ID",
 		"# Memory",
 	} {
 		if !strings.Contains(start.stdout, want) {

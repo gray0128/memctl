@@ -176,6 +176,7 @@ Agent（模型）
 | DSH | profile 的 `cordis.patch.yml` | 用 `insert:` 追加 `@deepseek-ai/dsh-mcp-client` stdio 条目，`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","dsh"]` | 该包随 DSH 应用分发，profile 无需安装或声明依赖；必须用 `insert:`，见下 |
 | CodeBuddy | `~/.codebuddy/.mcp.json` | `codebuddy mcp add --scope user memctl -- <memctl> mcp --agent codebuddy` | 用户级文件是带点的 `.mcp.json`；文件里由宿主补 `"type": "stdio"`，无需手工编辑 |
 | WorkBuddy | `~/.workbuddy/mcp.json` | 无 CLI，手工添加 stdio 条目：`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","workbuddy"]` | 用户级文件名是 `mcp.json`；`.mcp.json` 只被插件与专家包读取。改完需重启应用或在自定义连接器入口点「信任」 |
+| Delta | — | 不适用（本地 stdio） | Delta 只接受远端 HTTPS MCP server，本地 stdio 无法注册；Delta 不对 Agent 施加沙箱，写入改用 CLI，见 [13. Delta 宿主接入](./13-delta-integration.md#1-结论) |
 
 把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；宿主无法按会话注入时省略该参数，改由 `memory_write` 的 `sid` 参数携带，两者都没有时提交只记录 `Agent` 与 `Device`。
 

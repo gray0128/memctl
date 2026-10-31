@@ -107,6 +107,34 @@ func TestResolveSIDPriority(t *testing.T) {
 	if got := ResolveSID("", shell, Input{}); got != "session-shell" {
 		t.Fatalf("DSH session environment was not used: %q", got)
 	}
+
+	// Delta injects its thread id into every command the agent runs and has no
+	// lifecycle hook, so this variable is its only session identity. It must
+	// lose to the DSH variables and win over the payload, like the others.
+	delta := func(key string) string {
+		if key == "DELTA_CURRENT_THREAD_ID" {
+			return "delta-thread"
+		}
+		return ""
+	}
+	if got := ResolveSID("", delta, Input{}); got != "delta-thread" {
+		t.Fatalf("Delta thread environment was not used: %q", got)
+	}
+	if got := ResolveSID("", delta, Input{SID: "payload"}); got != "delta-thread" {
+		t.Fatalf("Delta thread environment did not beat the payload: %q", got)
+	}
+	if got := ResolveSID("", func(key string) string {
+		if key == "DSH_HOOK_SESSION_ID" {
+			return "dsh-session"
+		}
+		if key == "DELTA_CURRENT_THREAD_ID" {
+			return "delta-thread"
+		}
+		return ""
+	}, Input{}); got != "dsh-session" {
+		t.Fatalf("Delta thread environment beat the DSH variable: %q", got)
+	}
+
 	if got := ResolveSID("", func(string) string { return "" }, Input{}); got != "" {
 		t.Fatalf("empty identity resolved to %q, want empty", got)
 	}

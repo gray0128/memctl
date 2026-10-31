@@ -130,9 +130,10 @@ pi 的原生插件 `memctl-pi` 通过 `pi install npm:memctl-pi@<version>` 或 `
 | `AGENT_MEMORY_SID` | 无默认值；由宿主或 wrap 传递 |
 | `DSH_HOOK_SESSION_ID` | dsh Hook 子进程的会话 ID；优先级高于 `DSH_SESSION_ID` |
 | `DSH_SESSION_ID` | dsh 导出到会话 shell 的会话 ID；MCP 与 Hook 子进程不继承该变量 |
+| `DELTA_CURRENT_THREAD_ID` | Delta 注入到 Agent 每条命令的线程 ID；Delta 没有生命周期 Hook，这是该宿主唯一的会话身份来源 |
 | `MEMCTL_LANG` | 无默认值；帮助语言 `en` 或 `zh`，接受带地区或编码的写法；优先于 `LC_ALL`/`LC_MESSAGES`/`LANG`，仅影响帮助文本 |
 
-SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → `DSH_SESSION_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。其他宿主变量由 adapter 显式映射到 `--sid`，例如旧 `pi-yaml-hooks` 接入的 `PI_SESSION_ID`；原生 `memctl-pi` 直接传 `ctx.sessionManager.getSessionId()`，不读取该环境变量。
+SID 优先级为 `--sid` → `AGENT_MEMORY_SID` → `DSH_HOOK_SESSION_ID` → `DSH_SESSION_ID` → `DELTA_CURRENT_THREAD_ID` → 有 `--stdin` 时 JSON 的 `session_id/sessionId/sessionID/conversationId`。空值跳过，非字符串返回协议错误。宿主私有变量按固定顺序参与回退，不按宿主探测结果分支：同一进程同时设置多个变量时，顺序决定结果。其他宿主变量由 adapter 显式映射到 `--sid`，例如旧 `pi-yaml-hooks` 接入的 `PI_SESSION_ID`；原生 `memctl-pi` 直接传 `ctx.sessionManager.getSessionId()`，不读取该环境变量。Delta 的线程 ID 不参与 Agent 名称推断，也不使用可改的 `DELTA_THREAD_TITLE`。完整接入面见 [13. Delta 宿主接入](./13-delta-integration.md#4-会话身份)。
 
 缺少 SID 时，start/context 仍可只读注入，但来源标签标为不可用，不做跨进程去重；`tag` 返回错误。受管写入允许人工或未知来源，不伪造 source。`wrap` 可以生成随机会话 ID，并向其子进程导出 `AGENT_MEMORY_SID`、`AGENT_MEMORY_AGENT` 和规范化仓库路径。
 

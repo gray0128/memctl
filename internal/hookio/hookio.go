@@ -125,15 +125,22 @@ func firstStringField(fields map[string]json.RawMessage, keys []string) (string,
 }
 
 // ResolveSID returns the first non-empty session id among the explicit flag,
-// AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID and the payload. An
-// empty result means no stable session identity is available, so callers must
-// not deduplicate across processes or fabricate a source.
+// AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID,
+// DELTA_CURRENT_THREAD_ID and the payload. An empty result means no stable
+// session identity is available, so callers must not deduplicate across
+// processes or fabricate a source.
+//
+// DELTA_CURRENT_THREAD_ID is the thread Delta injects into every command the
+// agent runs in a Delta terminal. Delta has no lifecycle hook, so this variable
+// is the only session identity available there; it sits with the other host
+// variables, ahead of the payload. See docs/13-delta-integration.md section 4.
 func ResolveSID(explicit string, getenv func(string) string, in Input) string {
 	for _, candidate := range []string{
 		explicit,
 		getenv("AGENT_MEMORY_SID"),
 		getenv("DSH_HOOK_SESSION_ID"),
 		getenv("DSH_SESSION_ID"),
+		getenv("DELTA_CURRENT_THREAD_ID"),
 		in.SID,
 	} {
 		if candidate != "" {

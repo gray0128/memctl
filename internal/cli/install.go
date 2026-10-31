@@ -161,6 +161,11 @@ func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 	if plan.Reason != "" {
 		fmt.Fprintf(stdout, "  note: %s\n", plan.Reason)
 	}
+	// A host with no managed artifact still has manual steps the operator has
+	// to take; they are reported and never executed.
+	for _, instruction := range plan.Instructions {
+		fmt.Fprintf(stdout, "  step: %s\n", instruction)
+	}
 	printDshHints(stdout, plan)
 	printPiHints(stdout, plan)
 	for _, artifact := range plan.Artifacts {

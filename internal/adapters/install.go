@@ -63,10 +63,13 @@ type InstallPlan struct {
 	// installed. It selects the AdapterStatus capabilities and suppresses the
 	// legacy configuration plan.
 	NativePluginDetected bool
-	Status               string
-	Applicable           bool
-	Reason               string
-	Artifacts            []ArtifactPlan
+	// Instructions are the manual steps of a host that manages no artifact.
+	// They are reported, never executed.
+	Instructions []string
+	Status       string
+	Applicable   bool
+	Reason       string
+	Artifacts    []ArtifactPlan
 }
 
 // Plan builds the install plan for one adapter. It only reads the current
@@ -105,6 +108,7 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		HostVersion:          det.hostVersion,
 		PluginVersion:        det.pluginVersion,
 		NativePluginDetected: det.nativeFound,
+		Instructions:         spec.Instructions,
 	}
 	if det.nativeFound {
 		plan.PluginVersion = det.nativeVersion
@@ -212,6 +216,13 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		plan.Status = StatusUnsupported
 		plan.Reason = fmt.Sprintf("cannot parse the version reported by %s", det.hostCommand)
 		plan.Applicable = false
+	case spec.HostMinVersion != "" && det.hostFound && versionLessThan(det.hostVersion, spec.HostMinVersion):
+		// Hosts with a native plugin check their minimum version inside their own
+		// branch, because the plugin state decides the message. This case covers
+		// the hosts without one, such as delta.
+		plan.Status = StatusNeedsAttention
+		plan.Reason = fmt.Sprintf("%s %s is older than the verified minimum %s", spec.Agent, det.hostVersion, spec.HostMinVersion)
+		plan.Applicable = false
 	case det.pluginMissing():
 		plan.Status = StatusNeedsAttention
 		plan.Reason = fmt.Sprintf("plugin %s is required but not installed", spec.Plugin.Name)
@@ -224,6 +235,16 @@ func (env Env) planSpec(spec AdapterSpec) (InstallPlan, error) {
 		plan.Status = StatusNotInstalled
 		plan.Reason = hostMissingReason(spec)
 		plan.Applicable = false
+	case len(spec.Artifacts) == 0:
+		// A host with no managed configuration is detected but never written:
+		// reporting it as not_installed would suggest a missing install step
+		// that does not exist. The Reason carries the supported path.
+		plan.Status = StatusConfigured
+		plan.Applicable = false
+		plan.Reason = spec.NoConfigReason
+		if plan.Reason == "" {
+			plan.Reason = "detected; this host needs no managed configuration"
+		}
 	case allSkip:
 		plan.Status = StatusConfigured
 		plan.Applicable = false

@@ -46,6 +46,15 @@ func Registrations(memctl string) []Registration {
 			Agent:       "workbuddy",
 			Instruction: `add a stdio entry named "memctl" with command "` + memctl + `" and args ["mcp","--agent","workbuddy"] to ~/.workbuddy/mcp.json; WorkBuddy reads the user-scope mcp.json (not .mcp.json, which is plugin scope), has no mcp add command, and only loads it after a restart or trusting it in the app`,
 		},
+		{
+			// Delta connects only to remote HTTPS MCP servers with OAuth 2.1 or
+			// no authentication; a local stdio server cannot be registered at
+			// all. The entry exists so the status output says so instead of
+			// omitting the host and leaving the operator to try. Delta also does
+			// not sandbox the agent, so the CLI is the supported write path.
+			Agent:       "delta",
+			Instruction: "not supported: Delta connects only to remote HTTPS MCP servers, so do not register this stdio server; run memctl in the agent terminal instead (Delta does not sandbox the agent)",
+		},
 	}
 }
 

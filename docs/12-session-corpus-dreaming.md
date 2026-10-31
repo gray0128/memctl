@@ -64,6 +64,7 @@ flowchart TB
 | `workbuddy` | Hook stdin 的 `"transcript_path"`（headless sidecar 已验证 `SessionStart`/`Stop` 采集） | `$HOME/.workbuddy/projects/*/*.jsonl`（目录转义与 `codebuddy` 相同） | 与 `codebuddy` 共用格式；新会话首行可能是 `type="session-meta"`，只提供 `sessionId`、不含 `cwd`，不作为对话内容 | 已核对（本机 WorkBuddy 日志与 sidecar 会话） |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
 | `commandcode`、`grok` | Hook stdin `"transcript_path"` 或 `--transcript <path>` | 不扫描：`$HOME/.commandcode/projects`、`$HOME/.grok/projects` 等目录存在，但字段结构未核对 | 不解析：`H-2b` 只实现「探测失败静默跳过」，不打开这些目录，也不猜测字段 | 未核对格式，静默跳过 |
+| `delta` | 无 Hook；`DELTA_CURRENT_THREAD_ID` 只能提供会话 ID，不提供日志路径 | 不扫描：`delta thread list`/`thread show` 不暴露工作目录，无法先按项目收窄；当前线程需绕开 `DELTA_CURRENT_THREAD_ID` 才能读取，且官方要求不直接读写 DeltaDB | 未实现：要支持需先定义按线程筛选项目的替代规则，见 [13. Delta 宿主接入 §7](./13-delta-integration.md#7-未验证与后续) | 未支持，静默跳过 |
 
 `dsh` 的会话记录是 zstd 压缩流，标准库不提供 zstd 解码。`H-2a` 因此引入 `github.com/klauspost/compress/zstd`（v1.20.3，纯 Go、无 cgo，BSD-3-Clause），由 `internal/corpus` 直接解码，不由 `memctl-dsh` 插件代劳：会话文件存在 `v3`、`v4` 与未分片三种形态，选择高版本、定位目录与判断可读性都要读取首行元数据，这些逻辑放在 Go 侧只有一处实现；放进插件则要在 Node 侧再实现一遍同样的版本选择，并让插件为每次 `sync` 多传一份明文副本。
 

@@ -52,8 +52,18 @@ type AdapterSpec struct {
 	// against. It is used for hosts such as pi that have no host-side engine
 	// check. An empty value accepts every parseable version.
 	HostMinVersion string
-	// Artifacts are the configuration files memctl manages for this host.
+	// Artifacts are the configuration files memctl manages for this host. An
+	// empty list is valid for a host with no lifecycle hook: the plan then only
+	// reports detection and the Reason explains the supported path.
 	Artifacts []ArtifactSpec
+	// NoConfigReason is the plan reason of a host with no managed artifact. It
+	// is what the CLI and the Web UI both show, so the supported path has to be
+	// clear from this sentence alone.
+	NoConfigReason string
+	// Instructions are the manual, read-only steps a host without managed
+	// artifacts needs. They are printed under the plan and never executed; see
+	// docs/13-delta-integration.md section 3.
+	Instructions []string
 }
 
 // PluginSpec locates the JSON manifest of a host plugin.
@@ -262,6 +272,26 @@ var registry = []AdapterSpec{
 			Capability:   CapabilityHooks,
 			Asset:        "dsh/hooks.json",
 		}},
+	},
+	{
+		// Delta ships no lifecycle hook: it neither runs commands at session
+		// start, per turn or at session end, nor accepts a local stdio MCP
+		// server. What it does provide is an unsandboxed agent, so the agent
+		// calls the memctl CLI directly, and DELTA_CURRENT_THREAD_ID carries the
+		// session identity. The adapter therefore manages no file and only
+		// reports detection plus the manual steps. See
+		// docs/13-delta-integration.md.
+		Agent:        "delta",
+		HostCommands: []string{"delta"},
+		// Delta 0.23.0 is the lowest version the CLI contract probe and the
+		// injected environment variables were verified on.
+		HostMinVersion: "0.23.0",
+		NoConfigReason: "no lifecycle hook and no local MCP support; the agent runs memctl in its terminal",
+		Instructions: []string{
+			"no lifecycle hook: context injection and per-turn sync are not automatic",
+			`install the Skill with npx skills add gray0128/memctl -g -s memctl -a zed -y so Delta loads it from ~/.agents/skills`,
+			"the agent writes memory by running memctl in its terminal; do not route it through MCP, Delta connects only to remote HTTPS MCP servers",
+		},
 	},
 }
 

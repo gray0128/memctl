@@ -206,7 +206,8 @@
 | I08 | pi 安装计划与提示 | 原生缺失且无旧条目时不写 `hooks.yaml`，输出 npm 与本地目录提示；旧条目保留并标记 legacy；旧条目存在但插件缺失时 `needs_attention` |
 | I09 | pi 包安装 | `npm pack` 文件清单正确；隔离 `PI_CODING_AGENT_DIR` 下本地目录安装、`pi list`、卸载可用；无依赖和安装脚本 |
 | I10 | pi 版本与降级 | 低于下界或无法解析的 pi 版本不被报告为 `configured`；`sections` 缺失时回退，不静默失效 |
-| M01–M12 | MCP 记忆工具：协议、工具、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
+| `M01–M12` | MCP 记忆工具：协议、工具、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
+| `X01–X03` | Delta 宿主：无 Hook 时的会话身份与适配器输出 | 逐项定义见 [Delta 宿主接入的验收](./13-delta-integration.md#6-验收) |
 | R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md；默认指引含条目失效的判定规则（状态型改写、事件型追加、禁止 changelog）、批量整理走 Dreaming 提案的规定（`--prepare` → `--propose`，确认前不改主库、不自行 `--apply`）与跨主题互链规则（链接目标可以是任意受管文件，不限于 `MEMORY.md`） |
 | R02 | 无 Git、Dreaming 前置条件缺失（未知提供商、无远端或缺少工作流）、凭据环境缺失 | 分别给出针对性错误；不影响无关功能 |
 | R03 | 干净检出后使用已记录工具链构建，执行 `version/help` 与未知命令 | 实际构建与测试入口可用；version/help 不访问仓库、不要求 Git 或 Node.js；未知命令返回用法错误，无占位成功结果 |
@@ -236,7 +237,7 @@
 
 报告 p50、p95、最大值及清理时间。`version/help < 5ms`、无竞争派生路径 `< 50ms` 是待测优化目标；达不到时如实记录并调整目标，不省略一致性检查。完整同步遵循业务预算，网络和故障清理不纳入毫秒级宣传。
 
-每个 adapter 记录：宿主版本、插件版本、配置格式、事件映射、SID 来源、输入字段、输出 envelope、上下文是否确实注入、stdout 上限、timeout、进程清理方式、实测命令与结果。候选列表为 Claude Code、CodeBuddy、Codex、Grok、Antigravity、Command Code、WorkBuddy、OpenCode、pi、dsh；当前方案不将其统一标为已支持，CodeBuddy 与 WorkBuddy 的 hooks 写入已实测触发，桌面应用内的 `SessionEnd` 与 MCP 配置仍待验证。
+每个 adapter 记录：宿主版本、插件版本、配置格式、事件映射、SID 来源、输入字段、输出 envelope、上下文是否确实注入、stdout 上限、timeout、进程清理方式、实测命令与结果。候选列表为 Claude Code、CodeBuddy、Codex、Grok、Antigravity、Command Code、WorkBuddy、OpenCode、pi、dsh 与 Delta；当前方案不将其统一标为已支持，CodeBuddy 与 WorkBuddy 的 hooks 写入已实测触发，桌面应用内的 `SessionEnd` 与 MCP 配置仍待验证。Delta 没有 Hook、事件映射与 envelope，只记录版本探测、`DELTA_CURRENT_THREAD_ID` 来源与不写文件的结论，见 [13. Delta 宿主接入](./13-delta-integration.md#3-选定方案)。
 
 平台矩阵至少覆盖目标 macOS arm64/amd64、Linux amd64、Windows amd64。编译、文件锁、路径语义与 Git 生命周期分项记录；没有测试结果的项保持未验证。
 

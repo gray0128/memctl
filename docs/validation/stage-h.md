@@ -192,3 +192,13 @@
 - 验证时间与环境：2026-10-21，darwin/arm64，Go 1.27.1。
 - 验证命令与结果：`go test ./tests/integration -run TestR01EmbeddedInstructionsFromEmptyHome -count=1` 通过（3.7 秒）；`make test` 全绿（`tests/integration` 254.6 秒，前端与两个插件测试通过）。
 - 未验证与遗留：断言只证明注入文本包含关键句，模型是否始终遵守仍依赖运行时判断；本机 `~/.agents/skills/memctl` 仍是 2026-10-19 的旧版（无 §6），需重新安装后 Skill 侧指引才会与仓库一致。该记录在提交 `82ce51b` 中被覆盖，`T122` 补回归档。
+
+## T122：允许并引导主题文件之间的 `[[path]]` 互链
+
+- 目标与范围：让 Agent 在生成新记忆时知道「可以且应该」建立主题文件之间的 `[[path]]` 链接。此前所有指引只说「在索引中增加一行」，读下来等价于「只能从 `MEMORY.md` 指向主题文件」，所以图谱长期是放射状。本轮只改契约文案与 prompt，不改解析、可达性或校验逻辑。
+- 改动：`docs/10` §1 增加跨主题互链结论、§3.2 第 3 条写明两个主题文件之间同样不得各存一份、§6 增加两条验收场景；`docs/11` 阶段 B 的「格式与安全边界」加入互链要求；`docs/12` §2.3 说明互链由 Agent 在 `files[]` 中给出、Go 不代生成也不把互链当作孤立标记；`docs/05` 的 `R01` 增加互链规则；`internal/assets/INSTRUCTIONS.md` 的 Writing 段补充「A link target is any managed file, not only `MEMORY.md`」；`skills/memctl/SKILL.md` §2 与 `references/memory-conventions.md` 同步；`internal/dream/worker.go` 的 stage B prompt 增加互链规则、stage C prompt 增加「不得删除既有的主题互链」。
+- 对应契约：[10. 记忆更新与过期 §3.2](./10-memory-lifecycle.md#32-更新规则)、[11. GitHub Actions Dreaming §2.3](./11-github-actions-dreaming.md#23-代码控制的多步结构化调用流程)、[12. 跨会话新记忆提炼 §2.3](./12-session-corpus-dreaming.md#23-本地当前-agent-交互式整理协议prepare--propose--apply)、[02 §1.2 可达性定义](./02-domain-models-and-contracts.md#12-格式保真)、[05 的 `R01`](./05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.3。
+- 验证命令与结果：`go test ./...` 全绿（`internal/app` 75.9 秒、`internal/dream` 33.8 秒、`tests/integration` 227.1 秒）；`go vet` 通过。写盘实测：在临时仓库让 `notes/b.md` 链接 `notes/a.md` 后 `dream --propose` 返回 `ready`，证明互链不被结构守卫拦截。
+- 本机记忆库：`~/memory` 的 6 个笔记文件各补一条指向相关主题的 `[[path]]`，链接总数从 11 增至 19；写入经受管事务提交，`doctor` 无新增诊断。
+- 未验证与遗留：新 prompt 与内嵌指引要随下一次二进制发布才进入宿主注入与远端 worker；本机 `~/.agents/skills/memctl` 仍是旧副本，需重新安装；互链仍是建议而非硬约束，没有新增「缺少互链」类诊断（本轮按用户选择不做）。

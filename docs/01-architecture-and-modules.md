@@ -144,6 +144,7 @@ memctl/
     10-memory-lifecycle.md   # 记忆更新、过期与时间线规则
     11-github-actions-dreaming.md # 基于 GitHub Actions 的 Dreaming 远端整理方案
     12-session-corpus-dreaming.md # 跨会话新记忆提炼（本地当前 Agent 交互式整理方案）
+    13-delta-integration.md # Delta 宿主接入（无 Hook 宿主的接入面与适配器契约）
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配

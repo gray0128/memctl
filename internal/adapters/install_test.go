@@ -843,3 +843,62 @@ func TestWorkBuddyIsDetectedByItsStateDirectory(t *testing.T) {
 		t.Fatalf("workbuddy hooks missing:\n%s", data)
 	}
 }
+
+// TestDeltaIsDetectedWithoutWritingAnyConfig covers the host with no lifecycle
+// hook. Delta exposes no session hook and no local stdio MCP server, so the
+// adapter must manage no file at all: a detected host is reported as configured
+// with its manual steps, never as not_installed, and an older host is reported
+// as needs_attention instead of silently accepted. See
+// docs/13-delta-integration.md section 3.
+func TestDeltaIsDetectedWithoutWritingAnyConfig(t *testing.T) {
+	env, home := fakeEnv(t, nil, nil)
+
+	missing, err := env.Plan("delta")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if missing.Status != StatusNotInstalled || missing.Reason != "host executable not found" {
+		t.Fatalf("plan without the host = %+v", missing)
+	}
+
+	env, home = fakeEnv(t, map[string]string{"delta": "/usr/local/bin/delta"},
+		map[string]string{"/usr/local/bin/delta": "delta 0.23.0\n"})
+	plan, err := env.Plan("delta")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if !plan.HostFound || plan.HostVersion != "0.23.0" {
+		t.Fatalf("detected delta host = %+v", plan)
+	}
+	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("delta plan = %+v, want configured without artifacts", plan)
+	}
+	if len(plan.Instructions) == 0 {
+		t.Fatal("delta plan must carry the manual steps")
+	}
+	result, err := env.Apply(plan)
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if len(result.Applied) != 0 || len(result.Manual) != 0 {
+		t.Fatalf("apply wrote something for delta: %+v", result)
+	}
+	// No managed file means nothing may appear under the home directory.
+	entries, err := os.ReadDir(home)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read home: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("install delta created files: %v", entries)
+	}
+
+	oldEnv, _ := fakeEnv(t, map[string]string{"delta": "/usr/local/bin/delta"},
+		map[string]string{"/usr/local/bin/delta": "delta 0.20.0\n"})
+	old, err := oldEnv.Plan("delta")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if old.Status != StatusNeedsAttention || old.Applicable || !strings.Contains(old.Reason, "0.23.0") {
+		t.Fatalf("old delta plan = %+v, want needs_attention naming the minimum", old)
+	}
+}

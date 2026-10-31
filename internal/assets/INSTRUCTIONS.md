@@ -30,9 +30,14 @@ Report it to the user instead.
   the revision you read as the baseline:
   `memctl write <path> --base <fileRevision> --stdin --agent <agent> --sid <sid>`.
   A stale baseline is rejected instead of overwriting another update.
+- `--sid` can be omitted when the host exports a session id: `AGENT_MEMORY_SID`,
+  `DSH_HOOK_SESSION_ID`, `DSH_SESSION_ID` or `DELTA_CURRENT_THREAD_ID` is read
+  automatically. Delta has no lifecycle hook, so its thread id is the only
+  session identity it provides; the CLI still works there because Delta does not
+  sandbox the agent.
 - The `<tag>` is the source tag printed in this context. If it is reported as
   unavailable, do not invent one; leave the source off or ask the user.
-- When the host exposes the memory tools as MCP calls, pass the session id — the
+- **When the host exposes the memory tools as MCP calls, pass the session id — the
   last segment of that tag — as `sid` to `memory_write`. A stdio MCP server
   cannot observe the session any other way, so the commit records none without
   it.

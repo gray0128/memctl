@@ -52,7 +52,7 @@ pi list
 
 `memctl install --status` 探测 npm、状态目录与 pi settings 中的本地包；只有 `hooks.yaml` 仍有 `agent-memory-*` 条目时才把旧 `pi-yaml-hooks` 路径视为在用，且不会自动创建或删除这些条目。详见 [pi 专用插件](./docs/08-pi-plugin.md)。
 
-受沙箱限制的宿主要让 Agent 主动写记忆，需要 `memctl mcp`：一个在标准输入输出上运行 MCP 的工具进程，由宿主启动，因此不受 Agent 的 bash 沙箱限制：
+受沙箱限制的宿主要让 Agent 主动写记忆，需要 `memctl mcp`：一个在标准输入输出上运行 MCP 的工具进程，由宿主启动，因此不受 Agent 的 bash 沙箱限制。Delta 没有沙箱，也不能注册本地 stdio server，因此不使用它，直接在终端执行 `memctl`：
 
 ```bash
 ./bin/memctl install --status     # 末尾输出 mcp: 块与每个宿主的注册命令
@@ -74,7 +74,7 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 | 会话上下文 | `start`、`context`、`pull`、`tag`、`wrap` | Hook 注入、会话级去重与来源标签；`wrap` 透传被包装程序的退出码与信号 |
 | 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理、客户端接入 8 个视图；只读模式在服务端拒绝写请求 |
-| Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；不自动安装第三方插件，不改全局 Git 配置 |
+| Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；没有生命周期 Hook 的宿主（Delta）只探测并列出人工步骤，不写文件；不自动安装第三方插件，不改全局 Git 配置 |
 | MCP 记忆工具 | `mcp` | 在标准输入输出上提供 `memory_read`、`memory_entries` 与 `memory_write`；由宿主启动，不受 Agent 的 bash 沙箱限制，写入仍经受管事务与基线校验；不写宿主配置 |
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.3`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
@@ -110,7 +110,7 @@ MEMCTL_LANG=zh ./bin/memctl help  # 中文帮助；也可用 --lang zh
 npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 ```
 
-按需替换 `-a` 的宿主列表；读取 `~/.agents/skills` 的宿主（如 DSH）无需单独指定。也可把该目录复制或软链接到宿主扫描的 skills 目录，例如 `~/.agents/skills/memctl`；`SKILL.md` 是入口，其余文件按需加载。
+按需替换 `-a` 的宿主列表。读取 `~/.agents/skills` 的宿主（如 DSH、Delta）无需单独指定该目录，但列表里要写它们自己的名字：Delta 在 `skills` CLI 里的名字是 `zed`（`delta` 会被拒绝），DSH 没有对应条目时省略即可。也可把该目录复制或软链接到宿主扫描的 skills 目录，例如 `~/.agents/skills/memctl`；`SKILL.md` 是入口，其余文件按需加载。
 
 ## 工作方式
 
@@ -124,7 +124,8 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 - darwin/arm64：全量测试、发布二进制冒烟与浏览器验证均在本机执行。
 - macOS amd64、Linux amd64、Windows amd64：仅交叉编译通过，文件锁、路径语义、进程生命周期与 runner 隔离未验证。
 - Dreaming：统一在记忆仓库所在 GitHub 远端的 Actions 运行器中执行，本地不再依赖平台沙箱；已在 `gray0128/agent-memory-repo` 用 DeepSeek 端点跑通一次，但两次真实运行模型都判定无需改动，「带实际变更的提案被 apply 提交」仍未验证。
-- 真实宿主：`install` 支持 10 个宿主（claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh）；macOS arm64 已完成本机 Hook 配置与部分会话级验证，逐宿主的实测边界见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)；`install` 探测到的版本不代表 Hook 已被宿主采纳。
+- 真实宿主：`install` 支持 11 个宿主（claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh、delta）；macOS arm64 已完成本机 Hook 配置与部分会话级验证，逐宿主的实测边界见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)；`install` 探测到的版本不代表 Hook 已被宿主采纳。
+- Delta：没有生命周期 Hook，也接受不了本地 stdio MCP server，因此没有自动注入与每轮同步；`install delta` 只探测并列出人工步骤，不写任何文件。Delta 不对 Agent 施加沙箱，Agent 在终端里直接执行 `memctl`，会话身份来自 Delta 注入的 `DELTA_CURRENT_THREAD_ID`。见 [Delta 宿主接入](./docs/13-delta-integration.md)。
 - pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.2`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话的注入、轮次同步与收尾复验；`0.5.3` 修复了非零退出的 `start` 丢弃上下文，已发布到 npm 并升级本机 `desktop`；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 记忆写入通道：生命周期插件在宿主进程内运行，Agent 在 bash 中执行 `memctl read/write` 时会受工作区沙箱限制，无法写 `~/memory`。`memctl mcp` 提供不受该沙箱限制的 MCP 工具；DSH、Codex、pi、OpenCode、Command Code 与 Antigravity 已完成 MCP 受管写入实测，Grok 需要把记忆仓库加入 `read_write`（同时放开 shell），Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)。

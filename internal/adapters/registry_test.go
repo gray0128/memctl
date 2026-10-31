@@ -95,13 +95,18 @@ func TestRegistryHostProtocols(t *testing.T) {
 }
 
 // TestRegistryCapabilities checks the AdapterStatus capabilities documented in
-// docs/02-domain-models-and-contracts.md section 2.3: every registered adapter
-// advertises at least one capability, duplicates are collapsed and unknown
-// adapters return an empty list.
+// docs/02-domain-models-and-contracts.md section 2.3: every adapter that manages
+// something advertises at least one capability, duplicates are collapsed and
+// unknown adapters return an empty list. A host with no managed configuration
+// (delta) reports no capability at all, because the field only describes what
+// memctl maintains in the host.
 func TestRegistryCapabilities(t *testing.T) {
 	for _, spec := range Registry() {
 		capabilities := Capabilities(spec.Agent)
 		if len(capabilities) == 0 {
+			if len(spec.Artifacts) == 0 && spec.NativePlugin == nil {
+				continue
+			}
 			t.Fatalf("adapter %s should advertise at least one capability", spec.Agent)
 		}
 		seen := map[string]bool{}
