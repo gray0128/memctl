@@ -1,12 +1,12 @@
 # 15. Delta 会话蒸馏适配方案
 
-> 状态：方案已定义（2026-10-31，Delta 0.23.0 / darwin arm64），未实现。本文在 [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md) 的「可行」结论之上给出可实现的契约：读取路径、项目归属、回合与限额、触发时机、失败处置与验收。[14](./14-delta-cwd-feasibility.md) 回答能不能做，本文回答怎么做，以及本机实测推翻了其中哪三条判断。宿主接入面见 [13](./13-delta-integration.md)；蒸馏器的既有契约见 [12 §2.2](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)。
+> 状态：已实现（2026-10-31，Delta 0.23.0 / darwin arm64）。本文在 [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md) 的「可行」结论之上定义并实现了采集契约：读取路径、项目归属、回合与限额、触发时机、失败处置与验收。[14](./14-delta-cwd-feasibility.md) 回答能不能做，本文回答怎么做，以及本机实测推翻了其中哪三条判断。宿主接入面见 [13](./13-delta-integration.md)；蒸馏器的既有契约见 [12 §2.2](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)。
 
 ## 1. 结论
 
 - **读取路径改用 `delta thread watch <id> --json`**，不再用 `delta thread show --format messages` 分页。watch 输出结构化 JSONL，最终正文与思考段分属不同事件，因此 [14](./14-delta-cwd-feasibility.md) 遗留的两项成本（20 条分页上限、Thinking 混入正文）都不存在。
 - **当前线程可直接读取**。设置 `DELTA_CURRENT_THREAD_ID` 时 watch 正常工作，[14 §6](./14-delta-cwd-feasibility.md#6-风险与未决问题) 里「须 `env -u DELTA_CURRENT_THREAD_ID`」的风险不成立；那是 `thread show` 的边界行为，不是 Delta 的限制。
-- **项目归属按 [14](./14-delta-cwd-feasibility.md) 第一步执行**：新增 `corpus.ProjectRoot(cwd)`，把进程 cwd 归一化到项目根。Delta 与其它宿主共用同一条规则，对非 Delta 宿主是恒等变换。
+- **项目归属按 [14](./14-delta-cwd-feasibility.md) 第一步执行**：新增 `corpus.ResolveProjectRoot`，把进程 cwd 归一化到项目根。Delta 与其它宿主共用同一条规则，对非 Delta 宿主是恒等变换。
 - **只采集当前线程，不做全机扫描**。Delta 的 CLI 不提供「线程 → 项目」的映射（§3.3），按项目筛选历史线程无法在不碰 Delta 私有状态的前提下实现。历史线程不进入候选池，这是有意的边界：宁可不采，也不把别的项目的会话塞进当前项目的整理上下文。
 - **只在 `dream --prepare` / `memory_dream_prepare` 采集，不进 `sync` / `end`**。watch 到 `live` 标记的固定开销是 1.65–1.93 秒，远超实时采集预算 `LiveBudget = 200 ms`；Delta 也没有 `end` 事件。
 - **复用既有解析契约**。watch 流本身就是 JSONL，`Corpus.Collect(agent, sid, reader)` 原样可用，清洗、脱敏、可疑指令过滤、回合裁剪、缓存写入与消费写回都不新增实现。
@@ -74,7 +74,7 @@
 
 ## 3. 项目归属
 
-### 3.1 `corpus.ProjectRoot(cwd)`
+### 3.1 `corpus.ResolveProjectRoot`
 
 一条命令、两条截断规则：
 
@@ -91,10 +91,11 @@ git -C "$cwd" rev-parse --path-format=absolute --git-common-dir --show-toplevel
 | 两条都不命中（普通仓库、子目录、非 Delta 工作树） | 返回入参 |
 | 命令失败（非 Git 目录、无 `git` 可执行文件） | 返回入参 |
 | 截断后的候选路径不存在 | 返回入参（防止仓库名里恰好包含 `.delta/worktrees/` 这类字面量） |
+| Git 输出不是两行 | 返回入参（接口形状变了就不能只拿一半去拼） |
 
-`--git-common-dir` 规则排在前面，因为它是 Delta 线程 checkout 的实际形态；`--show-toplevel` 规则是独立的第二条路径，两者在 4 个真实 checkout 上给出同一结果。
+实现签名为 `ResolveProjectRoot(ctx, run, cwd) string`：`run` 是 Git 调用，传入 `git.Run` 即用系统 Git，传入桩函数即可单测；Delta 采集器不另建一条 Git 调用路径。
 
-单次调用取两个值，实测 0.01–0.02 秒。
+单次调用取两个值，实测 0.01–0.02 秒，`X11` 的单元测试断言每个分支只调用一次。
 
 | 样本 | `--git-common-dir` | `--show-toplevel` | 归一化结果 |
 | --- | --- | --- | --- |
@@ -109,12 +110,12 @@ git -C "$cwd" rev-parse --path-format=absolute --git-common-dir --show-toplevel
 
 ### 3.2 调用点
 
-`ProjectRoot` 只作用在**由进程 cwd 推导项目键**的入口，不作用于日志自带的 `cwd`：
+`ResolveProjectRoot` 只作用在**由进程 cwd 推导项目键**的入口，不作用于日志自带的 `cwd`：
 
 | 入口 | 现状 | 改动 |
 | --- | --- | --- |
-| `dream --prepare` / `memory_dream_prepare` | `PrepareLocal` 用 `os.Getwd()` 或 `req.Cwd` 直接算 `CwdKey` | 先过 `ProjectRoot` |
-| `sync` / `end` 的实时采集 | 日志 `cwd` 优先，缺失时用进程 cwd | 回退值先过 `ProjectRoot`；日志自带 `cwd` 保持原样 |
+| `dream --prepare` / `memory_dream_prepare` | `PrepareLocal` 用 `os.Getwd()` 或 `req.Cwd` 直接算 `CwdKey` | 先过 `ResolveProjectRoot` |
+| `sync` / `end` 的实时采集 | 日志 `cwd` 优先，缺失时用进程 cwd | 回退值先过 `ResolveProjectRoot`；日志自带 `cwd` 保持原样 |
 | `corpus.Backfill` | 用 `req.Cwd` 算 `CwdKey` 并预过滤目录名 | 入参由 `PrepareLocal` 归一化后的值提供，自身不再改 |
 
 副作用边界：日志自带 `cwd` 的宿主（`claude-code`、`codex`、`pi`、`dsh`、`codebuddy`、`workbuddy`、`antigravity`）行为不变，因为它们的日志记的就是项目根；只有「日志没有 `cwd`、退回进程 cwd」这条路径会看到归一化结果。
@@ -144,17 +145,19 @@ type DeltaRunner func(ctx context.Context, threadID string) (io.ReadCloser, erro
 
 type DeltaRequest struct {
     ThreadID string
-    Cwd      string // 已经过 ProjectRoot
+    Cwd      string // 已经过 ResolveProjectRoot
     Device   string
+    Now      func() time.Time
 }
 
-func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaRequest) (Digest, bool)
+func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaRequest) (Digest, bool, error)
 ```
 
-- `CollectDelta` 与 `RealTime` 并列，是同一层的第二个入口：`RealTime` 从文件读，`CollectDelta` 从子进程流读。两者最后都调用 `Collector.Collect` 并 `cache.Save`。
-- 调用点只有 `dream.refreshCurrentSession`：`req.Agent == "delta"` 时改走 `CollectDelta`，`LocateSession` 对 `delta` 继续返回空串（没有文件）。
-- `parsers["delta"]` 注册 `parseDelta`，因此 `Corpus.Supports("delta")` 为真，`sync` / `end` 即使收到 `--agent delta` 也不会误读文件（`TranscriptPath` 为空即返回）。
+- `CollectDelta` 与 `RealTime` 并列，是同一层第二个入口，签名也保持一致：`RealTime` 从文件读，`CollectDelta` 从子进程流读，两者最后都经 `Collector.digestFrom` 组装并 `cache.Save`，所以限额与脱敏不可能分叉。
+- 调用点只有 `dream.refreshCurrentSession`（经 `collectCurrentSession`）：`req.Agent == "delta"` 时走 `CollectDelta`，`LocateSession` 对 `delta` 不新增分支，继续返回空串（没有文件）。
+- `parsers["delta"]` 注册 `parseDelta`，因此 `Corpus.Supports("delta")` 为真；`sync` / `end` 即使收到 `--agent delta` 也不会误读文件（`TranscriptPath` 为空即返回）。
 - `Backfill` 不枚举 `delta`：它没有会话目录，`discoverCandidates` 不新增分支。
+- `Service.DeltaRunner` 可注入，测试用一个确定性的流；生产留空时用 `corpus.DeltaCLIRunner(corpus.DeltaCLI)` 启动宿主 CLI。
 
 ### 4.2 解析规则
 
@@ -168,10 +171,12 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 | `type: "item"` + `kind: "tool_call"` | 追加工具签名（§4.4） |
 | `type: "item"` + `kind: "agent_thought"` | 丢弃 |
 | `type: "item"` + `kind: "external_edits"` / `compaction` | 丢弃 |
-| `type: "live"` | 停止读取 |
+| `type: "live"` | 置 `parseInput.sawEnd` 并停止读取 |
 | 其它行 / 非法 JSON | 跳过（与 `decodeLine` 一致） |
 
-`parseDelta` 不写 `parseInput.cwd`：Delta 不给工作目录，项目键由 `Collector.Cwd`（`ProjectRoot` 的结果）兜底。
+`parseDelta` 不写 `parseInput.cwd`：Delta 不给工作目录，项目键由 `Collector.Cwd`（`ResolveProjectRoot` 的结果）兜底。
+
+`sawEnd` 是 Delta 独有的结束标记：只有读到 `live` 才证明整个线程已投递完毕，未读到就不写缓存（见 §4.5）。
 
 ### 4.3 回合正文的选择规则
 
@@ -202,8 +207,8 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 | 项 | 取值 | 依据 |
 | --- | --- | --- |
 | 读取字节上限 | `MaxBackfillFileBytes = 8 MiB`（复用） | 线程 5 在调研期间从 6.2 MB 涨到 7.0 MB，8 MiB 余量已不足 15%；命中即停读并置 `truncated: true` |
-| 采集墙钟预算 | `DeltaCollectBudget = 4 s`（新增） | 实测到 `live` 为 1.65–1.93 秒，取 2 倍余量；超时按失败处理，不写缓存 |
-| 子进程清理 | 读满字节上限、读到 `live`、超时或调用方取消，都必须终止子进程并回收 | `live` 之后进程常驻（实测再等 5 秒仍在运行） |
+| 采集墙钟预算 | `DeltaCollectBudget = 4 s`（新增） | 实测到 `live` 为 1.65–2.13 秒，取约 2 倍余量；超时终止子进程组，不写缓存 |
+| 子进程清理 | 读满字节上限、读到 `live`、超时或调用方取消，都必须终止**整个进程组**并回收 | `live` 之后进程常驻；且子进程可能派生孙进程持有管道，只杀直接子进程会让读取阻塞到孙进程退出（本轮实测过，见 §7） |
 | 回合与文本限额 | `MaxTurnsPerSession = 20`、`MaxTurnTextBytes = 1024`、`MaxSessionDigestBytes = 16 KiB` | 沿用 [12 §2.2.3](./12-session-corpus-dreaming.md#3-sessiondigest-数据结构与限额) |
 
 超时与超限都不返回错误、不改退出码：`dream --prepare` 只是拿不到这一份摘要，其余流程照常。
@@ -227,11 +232,11 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 | 回合与限额 | `addUser`、`boundTurns`、`truncateText`、`boundTools` | — | 无 |
 | 缓存与消费 | `Cache.Save/Load/List/Prune`、`WroteMemoryInSess` 回写 | — | 无 |
 | 会话身份 | `hookio.ResolveSID` 的 `DELTA_CURRENT_THREAD_ID` 回退 | — | 无 |
-| 项目键 | `CwdKey`、`CwdBase` | `ProjectRoot` | `PrepareLocal`、`collectCorpus`、`refreshCurrentSession` 三处调用点 |
-| 读取 | `parseFunc` / `Collector.Collect` | `parseDelta`、`DeltaRunner`、`CollectDelta`、`DeltaCollectBudget` | `parsers` 注册表、`refreshCurrentSession` 分支 |
-| 适配器 | `delta` 探测条目 | — | 可选：`step:` 中补一条「`dream --prepare` 会采集当前线程」的说明 |
+| 项目键 | `CwdKey`、`CwdBase` | `ResolveProjectRoot` | `PrepareLocal`、`collectCorpus` 两处由 cwd 推导的入口 |
+| 读取 | `parseFunc`、`Collector.digestFrom` | `parseDelta`、`DeltaRunner`、`CollectDelta`、`DeltaCLIRunner`、`DeltaCollectBudget` | `parsers` 注册表、`refreshCurrentSession` 分支、`Service.DeltaRunner` |
+| 适配器 | `delta` 探测条目 | — | 未改：`step:` 仍只列人工步骤 |
 
-源码落点：`internal/corpus/delta.go`（解析器与 runner）、`internal/corpus/delta_test.go`（解析与边界）、`internal/corpus/corpus.go`（`ProjectRoot` 与常量）、`internal/corpus/corpus_test.go`（归一化）、`internal/dream/local.go`（调用点）、`tests/integration/`（`X10`–`X14` 的端到端项）。
+源码落点：`internal/corpus/delta.go`（解析器与采集入口）、`internal/corpus/delta_cli.go`（子进程与进程组）、`internal/corpus/delta_proc_unix.go` / `delta_proc_other.go`（平台差异，与 `internal/git` 同一做法）、`internal/corpus/delta_test.go`（解析与边界）、`internal/corpus/corpus.go`（`ResolveProjectRoot`）、`internal/corpus/corpus_test.go`（归一化）、`internal/dream/local.go`、`internal/dream/service.go`、`internal/cli/corpus.go`、`tests/integration/x10_project_root_test.go`。
 
 ## 6. 对 14 的三处更正
 
@@ -241,54 +246,60 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 | 「assistant `buffer` 混入 `Thought N times…` 与 `Thinking` 段，需在解析器里剥离」（§4、§4.2） | `agent_message` 与 `agent_thought` 是分属两类 item 的纯正文 | Thinking 剥离规则取消 |
 | 「当前线程读不到，须 `env -u DELTA_CURRENT_THREAD_ID`」（§6） | 设置该变量时 watch 正常返回当前线程 | 风险项删除，采集不再需要绕行环境变量 |
 
-[14](./14-delta-cwd-feasibility.md) 的 `ProjectRoot` 结论（§3、§5 第一步）经本轮 4 个 checkout 复测后保持不变。
+[14](./14-delta-cwd-feasibility.md) 的项目根归一化结论（§3、§5 第一步）经本轮 4 个 checkout 复测后保持不变。
 
 ## 7. 风险与未决问题
 
 | 风险 | 说明 | 处置 |
 | --- | --- | --- |
 | watch 是未在 [13](./13-delta-integration.md) 记录过的命令 | 它是 Delta CLI 的「Agent integration」分组命令，契约版本 `min=8,max=8`，本轮在 0.23.0 上实测 | 版本门槛保持在 `0.23.0`；升级后先跑 `X13` 再放宽 |
-| 固定 1.65–1.93 秒开销 | 每次 `dream --prepare` 都付一次；不影响 `sync` / `write` | 只挂 `prepare`；不进 `Check`、`doctor` 等只读路径 |
+| 固定 1.65–2.13 秒开销 | 每次 `dream --prepare` 都付一次；不影响 `sync` / `write` | 只挂 `prepare`；不进 `Check`、`doctor` 等只读路径 |
 | watch 需要登录态 | 帮助文本中 `--thread` 的 worktree 子命令明确要求登录；watch 本身在本机登录态下验证，未在未登录环境复测 | 失败静默跳过；未登录时只是没有 Delta 摘要 |
 | 8 MiB 的读取上限面临饱和 | 单个长线程在调研期间从 6.2 MB 涨到 7.0 MB，且无上限 | 命中上限置 `truncated: true`，不当作完整会话；上限值与「持续增长的长线程」的取舍列入实施前的待定项 |
-| `decoder` 顺序敏感 | 同一回合时间戳相同，只能按流顺序 | 契约写明按流顺序，不排序 |
+| 流顺序敏感 | 同一回合时间戳相同，只能按流顺序 | 契约写明按流顺序，不排序 |
 | 未验证平台 | 只有 darwin/arm64 与 Delta 0.23.0 | 与 [13 §7](./13-delta-integration.md#7-未验证与后续) 同一范围 |
 | 未验证线程形态 | 8 个线程都是本机单作者线程；未测共享线程、子智能体线程、归档线程、Cloud Runner 线程 | 落地前补测归档与共享线程各一次 |
-| monorepo 与子目录 | `ProjectRoot` 对 Delta checkout 收敛到仓库根，子包身份丢失 | 与现有宿主一致，按 [14 §6](./14-delta-cwd-feasibility.md#6-风险与未决问题) 的口径不扩展 |
+| monorepo 与子目录 | `ResolveProjectRoot` 对 Delta checkout 收敛到仓库根，子包身份丢失 | 与现有宿主一致，按 [14 §6](./14-delta-cwd-feasibility.md#6-风险与未决问题) 的口径不扩展 |
+| 孙进程持有管道 | 本轮实测发现：子进程若派生孙进程，只杀直接子进程会让读取阻塞到孙进程退出，4 秒预算形同虚设（实测拖到 30 秒） | 已修：子进程放入独立进程组，超时时向整组发 SIGKILL；`X14` 用「输出后 `sleep 30`」的桩固定这个行为 |
 
 ## 8. 验收
 
 | ID | 场景 | 预期 |
 | --- | --- | --- |
 | `X10` | 在同一项目的原仓库与 Delta 线程 checkout 内分别执行 `dream --prepare` | 两者算出同一个 `cwdKey`；与既有 digest 一致；不新增项目键 |
-| `X11` | `ProjectRoot` 输入：`/.delta/worktrees/<id>/<repo>` 与 `/.delta/worktrees/<id>/<repo>/<sub>`、`/.delta/clones/<id>/<repo>.git` 的兄弟路径、普通仓库、普通仓库子目录、非 Git 目录、`git` 不可执行 | Delta 两种形态归一到同一项目根（含子目录）；普通仓库与子目录原样返回；非 Git 目录与无 `git` 时原样返回，不退化为空 |
+| `X11` | `ResolveProjectRoot` 输入：`/.delta/worktrees/<id>/<repo>` 与 `/.delta/worktrees/<id>/<repo>/<sub>`、`/.delta/clones/<id>/<repo>.git` 的兄弟路径、普通仓库、普通仓库子目录、非 Git 目录、`git` 不可执行、Git 输出形状异常 | Delta 两种形态归一到同一项目根（含子目录）；普通仓库与子目录原样返回；非 Git、无 `git` 与异常输出时原样返回，不退化为空 |
 | `X12` | 在非项目目录（如 `/tmp`）执行 `dream --prepare` 与 `sync` | 不写 digest，不落到其它项目，退出码不变 |
 | `X13` | 采集一个 40+ 消息、含 `agent_thought`、含超长 `tool_call`、含 20+ 段 `agent_message` 的线程，且该线程正是当前线程 | 分页无关地取全；正文不含 `Thinking`；每回合保留的是最长段落；单回合 ≤ 1024 字节；`truncated` 与实际截断一致；子进程在读到 `live` 后退出；`dream --prepare` 总耗时包含约 2 秒采集开销 |
 | `X14` | `delta` 缺失、版本低于 `0.23.0`、`DELTA_CURRENT_THREAD_ID` 缺失、watch 非零退出、watch 超时、字节上限命中、`AGENT_MEMORY_CORPUS=0` | 七种情况都静默跳过且 `dream --prepare` 退出码为 0；无残留子进程；已完成的其它摘要不受影响 |
 
-`X13` 的样本构造：直接复用本机线程 5（7 条用户消息、千余条 item、采样时已超 6 MB，含数百条 `agent_thought` 与 `tool_call`），并补一个合成 fixture 覆盖「单回合 20+ 段 `agent_message`」与超长 `tool_call`。
+`X13` 的样本构造：直接复用本机线程 5（7 条用户消息、千余条 item、采样时已超 6 MB，含数百条 `agent_thought` 与 `tool_call`），并补一个合成 fixture 覆盖「单回合多段 `agent_message`」与超长 `tool_call`。
+
+验收结果（2026-10-31，darwin/arm64，Delta 0.23.0）：`X10`、`X11`、`X12`、`X13`、`X14` 全部通过。`X13` 的真机运行读到一个 14 回合、2.13 秒的线程，`cwdBase=memctl`，正文不含思考段，运行结束后本机无残留 `delta thread watch` 进程。
 
 ## 9. 实施顺序
 
 两步，与 [14 §5](./14-delta-cwd-feasibility.md#5-推荐方案) 一致。第二步的工作量比 [14](./14-delta-cwd-feasibility.md) 估算的小：分页器与 Thinking 剥离两项已不需要，剩下的是一个解析器与一个子进程封装。
 
-**第一步：`ProjectRoot`（`X10`–`X12`）**
+两步，均已完成。
 
-- 新增纯函数与三处调用点，`X11` 全部分支可用单元测试覆盖，不需要真实 Delta。
-- 对现有宿主是恒等变换，可独立发布。
+**第一步：`ResolveProjectRoot`（`X10`–`X12`）** —— 已完成
 
-**第二步：Delta 采集器（`X13`–`X14`）**
+- `internal/corpus/corpus.go` 新增 `ResolveProjectRoot` 与两条截断规则；调用点是 `dream.PrepareLocal` 与 `cli.collectCorpus`。
+- `X11` 的九个分支由 `TestResolveProjectRootCoversX11` 覆盖；`X10` 与 `X12` 由集成测试用真实 `git worktree` 布局覆盖，不需要 Delta 安装。
 
-- 新增 `parseDelta`、`DeltaRunner`、`CollectDelta` 与预算常量，接入 `refreshCurrentSession`。
-- 依赖第一步的项目键：没有归一化，同一仓库会按线程数碎片化。
-- 需要真机验证，`X13` 与 `X14` 的「无残留子进程」必须在本机 Delta 终端里实测，不能只靠单元测试。
+**第二步：Delta 采集器（`X13`–`X14`）** —— 已完成
+
+- `internal/corpus/delta.go`（`parseDelta`、`CollectDelta`）、`delta_cli.go`（`DeltaCLIRunner`、进程组清理）、`delta_proc_*.go`（平台差异）。
+- `parsers` 注册 `delta`；`dream.Service` 新增可注入的 `DeltaRunner`，`collectCurrentSession` 在 `agent == "delta"` 时走流式路径。
+- `Collector.Collect` 的摘要组装抽成 `digestFrom`，文件与流两条入口共用，限额与脱敏无法分叉。
+- 真机验证：本机 Delta 0.23.0 终端内采集当前线程成功（2.13 秒、14 回合、无残留进程）。
 
 两步都不改变 CLI 参数、数据格式与既有宿主行为；版本号按向后兼容的能力增量走次版本。
 
 ## 10. 结论摘要
 
 - 读取路径从 `thread show` 分页换成 `thread watch`，[14](./14-delta-cwd-feasibility.md) 里的分页与 Thinking 两项成本消失，当前线程也无需绕行环境变量。
-- 项目归属仍是 [14](./14-delta-cwd-feasibility.md) 的 `ProjectRoot`；本轮补测确认它在 4 个 checkout 上稳定，且对非 Delta 宿主是恒等变换。
+- 项目归属仍是 [14](./14-delta-cwd-feasibility.md) 的归一化规则，实现名为 `ResolveProjectRoot`；4 个 checkout 上稳定，且对非 Delta 宿主是恒等变换。
 - 线程归属无法从 CLI 得到，因此只采当前线程；这是有意的边界，不是待补的缺口。
 - 采集只在 `dream --prepare` 发生，单次固定约 2 秒开销，不进实时路径。
 - 新增实现集中在一个解析器与一个子进程封装，其余全部复用现有蒸馏器。

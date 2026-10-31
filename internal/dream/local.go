@@ -177,12 +177,16 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 			return DreamPrepareBundle{}, memerr.Wrap(memerr.IOFailed, err, "cannot resolve the current directory")
 		}
 	}
+	// A Delta thread works in a per-thread checkout, so the project key comes
+	// from the checkout's project root rather than from the raw process
+	// directory. A plain repository yields the same path it started with.
+	cwd = corpus.ResolveProjectRoot(ctx, git.Run, cwd)
 	cwdKey := corpus.CwdKey(cwd)
 
 	// The documented start-up work: refresh the current session digest, sweep
 	// the local session stores, then drop expired cache entries.
 	if corpus.Enabled(os.Getenv) {
-		refreshCurrentSession(s, req, cwd)
+		refreshCurrentSession(ctx, s, req, cwd)
 		cache := s.corpusCache()
 		corpus.Backfill(cache, corpus.BackfillRequest{
 			Cwd:         cwd,
@@ -266,26 +270,47 @@ func (s *Service) fixLocalBaseline(ctx context.Context) (base *baseline, head, r
 // refreshCurrentSession re-distils the calling session when the caller knows a
 // stable agent and session id. A failure keeps the previous digest: prepare
 // must still return a bundle from the cache.
-func refreshCurrentSession(s *Service, req PrepareRequest, cwd string) {
+func refreshCurrentSession(ctx context.Context, s *Service, req PrepareRequest, cwd string) {
 	if req.Agent == "" || req.SID == "" || !corpus.Supports(req.Agent) {
 		return
 	}
+	digest, ok := collectCurrentSession(ctx, s, req, cwd)
+	if ok && !digest.WroteMemoryInSess && s.wroteMemory(digest.SessionID) {
+		digest.WroteMemoryInSess = true
+		_ = s.corpusCache().Save(digest)
+	}
+}
+
+// collectCurrentSession runs the one collection the calling host supports.
+// Delta has no log file, so its session is read from the host's own CLI stream;
+// every other host is read from the log file its payload or store names. A
+// failure of either path yields ok=false and no error: prepare reports the
+// bundle it already has.
+func collectCurrentSession(ctx context.Context, s *Service, req PrepareRequest, cwd string) (corpus.Digest, bool) {
+	if req.Agent == "delta" {
+		digest, ok, err := corpus.CollectDelta(ctx, s.deltaRunner(), s.corpusCache(), corpus.DeltaRequest{
+			ThreadID: req.SID,
+			Cwd:      cwd,
+			Device:   req.Device,
+			Now:      s.timeNow,
+		})
+		if err != nil || !ok {
+			return corpus.Digest{}, false
+		}
+		return digest, true
+	}
 	path := corpus.LocateSession(req.Agent, req.SID, cwd, "")
 	if path == "" {
-		return
+		return corpus.Digest{}, false
 	}
 	writer := corpus.Writer{Cache: s.corpusCache(), Now: s.timeNow}
-	digest, ok := writer.Collect(corpus.RealTimeRequest{
+	return writer.Collect(corpus.RealTimeRequest{
 		Agent:          req.Agent,
 		SID:            req.SID,
 		TranscriptPath: path,
 		Cwd:            cwd,
 		Device:         req.Device,
 	})
-	if ok && !digest.WroteMemoryInSess && s.wroteMemory(digest.SessionID) {
-		digest.WroteMemoryInSess = true
-		_ = s.corpusCache().Save(digest)
-	}
 }
 
 // selectSessions picks the unconsumed digests of one bundle in the documented
@@ -523,4 +548,14 @@ func bundleFiles(base *baseline) []BundleFile {
 		})
 	}
 	return files
+}
+
+// deltaRunner returns the injected Delta stream opener, or the host CLI when the
+// caller did not replace it. Tests inject a deterministic stream so a prepare
+// never depends on a Delta installation.
+func (s *Service) deltaRunner() corpus.DeltaRunner {
+	if s.DeltaRunner != nil {
+		return s.DeltaRunner
+	}
+	return corpus.DeltaCLIRunner(corpus.DeltaCLI)
 }

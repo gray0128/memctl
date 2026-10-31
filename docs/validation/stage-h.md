@@ -236,3 +236,17 @@
 - 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0，Go 1.27.3。
 - 验证命令与结果：文档链接与锚点全量校验通过（`docs/14`、`docs/12`、`docs/README.md` 均 0 问题）；实测命令见报告中各表格，均可复跑。
 - 未验证与遗留：样本仅本机 6 个线程，未覆盖 monorepo 与 Windows 路径；采集器未实现；当前线程仍须 `env -u DELTA_CURRENT_THREAD_ID` 才能读出（该判断已由 `T126` 推翻）。
+
+## T126：Delta 会话蒸馏适配方案
+
+- 目标与范围：在 [14](../14-delta-cwd-feasibility.md) 的可行性结论之上，制定 Delta 会话蒸馏的适配方案并输出为文档。只做调研与契约定义，不实现采集器。
+- 读取路径：改用 `delta thread watch <id> --json`。它输出结构化 JSONL，`agent_message` 与 `agent_thought` 分属不同事件，因此 `T125` 记的「20 条分页」「Thinking 混入正文」两项成本均不存在；设置 `DELTA_CURRENT_THREAD_ID` 时 watch 也能正常读当前线程，`env -u` 绕行不再需要。
+- 项目归属：沿用 [14](../14-delta-cwd-feasibility.md) 的 `ProjectRoot`（`git rev-parse --path-format=absolute --git-common-dir --show-toplevel`，按 `/.delta/clones/` 与 `/.delta/worktrees/` 两条规则截断）。本轮在 4 个 checkout（原仓库、两个线程 checkout、`task-box` 线程 checkout、非 Git 目录）上复测结论一致；`--path-format=absolute` 不可省（普通仓库子目录下 `--git-common-dir` 会返回相对路径）。
+- 线程归属：确认 CLI 不提供「线程 → 项目」映射——`thread list`／`show` 无 `cwd`，`thread search --edited-path` 的路径是仓库根相对且不含仓库标识，`worktree list --thread` 需登录且只给仓库名，`thread tree` 无路径。因此方案只采当前线程，不扫历史。
+- 回合规则：统计 7 个固定线程（不含边采边增长的当前线程）共 30 个回合，其中 28 个带正文，16 个（占 57%）的全部 `agent_message` 拼起来超过 `MaxTurnTextBytes = 1024`，所以直接拼接会让截断点落在进度说明里；而 28 个中有 27 个的最长段落就是最后一条。因此定为「同回合只保留最长的一条正文，等长取最晚」。
+- 触发与预算：只在 `dream --prepare` / `memory_dream_prepare` 采集（watch 到 `live` 固定 1.65–1.93 秒，远超 `LiveBudget = 200 ms`，且 Delta 无 `end`）；新增 `DeltaCollectBudget = 4 s`，读满 8 MiB 或超时都终止子进程、不写缓存，命中字节上限时置 `truncated`；`live` 之后进程常驻，必须主动终止。
+- 改动：新增 [15. Delta 会话蒸馏适配](../15-delta-corpus-adaptation.md)（读取路径对照与 watch 事件表、项目归属、采集器契约、与实现的衔接、对 `T125` 的三处更正、8 项风险、`X10`–`X14` 验收、两步实施顺序）；`docs/README.md` 与 `docs/01` 目录清单登记；`docs/01` §4 的 `internal/corpus` 职责补 `ProjectRoot`；`docs/05` 矩阵新增 `X10–X14` 行；`docs/12` §2.2 的 `delta` 行改为指向该方案；`docs/13` §7 与 `docs/14` 头部标注三项判断已被推翻；`docs/validation/stage-g.md` 修正两处指向不存在锚点的 `03 §6-受管写入与同步` 链接。
+- 对应契约：[15. Delta 会话蒸馏适配](../15-delta-corpus-adaptation.md)、[14. Delta cwd 可行性](../14-delta-cwd-feasibility.md)、[12 §2.2](../12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)、[13 §7](../13-delta-integration.md#7-未验证与后续)、[05 核心测试矩阵](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证时间与环境：2026-10-31，darwin/arm64，Delta 0.23.0（CLI 契约 `min=8,max=8`），Go 1.27.3。
+- 验证命令与结果：文档链接与锚点全量校验（38 个 Markdown 文件、含根 `README.md` 与 Skill）0 问题；`git diff --check` 无空白与冲突标记；表内数字均可复跑（`delta thread watch <id> --json`、`delta thread show <id> --format messages/summarize/full --json`、`delta thread list/search/worktree list/tree`、`git rev-parse --path-format=absolute --git-common-dir --show-toplevel`）；`go test ./...` 未重跑，本轮无代码变更。
+- 未验证与遗留：采集器未实现；只在 darwin/arm64 与 Delta 0.23.0 实测，样本为本机 8 个线程（7 个有用户消息），未覆盖共享线程、子智能体线程、归档线程与 Cloud Runner 线程；watch 在本机登录态下验证，未在未登录环境复测；调研期间线程 5 的 watch 输出从 6.2 MB 增长到 7.0 MB（8 MiB 上限的 85%），上限值与长线程的取舍列入实施前待定项。

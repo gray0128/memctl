@@ -9,6 +9,7 @@
 package corpus
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -85,6 +86,71 @@ func CwdBase(cwd string) string {
 		clean = clean[index+1:]
 	}
 	return clean
+}
+
+// Delta worktree roots. A Delta thread runs in a per-thread checkout under
+// <project>/.delta/worktrees/<id>/<repo>, whose Git directory lives under
+// <project>/.delta/clones/<id>/<repo>.git. Both carry the same project ahead of
+// the marker, so cutting there recovers the directory the user actually opened.
+const (
+	deltaWorktreeMarker = "/.delta/worktrees/"
+	deltaCloneMarker    = "/.delta/clones/"
+)
+
+// ResolveProjectRoot normalises a working directory to the project root used as
+// the digest project key. It exists because Delta gives its threads per-thread
+// checkouts: <project>/.delta/worktrees/<id>/<repo> would otherwise produce a new
+// sha256 key per thread and split one project across many. Every other host
+// already records the project root in its own log, so for them this is the
+// identity transform. See docs/15-delta-corpus-adaptation.md section 3.
+//
+// The lookup uses only standard Git metadata through the caller's Git runner, so
+// it reads nothing private to Delta. When Git is unavailable, cwd is not inside a
+// repository, or neither marker matches, cwd is returned unchanged: a project key
+// must never silently become empty or point at a different project.
+func ResolveProjectRoot(ctx context.Context, run func(context.Context, string, ...string) (string, error), cwd string) string {
+	if cwd == "" || run == nil {
+		return cwd
+	}
+	// --path-format=absolute is required: inside a subdirectory of an ordinary
+	// repository --git-common-dir prints a relative "../.git", which matches
+	// neither marker and would leave the checkout un-normalised.
+	out, err := run(ctx, cwd, "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel")
+	if err != nil {
+		return cwd
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		// An unexpected shape means the Git contract changed; the caller's own
+		// directory is the safe answer, not a partial marker match.
+		return cwd
+	}
+	common, top := strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1])
+	for _, candidate := range []string{common, top} {
+		if root, ok := cutAtMarker(candidate, deltaCloneMarker); ok {
+			return root
+		}
+		if root, ok := cutAtMarker(candidate, deltaWorktreeMarker); ok {
+			return root
+		}
+	}
+	return cwd
+}
+
+// cutAtMarker returns the part of path before marker when that part is an
+// existing directory. The existence check keeps a repository whose own name
+// merely contains the marker literal from being truncated into a wrong root.
+func cutAtMarker(path, marker string) (string, bool) {
+	index := strings.Index(path, marker)
+	if index <= 0 {
+		return "", false
+	}
+	root := path[:index]
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	return root, true
 }
 
 // Cache is the per-repository digest cache under

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gray0128/memctl/internal/corpus"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/lock"
 	"github.com/gray0128/memctl/internal/memerr"
@@ -76,6 +77,11 @@ type Service struct {
 	// bundle so the current agent can weigh an already-mined session lower. A
 	// nil callback records false.
 	SessionWroteMemory func(sid string) bool
+	// DeltaRunner opens the watch stream of one Delta thread. Delta has no
+	// session log, so its digest comes from the host CLI. Tests replace it to
+	// run a deterministic stream; production leaves it nil and the service uses
+	// the Delta executable, see corpus.DeltaCLIRunner.
+	DeltaRunner corpus.DeltaRunner
 
 	store      *Store
 	instanceID string

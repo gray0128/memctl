@@ -1,6 +1,6 @@
 # 14. Delta 会话蒸馏的 cwd 方案可行性
 
-> 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64），未实现。本文只回答一个问题：能否用「当前工作目录」给 Delta 会话确定项目归属，从而接入 [12](./12-session-corpus-dreaming.md) 的本地会话蒸馏。结论见 §1，取舍与剩余风险见 §5、§6。宿主接入面见 [13. Delta 宿主接入](./13-delta-integration.md)。本文 §4、§4.1、§4.2 与 §6 中关于分页、Thinking 混入与当前线程可读性的三项判断已被后续实测推翻，以 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md#6-对-14-的三处更正) 为准；§3、§5 第一步的 `ProjectRoot` 结论保持不变。
+> 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64）；其中项目根归一化已由 `T127` 实现，采集器实现见 [15](./15-delta-corpus-adaptation.md)。本文只回答一个问题：能否用「当前工作目录」给 Delta 会话确定项目归属，从而接入 [12](./12-session-corpus-dreaming.md) 的本地会话蒸馏。结论见 §1，取舍与剩余风险见 §5、§6。宿主接入面见 [13. Delta 宿主接入](./13-delta-integration.md)。本文 §4、§4.1、§4.2 与 §6 中关于分页、Thinking 混入与当前线程可读性的三项判断已被后续实测推翻，以 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md#6-对-14-的三处更正) 为准；§3、§5 第一步的 `ProjectRoot` 结论保持不变。
 
 ## 1. 结论
 
@@ -96,7 +96,7 @@ The user asks whether Delta loads skills from …
 
 **第一步（建议采纳）：把 cwd 归一化写进契约，作为 Delta 的项目键来源。**
 
-- 新增 `corpus.ProjectRoot(cwd)`：先 `git rev-parse --git-common-dir`，命中 `/.delta/clones/` 则截断；否则落在 `/.delta/worktrees/` 则截断；都不命中时原样返回。实现细节（`--path-format=absolute` 不可省、候选路径需存在）见 [15 §3.1](./15-delta-corpus-adaptation.md#31-corpusprojectrootcwd)。
+- 新增 `corpus.ResolveProjectRoot`（实现名）：先 `git rev-parse --git-common-dir`，命中 `/.delta/clones/` 则截断；否则落在 `/.delta/worktrees/` 则截断；都不命中时原样返回。实现细节（`--path-format=absolute` 不可省、候选路径需存在）见 [15 §3.1](./15-delta-corpus-adaptation.md#31-corpusresolveprojectroot)。
 - `dream --prepare` 的 `Cwd` 与 `sync` 的 cwd 都过这一层，Delta 与其它宿主共用同一条规则。这对现有宿主是恒等变换（它们的日志 `cwd` 本来就是项目根），风险仅限于「Agent 在 Delta 线程里 cd 到子目录」——归一化到仓库根正是期望行为。
 - 这条改动**不引入 Delta 专属分支**，也不新增依赖，可独立验证。
 

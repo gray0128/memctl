@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/gray0128/memctl/internal/corpus"
 	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/hookio"
 )
 
@@ -29,7 +31,7 @@ func collectCorpus(cfg config.Config, agent, sid, transcript, cwd string) {
 		return
 	}
 	if dir, err := os.Getwd(); err == nil && cwd == "" {
-		cwd = dir
+		cwd = corpus.ResolveProjectRoot(context.Background(), git.Run, dir)
 	}
 	corpus.SetSuspiciousMatcher(func(text string) bool {
 		return len(doctor.SuspiciousPhrases(text)) > 0

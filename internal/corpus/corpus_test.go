@@ -2,7 +2,9 @@ package corpus
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -501,5 +503,149 @@ func TestWorkBuddyUsesCodeBuddyFormat(t *testing.T) {
 	}
 	if strings.Contains(digest.Turns[0].User, "system-reminder") || strings.Contains(digest.Turns[0].User, "user_query") {
 		t.Fatalf("the injected envelope leaked into the digest: %q", digest.Turns[0].User)
+	}
+}
+
+// fakeGit stands in for internal/git.Run so X11 can drive every branch of
+// ResolveProjectRoot without creating real Delta checkouts.
+func fakeGit(output string, err error, calls *int) func(context.Context, string, ...string) (string, error) {
+	return func(_ context.Context, _ string, args ...string) (string, error) {
+		if calls != nil {
+			*calls++
+		}
+		want := []string{"rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"}
+		if strings.Join(args, " ") != strings.Join(want, " ") {
+			return "", errors.New("unexpected git args: " + strings.Join(args, " "))
+		}
+		return output, err
+	}
+}
+
+// TestResolveProjectRootCoversX11 checks every documented input shape of the
+// project-root rule. A Delta thread checkout must collapse onto the directory
+// the user opened; every other shape must be the identity transform, because a
+// project key that silently changes would file one project's sessions under
+// another.
+func TestResolveProjectRootCoversX11(t *testing.T) {
+	// The marker rules only fire on a root that exists, so the fixture builds a
+	// real directory tree instead of inventing paths.
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	project := filepath.Join(base, "memctl")
+	threadID := "vt74q90bpvrv"
+	worktree := filepath.Join(project, ".delta", "worktrees", threadID, "memctl")
+	gitDir := filepath.Join(project, ".delta", "clones", threadID, "memctl.git")
+	for _, dir := range []string{worktree, gitDir, filepath.Join(worktree, "docs")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		cwd    string
+		output string
+		err    error
+		want   string
+	}{
+		{
+			name:   "thread checkout collapses onto the project",
+			cwd:    worktree,
+			output: gitDir + "\n" + worktree + "\n",
+			want:   project,
+		},
+		{
+			name:   "subdirectory of a thread checkout collapses too",
+			cwd:    filepath.Join(worktree, "docs"),
+			output: gitDir + "\n" + worktree + "\n",
+			want:   project,
+		},
+		{
+			name: "toplevel rule alone is enough",
+			cwd:  worktree,
+			// A Git layout where --git-common-dir carries no marker but
+			// --show-toplevel does.
+			output: filepath.Join(project, ".git") + "\n" + worktree + "\n",
+			want:   project,
+		},
+		{
+			name:   "ordinary repository is unchanged",
+			cwd:    project,
+			output: filepath.Join(project, ".git") + "\n" + project + "\n",
+			want:   project,
+		},
+		{
+			name:   "ordinary repository subdirectory is unchanged",
+			cwd:    filepath.Join(project, "docs"),
+			output: filepath.Join(project, ".git") + "\n" + project + "\n",
+			want:   filepath.Join(project, "docs"),
+		},
+		{
+			name:   "non-git directory is unchanged",
+			cwd:    base,
+			output: "",
+			err:    errors.New("fatal: not a git repository"),
+			want:   base,
+		},
+		{
+			name:   "missing git executable is unchanged",
+			cwd:    base,
+			output: "",
+			err:    errors.New("exec: \"git\": executable file not found in $PATH"),
+			want:   base,
+		},
+		{
+			name: "marker without an existing root is unchanged",
+			cwd:  filepath.Join(base, "gone", ".delta", "worktrees", threadID, "repo"),
+			// The truncated root does not exist, so truncating would point at a
+			// project that was never opened.
+			output: filepath.Join(base, "gone", ".delta", "clones", threadID, "repo.git") + "\n" +
+				filepath.Join(base, "gone", ".delta", "worktrees", threadID, "repo") + "\n",
+			want: filepath.Join(base, "gone", ".delta", "worktrees", threadID, "repo"),
+		},
+		{
+			name:   "unexpected git output shape is unchanged",
+			cwd:    worktree,
+			output: gitDir + "\n",
+			want:   worktree,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ResolveProjectRoot(context.Background(), fakeGit(test.output, test.err, nil), test.cwd); got != test.want {
+				t.Fatalf("ResolveProjectRoot(%q) = %q, want %q", test.cwd, got, test.want)
+			}
+		})
+	}
+}
+
+// TestResolveProjectRootUsesOneGitCall keeps the rule at a single subprocess:
+// it runs on every prepare, so a second call would double a cost paid by every
+// host, not only Delta.
+func TestResolveProjectRootUsesOneGitCall(t *testing.T) {
+	cwd := t.TempDir()
+	calls := 0
+	ResolveProjectRoot(context.Background(), fakeGit(".git\n"+cwd+"\n", nil, &calls), cwd)
+	if calls != 1 {
+		t.Fatalf("git was called %d times, want 1", calls)
+	}
+}
+
+// TestResolveProjectRootSkipsGitWhenThereIsNoWork covers the two inputs that
+// cannot produce a key at all: an empty directory and a nil runner must not
+// start a subprocess.
+func TestResolveProjectRootSkipsGitWhenThereIsNoWork(t *testing.T) {
+	calls := 0
+	run := fakeGit(".git\n/x\n", nil, &calls)
+	if got := ResolveProjectRoot(context.Background(), run, ""); got != "" {
+		t.Fatalf("empty cwd = %q, want empty", got)
+	}
+	if got := ResolveProjectRoot(context.Background(), nil, "/x"); got != "/x" {
+		t.Fatalf("nil runner = %q, want the input", got)
+	}
+	if calls != 0 {
+		t.Fatalf("git was called %d times for work-free input", calls)
 	}
 }

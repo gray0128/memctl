@@ -30,7 +30,11 @@ type parseInput struct {
 	cwd       string
 	newest    time.Time
 	truncated bool
-	turns     []Turn
+	// sawEnd reports that the parser reached the record a host writes once the
+	// whole session has been emitted. Only Delta has such a marker; a parser
+	// that never sets it is treated as having read its stream to the end.
+	sawEnd bool
+	turns  []Turn
 	// wroteMemory reports whether the session already produced a commit whose
 	// message carries this session's trailer.
 	wroteMemory bool
@@ -57,6 +61,10 @@ var parsers = map[string]parseFunc{
 	// and differ only in their store root and agent name.
 	"codebuddy": parseCodeBuddy,
 	"workbuddy": parseCodeBuddy,
+	// Delta has no log file: the parser reads the JSONL stream of
+	// `delta thread watch --json` instead of a transcript. Schedule it through
+	// CollectDelta, which supplies that stream.
+	"delta": parseDelta,
 }
 
 // Supports reports whether the host's log format is implemented.
@@ -77,6 +85,13 @@ func (c Collector) Collect(agent, fallbackSID string, r io.Reader) (Digest, bool
 	if !ok {
 		return Digest{}, false
 	}
+	return c.digestFrom(agent, fallbackSID, parsed)
+}
+
+// digestFrom assembles the documented SessionDigest from one parser result. It
+// is the single place both entry points write a digest through, so the file path
+// and the Delta stream path cannot drift apart.
+func (c Collector) digestFrom(agent, fallbackSID string, parsed parseInput) (Digest, bool) {
 	sid := parsed.sessionID
 	if sid == "" {
 		sid = fallbackSID
