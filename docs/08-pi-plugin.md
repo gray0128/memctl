@@ -1,3 +1,15 @@
+---
+id: memctl-plugin-pi
+type: module-design
+title: pi 专用插件
+status: draft
+parent: memctl-architecture
+depends-on:
+  - memctl-cli-ui
+references:
+  - memctl-mcp
+---
+
 # 08. pi 专用插件：调研、分发与实现方案
 
 > 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`v0.5.1` 重新打包插件，`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。`memctl-pi@0.5.2` 已发布到 npm。非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。

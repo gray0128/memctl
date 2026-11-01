@@ -1,3 +1,15 @@
+---
+id: memctl-mcp
+type: module-design
+title: MCP 记忆工具
+status: draft
+parent: memctl-architecture
+depends-on:
+  - memctl-contracts
+references:
+  - memctl-workflows
+---
+
 # 09. 受沙箱宿主下的记忆写入通道：MCP 工具
 
 > 状态：已实现并验收（2026-10-18，`T071`–`T073`）。本文档定义 `memctl mcp` 子命令、工具契约、各宿主注册方式与验收矩阵。分发与安装细节引用 [CLI、UI 与分发](./04-ui-and-cli-specification.md)，宿主生命周期映射引用 [07](./07-dsh-plugin.md) 与 [08](./08-pi-plugin.md)。

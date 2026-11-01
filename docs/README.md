@@ -10,6 +10,7 @@
 
 | 文档 | 权威定义 |
 | --- | --- |
+| [00. 目标与需求](./00-goal-and-requirements.md) | 产品目标、问题、受众、能力索引、非目标与设计原则 |
 | [01. 架构与模块](./01-architecture-and-modules.md) | 写入模型、仓库及路径边界、模块依赖、运行依赖、平台边界 |
 | [02. 模型与契约](./02-domain-models-and-contracts.md) | 修订标识、状态模型、模块接口、REST、错误、SSE |
 | [03. 流程与恢复](./03-workflows-and-dataflows.md) | 初始化、写入事务、同步、冲突恢复、Dreaming、安装事务 |

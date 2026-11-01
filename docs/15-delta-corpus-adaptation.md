@@ -1,3 +1,13 @@
+---
+id: memctl-dream-corpus-delta
+type: submodule-design
+title: Delta 会话蒸馏适配
+status: draft
+parent: memctl-dream-corpus
+depends-on:
+  - memctl-host-delta
+---
+
 # 15. Delta 会话蒸馏适配方案
 
 > 状态：已实现（2026-10-31，Delta 0.23.0 / darwin arm64）。本文在 [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md) 的「可行」结论之上定义并实现了采集契约：读取路径、项目归属、回合与限额、触发时机、失败处置与验收。[14](./14-delta-cwd-feasibility.md) 回答能不能做，本文回答怎么做，以及本机实测推翻了其中哪三条判断。宿主接入面见 [13](./13-delta-integration.md)；蒸馏器的既有契约见 [12 §2.2](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)。

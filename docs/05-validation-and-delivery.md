@@ -1,3 +1,15 @@
+---
+id: memctl-acceptance
+type: architecture-design
+title: 验收与交付
+status: draft
+parent: memctl-goal
+references:
+  - memctl-contracts
+  - memctl-workflows
+  - memctl-cli-ui
+---
+
 # 05. 验收与交付
 
 本文件把设计约束转为可执行验收，并定义发布门槛；具体执行结果记录在 [开发状态](./STATUS.md) 与 `docs/validation/` 归档。测试使用临时 HOME、临时记忆仓库、受控 Git remote 和模拟 runner，不读写真实用户记忆、Agent 配置或远端。

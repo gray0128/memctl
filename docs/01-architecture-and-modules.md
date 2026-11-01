@@ -1,3 +1,11 @@
+---
+id: memctl-architecture
+type: architecture-design
+title: 架构与模块
+status: draft
+parent: memctl-goal
+---
+
 # 01. 架构与模块
 
 ## 1. 系统如何工作
@@ -132,6 +140,7 @@ memctl/
   .gitignore
   docs/
     README.md               # 方案索引与上游基线
+    00-goal-and-requirements.md # 产品目标、受众、能力索引与设计原则
     01-architecture-and-modules.md
     02-domain-models-and-contracts.md
     03-workflows-and-dataflows.md

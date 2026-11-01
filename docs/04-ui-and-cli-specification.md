@@ -1,3 +1,15 @@
+---
+id: memctl-cli-ui
+type: module-design
+title: CLI、UI 与分发
+status: draft
+parent: memctl-architecture
+depends-on:
+  - memctl-contracts
+references:
+  - memctl-workflows
+---
+
 # 04. CLI、UI 与分发
 
 ## 1. CLI 命令

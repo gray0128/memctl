@@ -1,3 +1,13 @@
+---
+id: memctl-workflows
+type: module-design
+title: 流程与恢复
+status: draft
+parent: memctl-architecture
+depends-on:
+  - memctl-contracts
+---
+
 # 03. 流程与恢复
 
 流程使用 [模型与错误契约](./02-domain-models-and-contracts.md)，写入遵循 [受管写入模型](./01-architecture-and-modules.md#2-写入模型)。所有后台任务均允许被中断，恢复不能依赖原 PID 仍然存在。

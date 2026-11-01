@@ -1,3 +1,11 @@
+---
+id: memctl-contracts
+type: module-design
+title: 模型与契约
+status: draft
+parent: memctl-architecture
+---
+
 # 02. 模型与契约
 
 本文定义领域对象与外部协议。字段表是实现依据，不再以缺少关联类型的 Go Struct 片段代替完整契约。文件访问边界见 [架构文档](./01-architecture-and-modules.md#3-仓库路径与信任边界)。
@@ -75,7 +83,8 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `DiagnosticIssue` | `code`, `severity`, `filePath?`, `lineNumber?`, `message`, `suggestion`, `autoFixable` |
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
 | `DreamProposal` | `proposalId`, `repoId`, `baseRevision`, `baseHead`, `runner`, `status`, `patchHash?`, `diff?`, `changes?`, `sessionsScanned?`, `newMemoriesExtracted?`, `warnings`, `createdAt`, `appliedCommit?`, `error?`；`runner` 取 `deepseek \| minimax \| openai \| anthropic \| local-agent`；`changes[]` 每项为 `{path, action, baseRevision?, plannedRevision, patch?}`，`action` 为 `create \| update \| delete`，`patch` 是该文件的单文件统一 diff，`diff` 按 `changes[]` 顺序拼接各 `patch` |
-| `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` || `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
+| `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
+| `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
 
 诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`、`EXPIRED_ENTRY`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据与已到期的有时效条目报告 `info`。`EXPIRED_ENTRY` 只提示该条目已被读取层隐藏，删除仍需人工确认，不标记 `autoFixable`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
 

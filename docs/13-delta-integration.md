@@ -1,3 +1,16 @@
+---
+id: memctl-host-delta
+type: module-design
+title: Delta 宿主接入
+status: draft
+parent: memctl-architecture
+depends-on:
+  - memctl-cli-ui
+references:
+  - memctl-dream-corpus
+  - memctl-dream-corpus-delta
+---
+
 # 13. Delta 宿主接入
 
 > 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64）；本轮交付会话身份回退、适配器探测与状态提示（`T123`）。Delta 没有生命周期 Hook，也没有本地 stdio MCP 通道，因此本文件定义的接入以「Skill + Agent 主动调用 CLI」为主，不引入新的写入模型。文件格式、写入事务与接口仍以 [02](./02-domain-models-and-contracts.md) 与 [03](./03-workflows-and-dataflows.md) 为准。

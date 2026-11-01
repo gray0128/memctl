@@ -1,3 +1,11 @@
+---
+id: memctl-memory-lifecycle
+type: module-design
+title: 记忆更新与过期
+status: draft
+parent: memctl-contracts
+---
+
 # 10. 记忆更新与过期：调研结论与生命周期规则
 
 > 状态：调研完成（2026-10-19）；§7 的三个未决问题已于 2026-10-19 由用户确认，`until` 解析、读取期隐藏与三个入口的统一过滤已实现（`T094`）。删除任务仍未实现。本文档只定义记忆的更新、过期与删除规则；文件格式、写入事务与接口仍以 [02](./02-domain-models-and-contracts.md) 与 [03](./03-workflows-and-dataflows.md) 为准。
