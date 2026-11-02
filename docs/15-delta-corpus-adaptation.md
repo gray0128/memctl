@@ -2,10 +2,9 @@
 id: memctl-dream-corpus-delta
 type: submodule-design
 title: Delta 会话蒸馏适配
-status: draft
+status: active
 parent: memctl-dream-corpus
-depends-on:
-  - memctl-host-delta
+depends-on: [memctl-host-delta]
 ---
 
 # 15. Delta 会话蒸馏适配方案

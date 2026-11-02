@@ -2,12 +2,10 @@
 id: memctl-mcp
 type: module-design
 title: MCP 记忆工具
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-contracts
-references:
-  - memctl-workflows
+depends-on: [memctl-contracts]
+references: [memctl-workflows]
 ---
 
 # 09. 受沙箱宿主下的记忆写入通道：MCP 工具

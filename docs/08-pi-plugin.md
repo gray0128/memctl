@@ -2,12 +2,10 @@
 id: memctl-plugin-pi
 type: module-design
 title: pi 专用插件
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-cli-ui
-references:
-  - memctl-mcp
+depends-on: [memctl-cli-ui]
+references: [memctl-mcp]
 ---
 
 # 08. pi 专用插件：调研、分发与实现方案

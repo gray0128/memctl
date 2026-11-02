@@ -2,10 +2,9 @@
 id: memctl-workflows
 type: module-design
 title: 流程与恢复
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-contracts
+depends-on: [memctl-contracts]
 ---
 
 # 03. 流程与恢复

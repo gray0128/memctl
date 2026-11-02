@@ -2,13 +2,10 @@
 id: memctl-host-delta
 type: module-design
 title: Delta 宿主接入
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-cli-ui
-references:
-  - memctl-dream-corpus
-  - memctl-dream-corpus-delta
+depends-on: [memctl-cli-ui]
+references: [memctl-dream-corpus, memctl-dream-corpus-delta]
 ---
 
 # 13. Delta 宿主接入

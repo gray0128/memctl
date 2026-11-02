@@ -2,11 +2,9 @@
 id: memctl-dream-remote
 type: module-design
 title: GitHub Actions Dreaming
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-workflows
-  - memctl-memory-lifecycle
+depends-on: [memctl-workflows, memctl-memory-lifecycle]
 ---
 
 # 11. 基于 GitHub Actions 的 Dreaming 远端整理方案

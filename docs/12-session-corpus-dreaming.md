@@ -2,12 +2,10 @@
 id: memctl-dream-corpus
 type: module-design
 title: 跨会话新记忆提炼
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-memory-lifecycle
-references:
-  - memctl-mcp
+depends-on: [memctl-memory-lifecycle]
+references: [memctl-mcp]
 ---
 
 # 12. 跨会话新记忆提炼：本地当前 Agent 交互式整理方案

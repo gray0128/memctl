@@ -2,7 +2,7 @@
 id: memctl-architecture
 type: architecture-design
 title: 架构与模块
-status: draft
+status: active
 parent: memctl-goal
 ---
 

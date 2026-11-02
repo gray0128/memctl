@@ -2,12 +2,9 @@
 id: memctl-acceptance
 type: architecture-design
 title: 验收与交付
-status: draft
+status: active
 parent: memctl-goal
-references:
-  - memctl-contracts
-  - memctl-workflows
-  - memctl-cli-ui
+references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 ---
 
 # 05. 验收与交付

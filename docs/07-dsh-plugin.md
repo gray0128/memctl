@@ -2,12 +2,10 @@
 id: memctl-plugin-dsh
 type: module-design
 title: dsh 专用插件
-status: draft
+status: active
 parent: memctl-architecture
-depends-on:
-  - memctl-cli-ui
-references:
-  - memctl-mcp
+depends-on: [memctl-cli-ui]
+references: [memctl-mcp]
 ---
 
 # 07. dsh 专用插件：分发、安装与实现方案

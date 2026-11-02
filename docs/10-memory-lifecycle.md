@@ -2,7 +2,7 @@
 id: memctl-memory-lifecycle
 type: module-design
 title: 记忆更新与过期
-status: draft
+status: active
 parent: memctl-contracts
 ---
 

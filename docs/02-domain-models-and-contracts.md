@@ -2,7 +2,7 @@
 id: memctl-contracts
 type: module-design
 title: 模型与契约
-status: draft
+status: active
 parent: memctl-architecture
 ---
 
