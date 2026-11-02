@@ -274,3 +274,20 @@
 - 附件与校验：独立目录 `/tmp/memctl-v0.15.0` 内 `shasum -a 256 -c SHA256SUMS` 六项 OK，Release 共九项附件；`RELEASE-INFO.txt` 记录 `version: v0.15.0`、`commit: 39d1f8a…`、`go1.27.1 darwin/arm64`；产物 `memctl-darwin-arm64 version` 为 `memctl v0.15.0`，`install --status` 正常输出。
 - 本机升级：`mv` 原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.15.0`，`update --check` 返回 `up to date`。
 - 未验证与遗留：共享线程、子智能体线程、归档线程与 Cloud Runner 线程未复验；长线程余量待真实数据再定。
+
+## T129：建立 spec 图
+
+- 目标与范围：把 `docs/` 下长期维护的权威契约提升为 spec 图节点，补上缺失的产品层文档。此前仓库没有任何带 `id`/`type` frontmatter 的文件，`spec_get`、`spec_graph` 与 `spec_validate` 无法使用；本轮围绕既有文档建图，不新写并行文档树。纯文档轮次，不改代码、命令、接口或数据格式。
+- 新增节点：[00. 目标与需求](../00-goal-and-requirements.md)（`id: memctl-goal`，`type: goal-and-requirements`，图根）：问题、目标、受众、12 项能力索引、9 条非目标、6 条设计原则、3 条已知边界。能力一栏只做索引并外链所属节点，不复制字段表与命令参数。
+- 采纳节点：`01`–`05`、`07`–`13`、`15` 就地加 frontmatter，正文除 `02` 的一处表格修复外未改；`docs/README.md` 导航表与 [01 §5 目录结构](../01-architecture-and-modules.md#5-目录结构与依赖) 登记 `00`。
+- 图结构：`memctl-goal` → `memctl-architecture`（01）、`memctl-acceptance`（05）；`01` → 02、03、04、07、08、09、11、12、13；`02` → 10（生命周期规则精化领域契约）；`12` → 15（`submodule-design`，Delta 蒸馏适配是跨会话提炼的子模块）。
+- 依赖边：`depends-on` 只取代码里真实的调用关系——`03`、`04`、`09` → `02`，`07`、`08`、`13` → `04`，`11` → `03` 与 `10`，`15` → `13`；文内互引一律走 `references`。
+- 排除：`06`（过程规范）、`14`（可行性记录）、`STATUS` 与 `docs/validation/` 不进图；`14` 的状态行补「图位置」声明，说明它是证据记录、Delta 采集的实现依据在 `15`。
+- 修正：[02](../02-domain-models-and-contracts.md) 的领域对象表在 `f7cb46e`（`T123`）把 `AdapterStatus` 与 `AdapterInstallPlan` 两行合并成一行，导致 `AdapterInstallPlan` 不再渲染，已拆回两行。
+- 工具行为：`spec_update` 把块状链接列表重排为 flow 写法（`depends-on: [memctl-contracts]`），语义不变；本仓库的 spec frontmatter 此后由 spec 工具托管。
+- 验证时间与环境：2026-10-31，darwin/arm64；提交 `9e0046c`（建图）、`a82b10c`（13 个节点转 `active`）。
+- 验证：`spec_validate` → 无问题（无悬空链接、无重复 id、无父环）；`spec_graph` root=`memctl-goal` depth=3 → 14 节点、13 条 `parent` 边；`spec_get memctl-contracts` 反向边核对；`git diff -U0 -- docs/` 过滤 frontmatter 行后仅剩两处登记改动与 `02` 表格修复；`grep` 检查表格行内的双竖线断裂，修复后无残留；`internal/adapters/registry.go` 的 11 个 agent、`internal/mcp/tools.go` 的 5 个工具与 `docs/03`、`docs/09` 的清单一致。
+- 用户逐项确认的结论：受众为个人开发者自用；文档里所有「首版不提供」「暂不提供」一律记为非目标而非延后项；`05` 原样采纳、不拆阶段顺序；已知限制只提炼长期有效的结构性边界并写入所属节点。
+- 未跑项：无代码变化，不运行 `make test`、二进制冒烟与浏览器检查。
+- 未验证与遗留：图结构未经第二个视角复核；本轮没有创建 `task-spec` 节点。
+

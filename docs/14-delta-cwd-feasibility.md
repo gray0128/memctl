@@ -1,5 +1,7 @@
 # 14. Delta 会话蒸馏的 cwd 方案可行性
 
+> 图位置：本文是可行性论证与实测证据记录，按决定不进入 spec 图（未加 frontmatter）。Delta 采集的实现依据是 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md)；15 仍引用本文的项目归属归一化规则，其余判断以 15 为准。
+>
 > 状态：调研完成（2026-10-31，Delta 0.23.0 / darwin arm64）；其中项目根归一化已由 `T127` 实现，采集器实现见 [15](./15-delta-corpus-adaptation.md)。本文只回答一个问题：能否用「当前工作目录」给 Delta 会话确定项目归属，从而接入 [12](./12-session-corpus-dreaming.md) 的本地会话蒸馏。结论见 §1，取舍与剩余风险见 §5、§6。宿主接入面见 [13. Delta 宿主接入](./13-delta-integration.md)。本文 §4、§4.1、§4.2 与 §6 中关于分页、Thinking 混入与当前线程可读性的三项判断已被后续实测推翻，以 [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md#6-对-14-的三处更正) 为准；§3、§5 第一步的 `ProjectRoot` 结论保持不变。
 
 ## 1. 结论

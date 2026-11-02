@@ -2,7 +2,7 @@
 id: memctl-goal
 type: goal-and-requirements
 title: memctl 产品目标与需求
-status: draft
+status: active
 ---
 
 # memctl 产品目标与需求
