@@ -45,9 +45,18 @@ func initLocalRepo(t *testing.T) string {
 	return repo
 }
 
-// seedDigest writes one unconsumed digest into the repository cache.
-func seedDigest(t *testing.T, service *Service, agent, sid, cwd, date, user string) corpus.Digest {
+// testDay returns a calendar day relative to today. Digests must stay inside
+// corpus.CorpusStateTTL or PrepareLocal prunes them and the session list comes
+// back empty, so a literal date turns this file into a time bomb.
+func testDay(offsetDays int) string {
+	return time.Now().UTC().AddDate(0, 0, offsetDays).Format("2006-01-02")
+}
+
+// seedDigest writes one unconsumed digest into the repository cache. dayOffset
+// is relative to today for the reason testDay documents.
+func seedDigest(t *testing.T, service *Service, agent, sid, cwd string, dayOffset int, user string) corpus.Digest {
 	t.Helper()
+	date := testDay(dayOffset)
 	digest := corpus.Digest{
 		SchemaVersion: corpus.SchemaVersion,
 		Agent:         agent,
@@ -77,8 +86,8 @@ func TestPrepareLocalNeedsNoRemoteCoversD07(t *testing.T) {
 	repo := initLocalRepo(t)
 	service := newTestService(t, repo, t.TempDir())
 	project := filepath.Join(t.TempDir(), "memctl")
-	seedDigest(t, service, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签")
-	seedDigest(t, service, "codex", "sess-b", project, "2026-10-19", "不要用 make release 发布")
+	seedDigest(t, service, "claude-code", "sess-a", project, 0, "记住：发布只推标签")
+	seedDigest(t, service, "codex", "sess-b", project, -1, "不要用 make release 发布")
 
 	bundle, err := service.PrepareLocal(context.Background(), PrepareRequest{Cwd: project})
 	if err != nil {
@@ -135,8 +144,8 @@ func TestPrepareLocalRanksCurrentProjectFirstCoversD07(t *testing.T) {
 	service := newTestService(t, repo, t.TempDir())
 	current := filepath.Join(t.TempDir(), "memctl")
 	other := filepath.Join(t.TempDir(), "other")
-	seedDigest(t, service, "claude-code", "other-new", other, "2026-10-20", "other project session")
-	seedDigest(t, service, "claude-code", "current-old", current, "2026-10-18", "current project session")
+	seedDigest(t, service, "claude-code", "other-new", other, 0, "other project session")
+	seedDigest(t, service, "claude-code", "current-old", current, -2, "current project session")
 
 	bundle, err := service.PrepareLocal(context.Background(), PrepareRequest{Cwd: current})
 	if err != nil {
@@ -176,8 +185,8 @@ func TestPrepareLocalRefusesAmbiguousProjectCoversD07(t *testing.T) {
 	// Two clones share the basename but are distinct projects.
 	first := filepath.Join(t.TempDir(), "a", "memctl")
 	second := filepath.Join(t.TempDir(), "b", "memctl")
-	seedDigest(t, service, "claude-code", "clone-a", first, "2026-10-20", "clone a")
-	seedDigest(t, service, "claude-code", "clone-b", second, "2026-10-20", "clone b")
+	seedDigest(t, service, "claude-code", "clone-a", first, 0, "clone a")
+	seedDigest(t, service, "claude-code", "clone-b", second, 0, "clone b")
 
 	_, err := service.PrepareLocal(context.Background(), PrepareRequest{Project: "memctl"})
 	if !contractCode(err, "INVALID_ARGUMENT") {
@@ -209,8 +218,8 @@ func prepareFixture(t *testing.T) (*Service, DreamPrepareBundle) {
 	repo := initLocalRepo(t)
 	service := newTestService(t, repo, t.TempDir())
 	project := filepath.Join(t.TempDir(), "memctl")
-	seedDigest(t, service, "claude-code", "sess-a", project, "2026-10-18", "记住：发布只推标签")
-	seedDigest(t, service, "codex", "sess-b", project, "2026-10-20", "不要用 make release 发布")
+	seedDigest(t, service, "claude-code", "sess-a", project, -2, "记住：发布只推标签")
+	seedDigest(t, service, "codex", "sess-b", project, 0, "不要用 make release 发布")
 	bundle, err := service.PrepareLocal(context.Background(), PrepareRequest{Cwd: project})
 	if err != nil {
 		t.Fatalf("PrepareLocal: %v", err)
@@ -256,7 +265,7 @@ func TestProposeLocalAssemblesMultiSessionSourceCoversD07(t *testing.T) {
 	service, bundle := prepareFixture(t)
 	fact := "发布只推标签，禁止在本地运行 make release"
 	line := assembledLine(bundle, []int{0, 1}, fact)
-	if !strings.Contains(line, "; source: ") || !strings.Contains(line, "added: 2026-10-20") {
+	if !strings.Contains(line, "; source: ") || !strings.Contains(line, "added: "+testDay(0)) {
 		t.Fatalf("assembled line = %q", line)
 	}
 	input := proposeInput(bundle, []int{0, 1}, fact,
@@ -445,21 +454,21 @@ func TestProposeLocalSkipsDuplicateFactCoversD07(t *testing.T) {
 func TestProposeLocalTimeLimitedUntilCoversD07(t *testing.T) {
 	service, bundle := prepareFixture(t)
 	ctx := context.Background()
-	// Sessions are ordered by updatedAt, so index 0 is the 2026-10-20 session.
-	if bundle.Sessions[0].Date != "2026-10-20" {
+	// Sessions are ordered by updatedAt, so index 0 is the newest one.
+	if bundle.Sessions[0].Date != testDay(0) {
 		t.Fatalf("unexpected session order: %+v", bundle.Sessions)
 	}
 	input := proposeInput(bundle, []int{0}, "冻结发布直到新版流水线验收",
 		"# Memory\n\n## Index\n- [[topic]]\n- [[notes/release]]\n", "# Release\n")
 	input.NewMemories[0].Kind = "time_limited"
-	input.NewMemories[0].Until = "2026-10-19"
+	input.NewMemories[0].Until = testDay(-1)
 	if _, err := service.ProposeLocal(ctx, input); !contractCode(err, "INVALID_ARGUMENT") {
 		t.Fatalf("until before the cited session date: err=%v, want INVALID_ARGUMENT", err)
 	}
 
-	input.NewMemories[0].Until = "2026-11-20"
+	input.NewMemories[0].Until = testDay(15)
 	input.Files[1].Content = "# Release\n" +
-		"- 冻结发布直到新版流水线验收 [source: " + bundle.Sessions[0].SourceTag + "; added: 2026-10-20; until: 2026-11-20]\n"
+		"- 冻结发布直到新版流水线验收 [source: " + bundle.Sessions[0].SourceTag + "; added: " + testDay(0) + "; until: " + testDay(15) + "]\n"
 	result, err := service.ProposeLocal(ctx, input)
 	if err != nil {
 		t.Fatalf("ProposeLocal time_limited: %v", err)
@@ -669,8 +678,11 @@ func TestProposeLocalRefusesPrematureExpiredDeletionCoversD07(t *testing.T) {
 	gitRun(t, env, repo, "add", "--", "sprint.md")
 	gitRun(t, env, repo, "commit", "-q", "-m", "add a time-limited entry")
 	service := newTestService(t, repo, t.TempDir())
+	// A fictional timeline: the cached digest must be fresh relative to the same
+	// clock the deletion gate reads, so the clock is pinned before seeding.
+	service.Now = func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) }
 	project := filepath.Join(t.TempDir(), "memctl")
-	seedDigest(t, service, "claude-code", "sess-a", project, "2026-10-20", "以后不再冻结发布")
+	seedDigest(t, service, "claude-code", "sess-a", project, 0, "以后不再冻结发布")
 
 	bundle, err := service.PrepareLocal(context.Background(), PrepareRequest{Cwd: project})
 	if err != nil {
@@ -706,7 +718,6 @@ func TestProposeLocalRefusesPrematureExpiredDeletionCoversD07(t *testing.T) {
 	// 2026-10-20 is still inside the 30-day hidden period of a 2026-10-01
 	// `until` (deletable from 2026-11-01), so removing the entry is refused with
 	// DELETION_DEFERRED.
-	service.Now = func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) }
 	_, err = service.ProposeLocal(context.Background(), input)
 	if !contractCode(err, "DELETION_DEFERRED") {
 		t.Fatalf("premature deletion: err=%v, want DELETION_DEFERRED", err)

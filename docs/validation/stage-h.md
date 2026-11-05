@@ -313,3 +313,16 @@
 - 未跑项：无代码变化，不运行 `make test`、二进制冒烟与浏览器检查。
 - 未验证与遗留：约定靠文档纪律执行，工具不会因缺少 frontmatter 而拒绝一篇设计文档；`docs/16` 落地时需按新约定把注解字段与验收并入 `09` 与 `05`。
 
+
+## T132：MCP 只读工具注解与多宿主取证
+
+- 目标与范围：按 [16. MCP 工具注解与宿主审批](../16-mcp-tool-annotations.md) 为只读工具声明注解并验收 `M15`；同时把 pi、Codex、OMP、OpenCode、Grok、Antigravity 六个流行 Agent 是否读取 `annotations` 的取证结论写入契约，并修掉阻塞全量验证的「时间炸弹」测试。不改工具语义、写入模型与既有协议处理。
+- 代码：`internal/mcp/protocol.go` 新增 `ToolAnnotations` 与 `Tool.Annotations`（四个 `*bool`，`omitempty`），包注释里过期的「两个工具」更正为五个；`internal/mcp/tools.go` 用 `readOnlyAnnotations()` 为 `memory_read` 与 `memory_entries` 声明 `readOnlyHint: true`、`destructiveHint: false`，其余三个工具保持无注解；`internal/cli/help_data.go` 的 `mcp` 帮助与示例从「三个工具」更正为五个（阶段 H 后一直是过期文案）。
+- 测试：`TestM02ToolsList` 增加注解断言（含「序列化后不含 `annotations` 键」）；新增 `TestM15MCPToolAnnotations`，用真实二进制读 `tools/list` 并断言只有两个读工具带注解；两处都做了反向验证（清空 hint、给写工具加注解）并按预期失败。
+- 时间炸弹：`dream.PrepareLocal` 按 `corpus.CorpusStateTTL`（14 天）清理摘要，而 `h3_http_dream_test.go`、`h3_local_dream_test.go`、`x10_project_root_test.go` 与 `internal/dream/local_test.go` 写死 `2026-10-20`；2026-11-03 之后摘要被清掉，`bundle.Sessions` 变空，测试从 `bundle.Sessions[0]` 越界 panic 并中断整包。改为相对今天：集成测试新增 `h3Day`、`writeH3Digest` 改收「相对天数」；单测新增 `testDay`、`seedDigest` 同样改收偏移；`TestProposeLocalRefusesPrematureExpiredDeletionCoversD07` 把 `service.Now` 固定到虚构时间线之后才播种摘要。
+- 生成器缺陷：`scripts/balance-test-shards.sh` 只收集 `--- PASS` 与 `--- FAIL`，被 `t.Skip` 跳过的集成测试（如未安装 dsh 时的 `TestT048DshPluginTarballInstall`）会从清单里消失，与它自己声明的「a stale manifest cannot silently skip coverage」相反。已把 `--- SKIP` 纳入收集，重新生成后 151 项全部有归属。
+- 文档：`docs/16` 新增 §2.5（六个宿主的读取路径与证据）、§2.1 与 §6 的探针改用 `has("annotations")`（`omitempty` 省略时展开同样是 `null`）、§4.1 宿主表按实证重写、§8 收敛两项已定案问题；`docs/09` §4.4 增加「注解」列、§5.2 补 Codex/Grok/OpenCode/Antigravity 的审批差异、§6.1 的 `M02` 更正为五个工具并新增 `M15`、§5.3 的探测输出同步真实顺序；`docs/05` 矩阵行改为 `M01–M15`。
+- 对应契约：[16. MCP 工具注解与宿主审批](../16-mcp-tool-annotations.md)、[09 §4.4/§5.2/§6.1](../09-mcp-memory-tools.md#44-工具集)、[05 核心测试矩阵](../05-validation-and-delivery.md#2-核心测试矩阵)、[06 开发循环](../06-development-loop.md#4-完成条件)。
+- 验证时间与环境：2026-11-05，darwin/arm64，Go 1.27.2，Node v26.11.1 / npm 11.20.0（本机默认 `node` 为 v22，`plugins/pi` 的 `node --test` 在 v22 上会把 14 项判为 `cancelledByParent`，须按构建基线显式使用 Node 26）。
+- 验证命令与结果：`make test`（Node 26）全绿；`go test ./tests/integration -count=1` 150 项通过（106.3 秒）；`scripts/test-shards.txt` 重新生成 151 项、四个分片 25.0/24.6/29.0/24.6 秒；真实二进制探针 `tools/list` 返回两个 `hasAnnotations: true` 与三个 `hasAnnotations: false`，`install --status` 的 `mcp:` 块列出五个工具；文档相对链接与锚点校验，本轮新增链接全部解析。
+- 未验证与遗留：宿主侧「读不弹窗、写仍弹窗」未在 ThinkRail 真实交互会话复验；Codex 的逐 hint 到 `AppToolApproval` 模式对应关系来自反汇编推断，需真实会话确认；Claude Code、Command Code、CodeBuddy、WorkBuddy、DSH 是否读取注解仍未验证；本机 `~/.agent-memory/bin/memctl` 未升级（本轮只验证临时构建的二进制），需随下一次发布带入。

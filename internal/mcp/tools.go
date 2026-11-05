@@ -52,20 +52,25 @@ func NewServer(service Service, session Session) *Server {
 	return &Server{service: service, session: session}
 }
 
+// readOnlyAnnotations is the declaration for a tool that changes nothing in the
+// repository. It is built per tool so no two tools share a mutable value.
+func readOnlyAnnotations() *ToolAnnotations {
+	return &ToolAnnotations{
+		ReadOnlyHint:    boolHint(true),
+		DestructiveHint: boolHint(false),
+	}
+}
+
 // Tools returns the tool list in a stable order. The two pure reads declare
 // readOnlyHint so a host that trusts tool annotations stops asking before every
 // call; the other three can change the repository, the prepare snapshot or a
 // proposal, so they stay unannotated. See docs/16-mcp-tool-annotations.md.
 func (s *Server) Tools() []Tool {
-	readOnly := &ToolAnnotations{
-		ReadOnlyHint:    boolHint(true),
-		DestructiveHint: boolHint(false),
-	}
 	return []Tool{
 		{
 			Name:        "memory_read",
 			Description: "Read one file from the shared memory repository and return its fileRevision baseline. Read before every write. The default file is MEMORY.md.",
-			Annotations: readOnly,
+			Annotations: readOnlyAnnotations(),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -80,7 +85,7 @@ func (s *Server) Tools() []Tool {
 		{
 			Name:        "memory_entries",
 			Description: "List or filter memory entries without reading whole files. Matching is a case-insensitive substring over the entry fact text; filters narrow by file, agent, device and added date. Use this to find where a fact lives before calling memory_read. Read-only; it never writes.",
-			Annotations: readOnly,
+			Annotations: readOnlyAnnotations(),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

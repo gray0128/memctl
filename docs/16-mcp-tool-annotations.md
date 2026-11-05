@@ -156,9 +156,14 @@ type Tool struct {
 | `internal/mcp/tools.go` | 给 `memory_read`、`memory_entries` 设置注解 |
 | `internal/mcp/tools_test.go` | `TestM02ToolsList` 增加注解断言：两个读工具有 `readOnlyHint: true`，其余三个工具 `Annotations == nil` |
 | `tests/integration/t071_mcp_test.go` | 按 §6 的 `M15` 断言真实 `tools/list` 输出 |
+| `internal/cli/help_data.go` | `mcp` 帮助与示例从「三个工具」更正为五个（阶段 H 后一直是过期文案） |
+| `tests/integration/h3_http_dream_test.go`、`h3_local_dream_test.go`、`x10_project_root_test.go`、`internal/dream/local_test.go` | 写死的摘要日期改为相对今天（新增 `h3Day` / `testDay`，`writeH3Digest` 与 `seedDigest` 改收「相对天数」）；固定日期会随 `corpus.CorpusStateTTL`（14 天）过期而被 `PrepareLocal` 清理 |
+| `scripts/test-shards.txt` | 重新生成，覆盖新增的 `M15` |
 | `docs/09-mcp-memory-tools.md` | §4.4 工具契约表增加「注解」列；§5.2 补 Codex 与 Grok 的审批说明；§6.1 增加 `M15`，并把 `M02` 与 §5.3 的探测输出从三个工具更正为当前的五个 |
 | `docs/05-validation-and-delivery.md` | 验收矩阵行由 `M01–M12` 更新为覆盖 `M15`（同时补上已实现的 `M13`、`M14`） |
-| `docs/STATUS.md` | 登记本轮任务与完成记录 |
+| `docs/16-mcp-tool-annotations.md`、`docs/09-mcp-memory-tools.md`、`docs/05-validation-and-delivery.md`、`docs/STATUS.md` | 文档同步，见下方补充说明 |
+
+变更清单里后四行是范围外发现、但会阻塞本轮验证的项：帮助文案与 `M02` 描述的是同一份接口契约，摘要日期测试则直接让 `make test` 变红（`internal/dream` 与 `tests/integration` 各一组）。它们不属于注解契约，因此在本轮一并修正并在此列出，不埋进其他改动里。
 
 ## 6. 验收
 
@@ -169,7 +174,7 @@ type Tool struct {
 | 单元 | `TestM02ToolsList` 覆盖五个工具的注解取值，并断言后三个工具的序列化结果不含 `annotations` 键 | 通过；两个方向的反向验证（去掉 hint、给写工具加注解）均按预期失败 |
 | 协议 | 用 §2.1 的命令对真实二进制取 `tools/list`，逐项比对 `hasAnnotations` 与 `annotations` | 通过；`TestM15MCPToolAnnotations` 用真实二进制断言，并且反向验证（把 hint 清空）按预期失败 |
 | 宿主 | 撤销某项目的 `memory_read` 授权后新开会话：读操作不弹窗，`memory_write` 仍弹窗；记录宿主版本、项目路径与截图 | 本轮未执行：需要 ThinkRail 交互会话，列为遗留项 |
-| 回归 | `make test` 全绿；`make install` 后重复协议检查 | 见 [开发状态](../STATUS.md) 的 `T132` 记录 |
+| 回归 | `make test` 全绿；`make install` 后重复协议检查 | 见 [开发状态](./STATUS.md) 的 `T132` 记录；本轮未执行 `make install`，协议检查改用临时构建的二进制 |
 
 ## 7. 发布与升级
 

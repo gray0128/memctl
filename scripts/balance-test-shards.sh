@@ -30,8 +30,10 @@ go test ./tests/integration -count=1 -v >"$measure_log" 2>&1 || true
 
 # Greedy longest-first assignment: the heaviest remaining test always goes to
 # the shard with the least accumulated time.
+# A skipped test still needs an assignment: without one it would drop out of
+# every shard and stop running wherever its host dependency appears.
 awk '
-  /^--- (PASS|FAIL): / {
+  /^--- (PASS|FAIL|SKIP): / {
     name = $3
     duration = $4
     gsub(/[()]/, "", duration)
