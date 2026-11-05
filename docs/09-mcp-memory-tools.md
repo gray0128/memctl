@@ -16,7 +16,7 @@ references: [memctl-workflows]
 
 - 会话没有记忆更新的直接原因不是插件失效，而是写入动作落在宿主沙箱之外：生命周期插件在宿主进程内运行，能注入和同步；Agent 通过 bash 执行 `memctl read/write` 时，子进程受工作区沙箱约束，无法打开记忆仓库的锁文件。
 - 生命周期插件只做桥接，不写入记忆。写入必须由 Agent 主动发起，因此需要一个不受 bash 沙箱约束、且跨宿主通用的调用通道。
-- 选定方案：`memctl` 二进制新增 `memctl mcp` 子命令，以标准输入输出实现 MCP server，暴露 `memory_read`、`memory_entries` 与 `memory_write` 三个工具。各宿主通过自带 MCP 客户端配置注册该 server。
+- 选定方案：`memctl` 二进制新增 `memctl mcp` 子命令，以标准输入输出实现 MCP server，暴露 `memory_read`、`memory_entries` 与 `memory_write` 三个日常工具（阶段 H 又新增两个本地 Dreaming 工具，见 4.4）。各宿主通过自带 MCP 客户端配置注册该 server。
 - 该通道已在 macOS arm64、DSH 0.2.1-rc.2 上验证：宿主派生的 MCP 子进程可以写入 `~/memory` 并成功执行 `memctl read`，不受 `workspace-write` 沙箱限制。
 - 「子进程不受沙箱约束」是宿主相关的结论，不是通用性质：Grok 的 `workspace` profile 会对子进程施加同样的写限制，必须显式把记忆仓库加入 `read_write`，而该授权同时放开 shell。pi 没有文件沙箱，shell 本就可写。各宿主的实测矩阵见 6.2。
 - 不采用的两条路线：把记忆仓库移入工作区会破坏跨项目共享语义；为每个宿主单独实现插件内工具会引入宿主内部依赖，且无法覆盖没有插件机制的宿主。
@@ -110,13 +110,15 @@ Agent（模型）
 
 当前已实现三个日常读写工具（`memory_read`、`memory_entries`、`memory_write`），并在阶段 H（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）新增两个本地交互式 Dreaming 工具（`memory_dream_prepare`、`memory_dream_propose`），使受沙箱限制的宿主也能在当前会话内完成跨会话新记忆提炼与提案生成。
 
-| 工具 | 用途 | 参数 | 成功返回 |
-| --- | --- | --- | --- |
-| `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` |
-| `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` |
-| `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content`、`sid?` | `transaction`、`commit`、`revision`、`sync` |
-| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） |
-| `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并与 `files[]` 逐字比对，再执行父目录、断链与孤立文件的结构守卫后持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） |
+「注解」列给出 `tools/list` 里的 `annotations`：只有不修改记忆仓库、不产生提交、不改写提案与 `prepare` 快照的工具才声明 `readOnlyHint: true`，其余工具不声明该字段，宿主按 MCP 规范默认值（`readOnlyHint=false`、`destructiveHint=true`）继续要求确认。各宿主如何采纳注解见 [16. MCP 工具注解与宿主审批](./16-mcp-tool-annotations.md#25-其他-agent-是否读取注解)。
+
+| 工具 | 用途 | 参数 | 成功返回 | 注解 |
+| --- | --- | --- | --- | --- |
+| `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` | `readOnlyHint: true`、`destructiveHint: false` |
+| `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` | `readOnlyHint: true`、`destructiveHint: false` |
+| `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content`、`sid?` | `transaction`、`commit`、`revision`、`sync` | 不声明 |
+| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） | 不声明（会改写 `cache/dream/prepare.json` 快照） |
+| `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并与 `files[]` 逐字比对，再执行父目录、断链与孤立文件的结构守卫后持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） | 不声明 |
 
 不提供 `memory_dream_apply`：MCP 场景下无法区分「用户已审阅」与「Agent 自行决定应用」，应用提案只保留 CLI `dream --apply` 与 Web UI「整理」视图两个用户入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#32-禁止项)）。
 
@@ -211,11 +213,15 @@ DSH 的注册条目写在 profile 的 `cordis.patch.yml` 里，追加一条 `ins
 
 pi 的 MCP server 默认以 `codemode` 暴露：工具只对 `codemode` 脚本可见，既不向模型声明，也不出现在工具列表。注册时显式指定 `--exposure direct` 才能让模型直接调用 `memory_read`、`memory_entries` 与 `memory_write`。三种可行暴露方式中，`direct` 适合这几个常用工具；`deferred` 需要模型先经 `tool_search` 加载；`codemode` 需要同时启用 `codemode` 工具。
 
-Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件：`approval_policy = "never"`（或 `-a never`）与 `default_tools_approval_mode` 缺省或 `auto` 组合时，宿主直接拒绝调用并返回 `MCP tool call requires approval, but approval policy is never`。实测只有 `default_tools_approval_mode = "approve"` 能放行，且该配置不覆盖沙箱：同一会话的 bash 仍受 `workspace-write` 限制。注册后未改这一项时，表现为「工具存在但每次都失败」，不要误判为 memctl 故障。
+Codex 有一项与 memctl 无关但会让工具调用全部失败的前置条件：`approval_policy = "never"`（或 `-a never`）与 `default_tools_approval_mode` 缺省或 `auto` 组合时，宿主直接拒绝调用并返回 `MCP tool call requires approval, but approval policy is never`。实测只有 `default_tools_approval_mode = "approve"` 能放行，且该配置不覆盖沙箱：同一会话的 bash 仍受 `workspace-write` 限制。注册后未改这一项时，表现为「工具存在但每次都失败」，不要误判为 memctl 故障。该实测的前提是工具不带注解；Codex 的审批判定接受 `ToolAnnotations`，注解缺失时一律要求审批，声明只读后能否在更宽松的模式下免审需在配置了注解的二进制上用真实会话复验一次（见 [16 §2.5](./16-mcp-tool-annotations.md#25-其他-agent-是否读取注解)）。
+
+Grok 不按 `readOnlyHint` 自动免审：授权顺序里的内置自动放行只覆盖内置只读工具与只读 shell 命令，MCP 工具要落到 `[permission]` 的 `allow` 规则。未开启 `always-approve` 又希望读工具在每个项目免审时，追加 `MCPTool(memctl__memory_read)` 与 `MCPTool(memctl__memory_entries)` 两条（工具名不带 `mcp__` 前缀）。
+
+OpenCode 与 Antigravity 的主会话本就不逐次确认 MCP 工具：OpenCode 的默认 Agent 权限为全部 `allow`，Antigravity 走自己的授权存储。两者都解析注解但不用于放行；pi、Codex 与 OMP 则直接读取注解，完整对照见 [16 §2.5](./16-mcp-tool-annotations.md#25-其他-agent-是否读取注解)。
 
 ### 5.3 探测
 
-- `memctl install --status` 在适配器列表之后输出 `mcp:` 块：把当前可执行文件按 `mcp --agent status` 启动一次，完成握手并读取 `tools/list`，成功时输出 `mcp: serving <工具列表> (<version>)`（当前为 `memory_entries, memory_read, memory_write`），随后按 5.2 输出每个宿主的注册命令。
+- `memctl install --status` 在适配器列表之后输出 `mcp:` 块：把当前可执行文件按 `mcp --agent status` 启动一次，完成握手并读取 `tools/list`，成功时输出 `mcp: serving <工具列表> (<version>)`（当前为 `memory_read, memory_entries, memory_dream_prepare, memory_dream_propose, memory_write`，即 `tools/list` 的返回顺序），随后按 5.2 输出每个宿主的注册命令。
 - Web UI 的「客户端接入」视图通过 `GET /api/v1/mcp` 展示同一份结果：可执行文件、版本、工具列表、不可用原因，以及每个宿主的注册命令或手工步骤。探测逻辑与注册表实现在 `internal/mcp`，CLI 与 HTTP 共用，避免两处漂移。界面只提供复制命令，不运行 `mcp add`，也不写宿主配置。
 - 探测只使用协议，不读状态目录，不写任何文件；超时上限 10 秒，子进程无论成功失败都会被回收。预算不能太小：探测与并行编译争用 CPU 时，正常的二进制也可能在 3 秒内没能完成握手，从而被误报为不可用。
 - 二进制无法响应 `mcp`（旧版本、路径不可执行、未返回 `tools/list`）时输出 `mcp: unavailable: <原因>` 并省略全部注册命令：注册一个每次调用都失败的 server 比不注册更难排查。
@@ -243,7 +249,7 @@ MCP 与生命周期插件互补，不互相替代：
 | ID | 场景 | 预期 |
 | --- | --- | --- |
 | M01 | `initialize` 正常握手、未知方法、非法 JSON 行 | 返回正确处理；非法行不终止进程；标准输出只有 JSON 行 |
-| M02 | `tools/list` | 恰好返回 `memory_read`、`memory_entries` 与 `memory_write` 及其参数模式 |
+| M02 | `tools/list` | 恰好返回 `memory_read`、`memory_entries`、`memory_dream_prepare`、`memory_dream_propose` 与 `memory_write` 及其参数模式；不注册 `memory_dream_apply` |
 | M03 | `memory_read` 读取 `MEMORY.md` 与指定路径 | 返回 `filePath`、`fileRevision`、`rawContent`，与 `read --json` 一致；`until` 已到期的条目以占位符出现并计入 `hiddenExpired` |
 | M04 | 路径越界、绝对路径、Git 内部路径、符号链接逃逸 | 返回 `INVALID_PATH`，不读取仓库外内容 |
 | M05 | `memory_write` 使用正确基线新建与覆盖 | 产生一次本地提交，返回 `transaction`、`commit`、`revision`、`sync` |
@@ -256,6 +262,7 @@ MCP 与生命周期插件互补，不互相替代：
 | M12 | 宿主关闭连接 | 进程退出，不遗留子进程与锁 |
 | M13 | `memory_entries` 按 `q`/`file`/`agent`/`device`/`from`/`to`/`limit`/`offset` 检索 | 参数原样下发到条目查询；返回 `{revision, items, total}` 与 `GET /api/v1/entries` 一致；负 `limit` 在调用前被拒绝；契约失败以 `isError` 携带错误码而非协议错误 |
 | M14 | 无 `--sid` 时传 `sid`；已配置 `--sid` 时传不同值；传入含控制字符或超长值 | 前两者分别把调用值写入 `Session:` trailer 与保留配置值；非法值返回 `INVALID_ARGUMENT`，不产生提交 |
+| M15 | `tools/list` 的注解取值 | `memory_read` 与 `memory_entries` 返回 `annotations: {readOnlyHint: true, destructiveHint: false}`；`memory_write`、`memory_dream_prepare`、`memory_dream_propose` 的响应 JSON 里没有 `annotations` 键（不是 `null`）；两个读工具是唯一的注解持有者 |
 
 ### 6.2 真实验证边界
 
@@ -308,7 +315,7 @@ Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.
 
 已实现（`T071`、`T072`）：
 
-- `memctl mcp` 子命令、三个工具、协议处理与错误映射。
+- `memctl mcp` 子命令、五个工具、协议处理与错误映射。
 - `internal/mcp` 包与对应单元、集成测试；`internal/mcp/probe.go` 提供 `M09` 的能力探测。
 - `install --status` 的 `mcp:` 块：探测当前二进制并按 5.2 输出注册动作。
 - 帮助目录的 `mcp` 条目与 `install` 的 MCP 说明，中英文一致。

@@ -120,14 +120,14 @@ func TestPrepareKeepsForeignDirectoryOutOfThePoolCoversX12(t *testing.T) {
 	// One digest for the project, one for a directory that belongs to nothing.
 	// A prepare from that directory must return the project session only when
 	// it is asked for, and must never rewrite the foreign key.
-	writeH3Digest(t, home, "claude-code", "project-sess", projectRoot, "2026-10-20", "project fact")
+	writeH3Digest(t, home, "claude-code", "project-sess", projectRoot, 0, "project fact")
 	// t.TempDir() is a symlink target on macOS, so both the digest and the
 	// command use the resolved path: the key is a hash of the exact string.
 	outside, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("resolve outside directory: %v", err)
 	}
-	foreign := writeH3Digest(t, home, "claude-code", "outside-sess", outside, "2026-10-20", "unrelated fact")
+	foreign := writeH3Digest(t, home, "claude-code", "outside-sess", outside, 0, "unrelated fact")
 
 	bundle := runPrepare(t, bin, home, outside)
 	if bundle.ProjectFilter.CwdKey != corpus.CwdKey(config.Canonical(outside)) {

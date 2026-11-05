@@ -100,6 +100,59 @@ func TestM02ToolsList(t *testing.T) {
 			t.Errorf("%s schema type = %v", tool.Name, schema["type"])
 		}
 	}
+
+	// M15: the two pure reads declare readOnlyHint so a host that trusts
+	// annotations stops asking before every call, and every tool that can
+	// change the repository, the prepare snapshot or a proposal omits the
+	// member entirely so the host falls back to the MCP defaults
+	// (readOnlyHint false, destructiveHint true) and keeps asking.
+	annotated := map[string]bool{"memory_read": true, "memory_entries": true}
+	for _, tool := range tools {
+		encoded, err := json.Marshal(tool)
+		if err != nil {
+			t.Fatalf("%s does not marshal: %v", tool.Name, err)
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &raw); err != nil {
+			t.Fatalf("%s is not a JSON object: %v", tool.Name, err)
+		}
+		annotations, present := raw["annotations"]
+		if !annotated[tool.Name] {
+			if present {
+				t.Errorf("%s serializes annotations; a host would skip its confirmation", tool.Name)
+			}
+			if tool.Annotations != nil {
+				t.Errorf("%s has a non-nil Annotations field", tool.Name)
+			}
+			continue
+		}
+		if !present {
+			t.Fatalf("%s does not serialize annotations", tool.Name)
+		}
+		if tool.Annotations == nil {
+			t.Fatalf("%s has a nil Annotations field", tool.Name)
+		}
+		if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+			t.Errorf("%s readOnlyHint = %v, want true", tool.Name, tool.Annotations.ReadOnlyHint)
+		}
+		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+			t.Errorf("%s destructiveHint = %v, want false", tool.Name, tool.Annotations.DestructiveHint)
+		}
+		var decoded struct {
+			ReadOnlyHint    *bool `json:"readOnlyHint"`
+			DestructiveHint *bool `json:"destructiveHint"`
+		}
+		if err := json.Unmarshal(annotations, &decoded); err != nil {
+			t.Fatalf("%s annotations: %v", tool.Name, err)
+		}
+		if decoded.ReadOnlyHint == nil || !*decoded.ReadOnlyHint {
+			t.Errorf("%s serialized readOnlyHint = %v, want true", tool.Name, decoded.ReadOnlyHint)
+		}
+		if decoded.DestructiveHint == nil || *decoded.DestructiveHint {
+			t.Errorf("%s serialized destructiveHint = %v, want false", tool.Name, decoded.DestructiveHint)
+		}
+	}
+
 	if got := ToolNames(); len(got) != 5 {
 		t.Fatalf("ToolNames() = %v", got)
 	}

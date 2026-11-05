@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/corpus"
@@ -39,9 +40,18 @@ func h3Env(home string) []string {
 	return a2Env(home, filepath.Join(home, "memory"), true)
 }
 
-// writeH3Digest seeds one digest into the repository cache.
-func writeH3Digest(t *testing.T, home, agent, sid, cwd, date, user string) corpus.Digest {
+// h3Day returns a calendar day relative to today. Digests must carry a live
+// date: PrepareLocal prunes anything older than corpus.CorpusStateTTL, so a
+// pinned literal silently empties the session list once that day ages out.
+func h3Day(offsetDays int) string {
+	return time.Now().UTC().AddDate(0, 0, offsetDays).Format("2006-01-02")
+}
+
+// writeH3Digest seeds one digest into the repository cache. The day offset is
+// relative to today for the reason h3Day documents.
+func writeH3Digest(t *testing.T, home, agent, sid, cwd string, dayOffset int, user string) corpus.Digest {
 	t.Helper()
+	date := h3Day(dayOffset)
 	cache := corpus.OpenCache(filepath.Join(home, ".agent-memory"), config.RepoID(filepath.Join(home, "memory")))
 	digest := corpus.Digest{
 		SchemaVersion: corpus.SchemaVersion,
@@ -130,8 +140,8 @@ func TestH3PrepareWorksWithoutRemoteCoversD07(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签")
-	writeH3Digest(t, home, "codex", "sess-b", project, "2026-10-19", "不要用 make release 发布")
+	writeH3Digest(t, home, "claude-code", "sess-a", project, 0, "记住：发布只推标签")
+	writeH3Digest(t, home, "codex", "sess-b", project, -1, "不要用 make release 发布")
 
 	if _, err := os.Stat(filepath.Join(repo, ".github")); err == nil {
 		t.Fatal("the fixture unexpectedly has a .github directory")
@@ -187,9 +197,9 @@ func TestH3PrepareProjectFilterAndAmbiguityCoversD07(t *testing.T) {
 			t.Fatalf("create %s: %v", dir, err)
 		}
 	}
-	writeH3Digest(t, home, "claude-code", "clone-a", first, "2026-10-20", "clone a")
-	writeH3Digest(t, home, "claude-code", "clone-b", second, "2026-10-20", "clone b")
-	writeH3Digest(t, home, "claude-code", "other-1", other, "2026-10-19", "other project")
+	writeH3Digest(t, home, "claude-code", "clone-a", first, 0, "clone a")
+	writeH3Digest(t, home, "claude-code", "clone-b", second, 0, "clone b")
+	writeH3Digest(t, home, "claude-code", "other-1", other, -1, "other project")
 
 	ambiguous := runMemctl(t, bin, repo, h3Env(home), "dream", "--prepare", "--project", "memctl")
 	if ambiguous.code == 0 {
@@ -227,8 +237,8 @@ func TestH3ProposeApplyConsumesSessionsCoversD07(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-18", "记住：发布只推标签")
-	writeH3Digest(t, home, "codex", "sess-b", project, "2026-10-20", "不要用 make release 发布")
+	writeH3Digest(t, home, "claude-code", "sess-a", project, -2, "记住：发布只推标签")
+	writeH3Digest(t, home, "codex", "sess-b", project, 0, "不要用 make release 发布")
 	// The managed write never creates directory structure while holding the
 	// repository lock, so a new topic file needs its parent directory to exist.
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o700); err != nil {
@@ -241,7 +251,7 @@ func TestH3ProposeApplyConsumesSessionsCoversD07(t *testing.T) {
 	}
 	fact := "发布只推标签，禁止在本地运行 make release 上传产物"
 	tags := []string{bundle.Sessions[0].SourceTag, bundle.Sessions[1].SourceTag}
-	line := "- " + fact + " [source: " + strings.Join(tags, "; source: ") + "; added: 2026-10-20]"
+	line := "- " + fact + " [source: " + strings.Join(tags, "; source: ") + "; added: " + h3Day(0) + "]"
 
 	proposalInput := map[string]any{
 		"baseHead":     bundle.BaseHead,
@@ -360,14 +370,14 @@ func TestH3ProposeRejectsMissingAssembledLineCoversD07(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签")
+	writeH3Digest(t, home, "claude-code", "sess-a", project, 0, "记住：发布只推标签")
 	// The parent-directory guard needs notes/ to exist for every case that is
 	// not testing the guard itself.
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o700); err != nil {
 		t.Fatalf("create notes: %v", err)
 	}
 	bundle := runPrepare(t, bin, home, project)
-	line := "- 发布只推标签 [source: " + bundle.Sessions[0].SourceTag + "; added: 2026-10-20]"
+	line := "- 发布只推标签 [source: " + bundle.Sessions[0].SourceTag + "; added: " + h3Day(0) + "]"
 
 	cases := []struct {
 		name     string
@@ -498,7 +508,7 @@ func TestH3ApplySkipsChangedDigestCoversD08(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签")
+	writeH3Digest(t, home, "claude-code", "sess-a", project, 0, "记住：发布只推标签")
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o700); err != nil {
 		t.Fatalf("create notes: %v", err)
 	}
@@ -507,7 +517,7 @@ func TestH3ApplySkipsChangedDigestCoversD08(t *testing.T) {
 		t.Fatalf("sessions = %+v", bundle.Sessions)
 	}
 	fact := "发布只推标签"
-	line := "- " + fact + " [source: " + bundle.Sessions[0].SourceTag + "; added: 2026-10-20]"
+	line := "- " + fact + " [source: " + bundle.Sessions[0].SourceTag + "; added: " + h3Day(0) + "]"
 	input := map[string]any{
 		"baseHead":     bundle.BaseHead,
 		"baseRevision": bundle.BaseRevision,
@@ -544,7 +554,7 @@ func TestH3ApplySkipsChangedDigestCoversD08(t *testing.T) {
 	}
 
 	// Re-distil the cited session before the applied commit.
-	writeH3Digest(t, home, "claude-code", "sess-a", project, "2026-10-20", "记住：发布只推标签（更新后的内容）")
+	writeH3Digest(t, home, "claude-code", "sess-a", project, 0, "记住：发布只推标签（更新后的内容）")
 
 	applied := runMemctl(t, bin, repo, h3Env(home), "dream", "--apply", proposal.ProposalID, "--patch-hash", proposal.PatchHash)
 	if applied.code != 0 {

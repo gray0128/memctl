@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gray0128/memctl/internal/config"
 	"github.com/gray0128/memctl/internal/corpus"
@@ -40,14 +41,20 @@ func TestH3DreamListRouteCoversD07(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	// The digest must be live: PrepareLocal prunes digests older than
+	// corpus.CorpusStateTTL, so a pinned date silently empties the session list
+	// once it ages out. Both the digest date and the assembled suffix come from
+	// the same "today" so the proposal's provenance line matches verbatim.
+	now := time.Now().UTC()
+	day := now.Format("2006-01-02")
 	cache := corpus.OpenCache(filepath.Join(fixture.home, ".agent-memory"), config.RepoID(config.Canonical(fixture.repo)))
 	if err := cache.Save(corpus.Digest{
 		SchemaVersion: corpus.SchemaVersion,
 		Agent:         "claude-code",
 		SessionID:     "sess-list",
 		SourceTag:     "agent://device/claude-code/sess-list",
-		Date:          "2026-10-20",
-		UpdatedAt:     "2026-10-20T10:00:00Z",
+		Date:          day,
+		UpdatedAt:     now.Format(time.RFC3339),
 		CwdBase:       corpus.CwdBase(project),
 		CwdKey:        corpus.CwdKey(project),
 		Turns:         []corpus.Turn{{User: "记住：发布只推标签"}},
@@ -58,7 +65,10 @@ func TestH3DreamListRouteCoversD07(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareLocal: %v", err)
 	}
-	line := "- 发布只推标签 [source: " + bundle.Sessions[0].SourceTag + "; added: 2026-10-20]"
+	if len(bundle.Sessions) != 1 {
+		t.Fatalf("prepare returned %d sessions, want the one live digest", len(bundle.Sessions))
+	}
+	line := "- 发布只推标签 [source: " + bundle.Sessions[0].SourceTag + "; added: " + day + "]"
 	result, err := service.ProposeLocal(context.Background(), dream.DreamProposeInput{
 		BaseHead:     bundle.BaseHead,
 		BaseRevision: bundle.BaseRevision,

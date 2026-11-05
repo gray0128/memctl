@@ -1155,8 +1155,8 @@ var helpCommandData = []helpCommand{
 		Usage:   []string{"memctl mcp [--agent NAME] [--sid ID]"},
 		Summary: loc("Serve the memory tools over the Model Context Protocol.", "以 Model Context Protocol 提供记忆工具。"),
 		Description: loc(
-			"Serves three tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_entries searches stored entries by keyword, memory_read returns one file with its fileRevision baseline, and memory_write applies one managed write. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
-			"在标准输入输出上以单行 JSON-RPC 2.0 提供三个工具：memory_entries 按关键词检索已存条目，memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
+			"Serves five tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_entries searches stored entries by keyword, memory_read returns one file with its fileRevision baseline, memory_write applies one managed write, and memory_dream_prepare and memory_dream_propose drive local interactive Dreaming. The two read-only tools declare annotations, so a host that trusts them stops confirming every read. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
+			"在标准输入输出上以单行 JSON-RPC 2.0 提供五个工具：memory_entries 按关键词检索已存条目，memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入，memory_dream_prepare 与 memory_dream_propose 驱动本地交互式整理。两个只读工具声明注解，信任注解的宿主不再逐次确认读取。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded on every write. Falls back to AGENT_MEMORY_AGENT, then unknown.", "每次写入记录的 Agent 名称。依次回退到 AGENT_MEMORY_AGENT 和 unknown。")},
@@ -1172,7 +1172,7 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl mcp --agent dsh", Note: loc("Start the MCP server; the host speaks the protocol on stdin and stdout.", "启动 MCP server，由宿主在标准输入输出上使用协议。")},
-			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_entries, memory_read and memory_write.", "一行请求；工具为 memory_entries、memory_read 与 memory_write。")},
+			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_entries, memory_read, memory_write, memory_dream_prepare and memory_dream_propose.", "一行请求；工具为 memory_entries、memory_read、memory_write、memory_dream_prepare 与 memory_dream_propose。")},
 		},
 		Notes: []localizedText{
 			loc("Tool failures return isError with the same `CODE: message` text as the CLI, so a model can act on REVISION_MISMATCH or BUSY.", "工具失败返回 isError，文本与 CLI 的 `CODE: message` 一致，使模型可以处理 REVISION_MISMATCH 或 BUSY。"),

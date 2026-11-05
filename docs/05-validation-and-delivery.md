@@ -215,7 +215,7 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 | I08 | pi 安装计划与提示 | 原生缺失且无旧条目时不写 `hooks.yaml`，输出 npm 与本地目录提示；旧条目保留并标记 legacy；旧条目存在但插件缺失时 `needs_attention` |
 | I09 | pi 包安装 | `npm pack` 文件清单正确；隔离 `PI_CODING_AGENT_DIR` 下本地目录安装、`pi list`、卸载可用；无依赖和安装脚本 |
 | I10 | pi 版本与降级 | 低于下界或无法解析的 pi 版本不被报告为 `configured`；`sections` 缺失时回退，不静默失效 |
-| `M01–M12` | MCP 记忆工具：协议、工具、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
+| `M01–M15` | MCP 记忆工具：协议、工具与注解、沙箱独立性、探测 | 逐项定义见 [MCP 记忆工具的验收矩阵](./09-mcp-memory-tools.md#61-矩阵) |
 | `X01–X03` | Delta 宿主：无 Hook 时的会话身份与适配器输出 | 逐项定义见 [Delta 宿主接入的验收](./13-delta-integration.md#6-验收) |
 | `X10–X14` | Delta 会话蒸馏：项目根归一化、当前线程采集与失败降级 | 逐项定义见 [Delta 会话蒸馏适配的验收](./15-delta-corpus-adaptation.md#8-验收)；`T127` 已全部通过 |
 | R01 | 仅复制二进制到空 HOME，保留系统 Git | 默认指引、UI、模板可用，不依赖独立 INSTRUCTIONS.md；默认指引含条目失效的判定规则（状态型改写、事件型追加、禁止 changelog）、批量整理走 Dreaming 提案的规定（`--prepare` → `--propose`，确认前不改主库、不自行 `--apply`）与跨主题互链规则（链接目标可以是任意受管文件，不限于 `MEMORY.md`） |

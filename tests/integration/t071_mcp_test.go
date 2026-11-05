@@ -127,6 +127,74 @@ func TestM01MCPHandshake(t *testing.T) {
 	}
 }
 
+// TestM15MCPToolAnnotations proves the read-only tools advertise readOnlyHint
+// while the tools that can change the repository, the prepare snapshot or a
+// proposal serialize without the member at all. It asserts on the raw JSON
+// because an omitted member and an explicit null decode to the same zero value,
+// and only the omission lets the host apply the MCP defaults (readOnlyHint
+// false, destructiveHint true) and keep asking.
+func TestM15MCPToolAnnotations(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	home, _, env := a5LocalRepo(t, bin, root, "home")
+
+	responses, stderr := runMCPSession(t, bin, home, env,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+	)
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if len(responses) != 2 {
+		t.Fatalf("want 2 responses, got %d", len(responses))
+	}
+	if responses[1].Error != nil {
+		t.Fatalf("tools/list: %d %s", responses[1].Error.Code, responses[1].Error.Message)
+	}
+	var list struct {
+		Tools []map[string]json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(responses[1].Result, &list); err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	if len(list.Tools) != 5 {
+		t.Fatalf("want 5 tools, got %d", len(list.Tools))
+	}
+
+	annotated := []string{}
+	for _, tool := range list.Tools {
+		var name string
+		if err := json.Unmarshal(tool["name"], &name); err != nil {
+			t.Fatalf("tool name: %v", err)
+		}
+		raw, present := tool["annotations"]
+		if !present {
+			continue
+		}
+		annotated = append(annotated, name)
+		var annotations struct {
+			ReadOnlyHint    *bool `json:"readOnlyHint"`
+			DestructiveHint *bool `json:"destructiveHint"`
+		}
+		if err := json.Unmarshal(raw, &annotations); err != nil {
+			t.Fatalf("%s annotations: %v", name, err)
+		}
+		if annotations.ReadOnlyHint == nil || !*annotations.ReadOnlyHint {
+			t.Errorf("%s readOnlyHint = %s, want true", name, raw)
+		}
+		if annotations.DestructiveHint == nil || *annotations.DestructiveHint {
+			t.Errorf("%s destructiveHint = %s, want false", name, raw)
+		}
+	}
+
+	// Exactly the two pure reads carry annotations. Any other tool appearing here
+	// means a host could skip a confirmation it must still ask for.
+	if strings.Join(annotated, ",") != "memory_read,memory_entries" {
+		t.Fatalf("annotated tools = %v, want exactly [memory_read memory_entries]", annotated)
+	}
+}
+
 // TestM03MCPReadMatchesCLI proves memory_read returns the same content and
 // revision as `read --json`.
 func TestM03MCPReadMatchesCLI(t *testing.T) {
