@@ -108,7 +108,7 @@ Agent（模型）
 
 ### 4.4 工具集
 
-当前已实现三个日常读写工具（`memory_read`、`memory_entries`、`memory_write`），并在阶段 H（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）新增两个本地交互式 Dreaming 工具（`memory_dream_prepare`、`memory_dream_propose`），使受沙箱限制的宿主也能在当前会话内完成跨会话新记忆提炼与提案生成。
+已实现五个工具：三个日常读写工具（`memory_read`、`memory_entries`、`memory_write`），以及阶段 H 新增的两个本地交互式 Dreaming 工具（`memory_dream_prepare`、`memory_dream_propose`），使受沙箱限制的宿主也能在当前会话内完成跨会话新记忆提炼与提案生成（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)）。
 
 「注解」列给出 `tools/list` 里的 `annotations`：只有不修改记忆仓库、不产生提交、不改写提案与 `prepare` 快照的工具才声明 `readOnlyHint: true`，其余工具不声明该字段，宿主按 MCP 规范默认值（`readOnlyHint=false`、`destructiveHint=true`）继续要求确认。各宿主如何采纳注解见 [16. MCP 工具注解与宿主审批](./16-mcp-tool-annotations.md#25-其他-agent-是否读取注解)。
 

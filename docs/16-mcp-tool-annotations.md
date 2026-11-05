@@ -150,20 +150,28 @@ type Tool struct {
 
 ## 5. 变更清单
 
+### 5.1 本方案的改动
+
 | 文件 | 改动 |
 | --- | --- |
-| `internal/mcp/protocol.go` | 新增 `ToolAnnotations` 与 `Tool.Annotations` |
-| `internal/mcp/tools.go` | 给 `memory_read`、`memory_entries` 设置注解 |
-| `internal/mcp/tools_test.go` | `TestM02ToolsList` 增加注解断言：两个读工具有 `readOnlyHint: true`，其余三个工具 `Annotations == nil` |
-| `tests/integration/t071_mcp_test.go` | 按 §6 的 `M15` 断言真实 `tools/list` 输出 |
-| `internal/cli/help_data.go` | `mcp` 帮助与示例从「三个工具」更正为五个（阶段 H 后一直是过期文案） |
-| `tests/integration/h3_http_dream_test.go`、`h3_local_dream_test.go`、`x10_project_root_test.go`、`internal/dream/local_test.go` | 写死的摘要日期改为相对今天（新增 `h3Day` / `testDay`，`writeH3Digest` 与 `seedDigest` 改收「相对天数」）；固定日期会随 `corpus.CorpusStateTTL`（14 天）过期而被 `PrepareLocal` 清理 |
-| `scripts/test-shards.txt` | 重新生成，覆盖新增的 `M15` |
-| `docs/09-mcp-memory-tools.md` | §4.4 工具契约表增加「注解」列；§5.2 补 Codex 与 Grok 的审批说明；§6.1 增加 `M15`，并把 `M02` 与 §5.3 的探测输出从三个工具更正为当前的五个 |
-| `docs/05-validation-and-delivery.md` | 验收矩阵行由 `M01–M12` 更新为覆盖 `M15`（同时补上已实现的 `M13`、`M14`） |
-| `docs/16-mcp-tool-annotations.md`、`docs/09-mcp-memory-tools.md`、`docs/05-validation-and-delivery.md`、`docs/STATUS.md` | 文档同步，见下方补充说明 |
+| `internal/mcp/protocol.go` | 新增 `ToolAnnotations` 与 `Tool.Annotations`；包注释里过期的「两个工具」更正为五个 |
+| `internal/mcp/tools.go` | 用 `readOnlyAnnotations()` 给 `memory_read`、`memory_entries` 设置注解，逐工具构造以避免共享可变值 |
+| `internal/mcp/tools_test.go` | `TestM02ToolsList` 增加注解断言：两个读工具 `readOnlyHint: true`、`destructiveHint: false`，其余三个工具序列化结果不含 `annotations` 键 |
+| `tests/integration/t071_mcp_test.go` | 新增 `TestM15MCPToolAnnotations`，用真实二进制断言 `tools/list` 的注解取值与持有者集合 |
+| `scripts/test-shards.txt` | 重新生成，151 项全部有分片归属 |
+| `docs/09-mcp-memory-tools.md` | §4.4 工具契约表增加「注解」列；§5.2 补 Codex、Grok、OpenCode 与 Antigravity 的审批差异；§5.3 探测输出同步真实顺序；§6.1 的 `M02` 更正为五个工具并新增 `M15` |
+| `docs/05-validation-and-delivery.md` | 验收矩阵行由 `M01–M12` 更新为 `M01–M15`（同时补上已实现的 `M13`、`M14`） |
+| `docs/STATUS.md` | 登记本轮任务与完成记录 |
 
-变更清单里后四行是范围外发现、但会阻塞本轮验证的项：帮助文案与 `M02` 描述的是同一份接口契约，摘要日期测试则直接让 `make test` 变红（`internal/dream` 与 `tests/integration` 各一组）。它们不属于注解契约，因此在本轮一并修正并在此列出，不埋进其他改动里。
+### 5.2 范围外但阻塞验证的改动
+
+下面几项不属于注解契约，但会让本轮必需的 `make test` 变红或让校验失去意义，因此同轮修正并在此单独列出，不掘进其他改动。
+
+| 文件 | 改动 |
+| --- | --- |
+| `internal/cli/help_data.go` | `mcp` 帮助与示例从「三个工具」更正为五个：它和 `M02` 描述的是同一份接口契约，阶段 H 后一直是过期叙述 |
+| `tests/integration/h3_http_dream_test.go`、`h3_local_dream_test.go`、`x10_project_root_test.go`、`internal/dream/local_test.go` | 写死的摘要日期改为相对今天（新增 `h3Day` 与 `testDay`，`writeH3Digest` 与 `seedDigest` 改收偏移）；`PrepareLocal` 按 `corpus.CorpusStateTTL`（14 天）清理摘要，固定日期过期后 `Sessions` 变空、测试越界 panic |
+| `scripts/balance-test-shards.sh` | 把 `--- SKIP` 纳入采集：被 `t.Skip` 的集成测试（如未安装 dsh 时的 `TestT048DshPluginTarballInstall`）否则会从清单消失，与脚本自己声明的完整性保证相反 |
 
 ## 6. 验收
 
