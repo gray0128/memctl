@@ -291,3 +291,14 @@
 - 未跑项：无代码变化，不运行 `make test`、二进制冒烟与浏览器检查。
 - 未验证与遗留：图结构未经第二个视角复核；本轮没有创建 `task-spec` 节点。
 
+## T130：MCP 工具注解与宿主审批方案
+
+- 目标与范围：定位 ThinkRail 对 `memctl` 只读工具反复弹审批的原因，并给出只读工具免审方案。只做调研与契约定义，不实现代码；不改变工具语义、写入模型与既有协议处理。
+- 根因：宿主审批是项目级授权，ThinkRail 把「Always allow」写入 `~/.thinkrail/projects.json` 的项目条目，没有全局开关，也没有按服务器信任；同时 memctl 的 `tools/list` 不返回 `annotations`，宿主的自动放行条件 `annotations.readOnlyHint === true` 不成立，于是纯读工具也会提示「It may change data」。
+- 宿主判定：ThinkRail 0.3.1 的 `packages/server/src/agent/mcp/sessionHost.ts` 先看 `readOnlyHint`，再看 `grantedMcpTools`；授权按 `{command,args}` 的 SHA-256 指纹匹配，指纹不含 `env`/`headers`。项目条目结构为 `mcpToolGrants: { <server>: { target, tools[] } }`。
+- 方案：`internal/mcp/protocol.go` 的 `Tool` 增加可选 `annotations`；只给 `memory_read` 与 `memory_entries` 声明 `readOnlyHint: true`、`destructiveHint: false`；`memory_write`、`memory_dream_prepare`、`memory_dream_propose` 不声明，保持既有确认行为。只读判定标准为「不修改记忆仓库内容、不产生 Git 提交、不改提案与消费记录」，读取时获取仓库锁不算写。
+- 改动：新增 [16. MCP 工具注解与宿主审批](../16-mcp-tool-annotations.md)（证据、契约、影响面、变更清单、`M15` 验收与发布条件）；`docs/README.md` 与 `docs/01` 目录清单登记。本轮无代码变更。
+- 对应契约：[16. MCP 工具注解与宿主审批](../16-mcp-tool-annotations.md)、[09. MCP 记忆工具 §4.4/§6.1](../09-mcp-memory-tools.md#44-工具集)、[05 核心测试矩阵](../05-validation-and-delivery.md#2-核心测试矩阵)。
+- 验证时间与环境：2026-11-05，darwin/arm64，memctl v0.15.0，ThinkRail 0.3.1。
+- 验证命令与结果：§2.1 的协议探针复跑，五个工具全部返回 `annotations: null`；代码核对 `internal/mcp/protocol.go` 的 `Tool` 无注解字段、`internal/mcp/tools.go` 为五个工具；文档检查覆盖 41 个 Markdown 文件的相对链接与锚点，0 问题；`git diff --check` 无空白与冲突标记。纯文档任务，未运行 Go 测试。
+- 未验证与遗留：除 ThinkRail 与 pi 外，其他宿主是否读取 `readOnlyHint` 未实测；`memory_dream_prepare` 是否应标只读待定；注解与 `M15` 未实现；既有项目授权中的只读工具项成为冗余，是否清理待定。

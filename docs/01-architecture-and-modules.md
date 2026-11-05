@@ -156,6 +156,7 @@ memctl/
     13-delta-integration.md # Delta 宿主接入（无 Hook 宿主的接入面与适配器契约）
     14-delta-cwd-feasibility.md # Delta 会话蒸馏的 cwd 方案可行性
     15-delta-corpus-adaptation.md # Delta 会话蒸馏适配方案（watch 读取路径与采集器契约）
+    16-mcp-tool-annotations.md # MCP 工具注解与宿主审批（只读工具免审方案）
     STATUS.md               # 当前任务、证据、阻塞与下一步
     validation/             # 按阶段归档的历史任务验收记录与平台报告
   cmd/memctl/main.go         # 进程入口与依赖装配

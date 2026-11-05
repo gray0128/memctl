@@ -26,6 +26,7 @@
 | [13. Delta 宿主接入](./13-delta-integration.md) | Delta 的接入面调研、无 Hook 下的接入方案、`DELTA_CURRENT_THREAD_ID` 会话身份、适配器契约与验收 |
 | [14. Delta cwd 可行性](./14-delta-cwd-feasibility.md) | Delta 会话蒸馏的项目归属：cwd 归一化到项目根、实测证据、与现有实现的差距、风险与验收 |
 | [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md) | Delta 采集的读取路径（`thread watch`）、项目归属、回合与限额、采集器契约、失败处置与验收 |
+| [16. MCP 工具注解与宿主审批](./16-mcp-tool-annotations.md) | `tools/list` 的注解契约、宿主审批判定顺序与只读工具免审方案 |
 | [开发状态](./STATUS.md) | 当前事实、任务总表与最近一轮完成记录 |
 
 同一规则只在表中对应文档定义，其他文档通过链接引用。流程变更需同步调整契约和验收项。
