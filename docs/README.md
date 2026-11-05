@@ -33,6 +33,18 @@
 
 中文正文的引号基线为直角引号「」，嵌套引用使用『』；代码、路径、命令、字段名、JSON 与配置示例等机器可读内容保持原样。
 
+## 规范图
+
+本目录的权威文档同时是规范图（spec graph）的节点：frontmatter 携带 `id` 与 `type`，`parent` 组成层级，`depends-on` 表达实现依赖，`references` 表达文内引用。图根是 [00. 目标与需求](./00-goal-and-requirements.md)；定位与遍历用 `spec_get` 与 `spec_graph`，结构校验用 `spec_validate`，正文仍用普通读写工具修改。
+
+进图判定：
+
+- **进图**：长期有效、描述世界现状的契约——目标与需求、架构与边界、领域契约、流程、接口面、验收门槛、模块设计。
+- **不进图**：过程规范（[06](./06-development-loop.md)）、台账与本目录的验收归档（`STATUS.md`、`validation/`），以及未实现的行为方案与可行性记录。这类文档在正文首段用 `> 图位置：` 声明自己的位置与当前权威所在，示例见 [14](./14-delta-cwd-feasibility.md) 与 [16](./16-mcp-tool-annotations.md)。
+- **方案落地**：把其中的契约并入它声明的那篇所属节点，在同一次变更里完成；方案文档不因落地而变成规范。
+
+`status` 表示节点在效力中的状态：`draft` 待复核、`active` 在效力中、`stale` 已与代码漂移。改变边界、契约或决策的变更，必须在同一次变更里更新所属节点的正文与 `status`。
+
 ## 上游与参考边界
 
 - 格式基线固定为上游提交 [`8798cb26c817d451a5ed6cba0ad8d9eca8d5ec3e`](https://github.com/AgentMemoryRepo/agentmemoryrepo/tree/8798cb26c817d451a5ed6cba0ad8d9eca8d5ec3e) 的 [`SPEC.md`](https://github.com/AgentMemoryRepo/agentmemoryrepo/blob/8798cb26c817d451a5ed6cba0ad8d9eca8d5ec3e/SPEC.md)：入口为 `MEMORY.md`，单行条目、可选开放元数据、根相对 `[[path]]` 链接，以及非 Markdown 资产。
