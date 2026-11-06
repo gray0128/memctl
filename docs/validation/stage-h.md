@@ -357,3 +357,11 @@
 - 本机交付：`~/.agent-memory/bin/memctl` 原子替换为 `v0.16.0`，`update --check` 报告 `up to date`；`pi plugin-dir` 刷新 `$STATE/pi` 为 `0.6.0`，OMP `plugin list` 显示 `memctl-pi 0.6.0 enabled`，`install omp --dry-run` 为 `configured host=omp@18.17.0 plugin@0.6.0`。
 - 未验证与遗留：交互式 OMP 会话的每轮同步、`/quit` 收尾、Skill 驱动写入与 MCP 工具连通性未复验；OMP 的 `omp plugin install npm:memctl-pi@0.6.0` 通道未实测；OMP 无 `systemPromptOptions.sections`，只能替换系统提示词。
 
+
+## T136：npm 自动发布流水线
+
+- 目标与范围：让两个插件随 `v*` 标签自动发布到 npm。新增 `scripts/publish-npm.sh`：按 `plugins/pi`、`plugins/dsh` 的 `package.json` 名称与版本逐个探测，已上架版本跳过，未上架版本执行 `npm publish --access public`，使失败作业重跑幂等。改 `.github/workflows/build.yml` 新增 `npm-publish` 作业：`needs: [verify, build]`、仅标签运行、`id-token: write`，使用 npm trusted publishing（OIDC），不保存长期 npm token；不设置 `registry-url`/`NODE_AUTH_TOKEN`，避免 setup-node 写入空 token 行导致 OIDC 交换失败。同步 docs/04 §6.1、docs/05 §4、docs/07 §6.4、docs/08 §11 与 README 的发布说明。不改插件源码、CLI、REST 或数据格式。
+- 对应契约：[04 §6.1 发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[05 §4 发布前检查](../05-validation-and-delivery.md#4-发布前检查)、[07 §6.4](../07-dsh-plugin.md)、[08 §11](../08-pi-plugin.md#11-实现状态)。
+- 验证时间与环境：2026-11-06，darwin/arm64，Node v26.11.1 / npm 11.20.0。
+- 验证命令与结果：`bash -n scripts/publish-npm.sh` 通过；对真实 registry 执行 `scripts/publish-npm.sh --dry-run`，输出 `memctl-pi@0.6.0 is already published; skipping` 与 `memctl-dsh@0.5.3 is already published; skipping`；用假 `npm`（`view` 返回 1、记录 `publish` 参数）模拟未上架分支，脚本在两个包目录分别执行 `publish --access public --dry-run`；`ruby -ryaml` 解析 workflow，确认作业为 `verify/build/publish/npm-publish`，`npm-publish` 为 `contents: read` + `id-token: write`、`needs: [verify, build]`；文档链接与锚点检查 0 问题。
+- 未验证与遗留：npm 端尚未给两个包配置 Trusted Publisher，真实标签发布尚未走通 OIDC；下一次插件版本递增并推送 `v*` 标签时需观察 `npm-publish` 作业与 `npm view` 结果。trusted publishing 要求 npm CLI ≥ 11.5.1、Node ≥ 22.14.0，流水线 Node 26.10.0 满足。本机 `~/.npmrc` 的交互 token 不用于 CI。

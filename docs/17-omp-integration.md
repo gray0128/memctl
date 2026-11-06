@@ -260,11 +260,15 @@ OMP:   memctl pi plugin-dir
   `--transcript` → 蒸馏」整条链路可用。
 - npm 发布：`memctl-pi@0.6.0` 于 2026-11-06 发布到 npm，`latest` 为 `0.6.0`，shasum
   `14e7ae9189093bca109a768a40669ba5ed8c4508`；OMP 的 npm 安装通道未实测。
+- MCP（`V-OMP-06`）：本机在 `~/.omp/agent/mcp.json` 配置 stdio 条目 `memctl`
+  （`command` 为 `~/.agent-memory/bin/memctl`，`args` 为 `["mcp","--agent","omp"]`）；新启动的 OMP
+  会话列出 `memory_read`、`memory_entries`、`memory_write`、`memory_dream_prepare`、
+  `memory_dream_propose` 五个工具，`memory_read` 调用成功返回真实 `MEMORY.md` 首行；写入工具未调用。
 - 会话身份：`PI_SESSION_ID=... memctl tag --agent omp` 输出
   `agent://<device>/omp/<PI_SESSION_ID>`。
 - `V-OMP-01`（部分）：扩展在 OMP 中加载并调用 `start`，但 OMP `18.17.0` 不提供
   `systemPromptOptions.sections`，插件记录一次回退日志后改用替换 `systemPrompt`；
   本次没有检查模型请求的最终 system prompt 文本。
 - 未验证：`V-OMP-02`（多轮缓存稳定）、`V-OMP-03`（`agent_settled` 每轮同步；`omp -p`
-  立即退出，只观察到 `end`）、`V-OMP-05`（Skill 驱动的受管写入）、`V-OMP-06`（MCP 工具
-  连通性）；OMP 的 `session_shutdown` 在交互式 `/quit` 下的行为未单独复验。
+  立即退出，只观察到 `end`）、`V-OMP-05`（Skill 驱动的受管写入）；OMP 的
+  `session_shutdown` 在交互式 `/quit` 下的行为未单独复验。
