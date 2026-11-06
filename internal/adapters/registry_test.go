@@ -205,3 +205,39 @@ func TestRegistryCoversCodeBuddyAndWorkBuddy(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryCoversOmp pins the OMP integration shape: the host is detected
+// by its executable or its state directory, and the linked memctl-pi package is
+// the only artifact. OMP links a local package directory through its own plugin
+// manager, so memctl must not plan a file write.
+func TestRegistryCoversOmp(t *testing.T) {
+	omp, ok := Lookup("omp")
+	if !ok {
+		t.Fatal("omp adapter is missing")
+	}
+	if len(omp.HostCommands) != 1 || omp.HostCommands[0] != "omp" {
+		t.Fatalf("omp detection = %+v", omp)
+	}
+	if len(omp.HostPaths) != 1 || omp.HostPaths[0] != "$HOME/.omp/agent" {
+		t.Fatalf("omp state path = %v", omp.HostPaths)
+	}
+	if omp.HostMinVersion != "18.17.0" {
+		t.Fatalf("omp minimum host version = %q, want 18.17.0", omp.HostMinVersion)
+	}
+	if omp.Plugin != nil || omp.NativePlugin == nil || len(omp.Artifacts) != 0 {
+		t.Fatalf("omp plugin shape = %+v", omp)
+	}
+	native := omp.NativePlugin
+	if native.Name != "memctl-pi" || native.MinVersion != "0.6.0" {
+		t.Fatalf("omp native plugin = %+v", native)
+	}
+	if len(native.Manifests) != 1 || native.Manifests[0] != "$HOME/.omp/plugins/node_modules/memctl-pi/package.json" {
+		t.Fatalf("omp native manifests = %v", native.Manifests)
+	}
+	if caps := CapabilitiesFor("omp", true); len(caps) != 1 || caps[0] != CapabilityPlugin {
+		t.Fatalf("linked omp capabilities = %v, want [plugin]", caps)
+	}
+	if caps := CapabilitiesFor("omp", false); len(caps) != 0 {
+		t.Fatalf("unlinked omp capabilities = %v, want empty", caps)
+	}
+}

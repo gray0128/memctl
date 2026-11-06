@@ -902,3 +902,85 @@ func TestDeltaIsDetectedWithoutWritingAnyConfig(t *testing.T) {
 		t.Fatalf("old delta plan = %+v, want needs_attention naming the minimum", old)
 	}
 }
+
+func TestOmpNativePluginIsConfiguredWithoutFiles(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"omp": "/usr/bin/omp"}, map[string]string{"/usr/bin/omp": "omp/18.17.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".omp", "plugins", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.6.0")
+
+	plan, err := env.Plan("omp")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusConfigured || plan.Applicable || len(plan.Artifacts) != 0 {
+		t.Fatalf("linked plugin plan = %+v, want configured with no artifacts", plan)
+	}
+	if !plan.NativePluginDetected || plan.PluginVersion != "0.6.0" {
+		t.Fatalf("native detection = %+v", plan)
+	}
+	if plan.Reason == "" {
+		t.Fatal("linked plugin plan must explain why no file is written")
+	}
+	result, err := env.Apply(plan)
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if len(result.Applied) != 0 || result.Status != StatusConfigured {
+		t.Fatalf("linked plugin apply = %+v, want no writes", result)
+	}
+}
+
+func TestOmpWithoutLinkedPluginNeedsAttention(t *testing.T) {
+	env, _ := fakeEnv(t, map[string]string{"omp": "/usr/bin/omp"}, map[string]string{"/usr/bin/omp": "omp/18.17.0\n"})
+
+	plan, err := env.Plan("omp")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || plan.Applicable {
+		t.Fatalf("missing plugin plan = %+v, want needs_attention without writes", plan)
+	}
+	if !strings.Contains(plan.Reason, "memctl-pi") {
+		t.Fatalf("missing plugin reason = %q", plan.Reason)
+	}
+}
+
+func TestOmpOldNativePluginNeedsAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"omp": "/usr/bin/omp"}, map[string]string{"/usr/bin/omp": "omp/18.17.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".omp", "plugins", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.5.2")
+
+	plan, err := env.Plan("omp")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || !strings.Contains(plan.Reason, "0.6.0") {
+		t.Fatalf("old plugin plan = %+v, want needs_attention naming 0.6.0", plan)
+	}
+}
+
+func TestOmpHostVersionBelowTheVerifiedMinimumNeedsAttention(t *testing.T) {
+	env, home := fakeEnv(t, map[string]string{"omp": "/usr/bin/omp"}, map[string]string{"/usr/bin/omp": "omp/18.16.0\n"})
+	writePluginManifestAt(t, filepath.Join(home, ".omp", "plugins", "node_modules", "memctl-pi", "package.json"), "memctl-pi", "0.6.0")
+
+	plan, err := env.Plan("omp")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if plan.Status != StatusNeedsAttention || !strings.Contains(plan.Reason, "18.17.0") {
+		t.Fatalf("old host plan = %+v, want needs_attention naming 18.17.0", plan)
+	}
+}
+
+func TestOmpIsDetectedByItsStateDirectory(t *testing.T) {
+	env, home := fakeEnv(t, nil, nil)
+	if err := os.MkdirAll(filepath.Join(home, ".omp", "agent"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	plan, err := env.Plan("omp")
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	if !plan.HostFound || plan.HostCommand != "" || plan.Status != StatusNeedsAttention {
+		t.Fatalf("state directory plan = %+v, want detected host waiting for the plugin", plan)
+	}
+}

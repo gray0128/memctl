@@ -232,7 +232,7 @@ memctl/
 - `web/src/` 保存源码，`web/dist/` 由构建生成；构建步骤在 Go embed 前生成资产，不用空 dist 冒充可用 UI。
 - 默认指引和 adapter 模板统一放 `internal/assets/`。从参考目录采纳内容时复制必要内容并标注来源，不让新实现运行时依赖参考目录。
 - `plugins/dsh/` 只保存 `memctl-dsh` 的运行时源文件和同目录 `embed.go`；`test/` 不进入 npm 包，运行时 tarball 与目录由 `memctl dsh` 在状态目录生成，不提交生成物。
-- `plugins/pi/` 只保存 `memctl-pi` 的运行时源文件和同目录 `embed.go`；`test/` 不进入 npm 包，本地包目录由 `memctl pi plugin-dir` 在状态目录生成，不提交生成物。pi 不把 tarball 当作安装输入，因此该目录没有 tarball 生成逻辑。
+- `plugins/pi/` 只保存 `memctl-pi` 的运行时源文件和同目录 `embed.go`；`test/` 不进入 npm 包，本地包目录由 `memctl pi plugin-dir` 在状态目录生成，不提交生成物。pi 不把 tarball 当作安装输入，因此该目录没有 tarball 生成逻辑。同一份包也由 OMP 的插件管理器加载，插件在运行时识别宿主（`pi`/`omp`），不为 OMP 复制第二份源码。
 - `skills/memctl/` 只保存面向 Agent 的使用说明与按需加载的参考。Skill 描述任务流程与边界，命令、参数和错误码以 `memctl help` 与契约文档为准，不复制实现细节或运行产物。
 - 可复用测试数据使用合成内容或可追溯的公开样例；临时仓库、真实凭据、运行日志和调试脚本不放入项目。需要长期保留的验收结论使用简短报告并由 STATUS 链接。
 

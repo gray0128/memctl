@@ -6,15 +6,16 @@ import (
 	"strings"
 )
 
-// parsePi reads $HOME/.pi/agent/sessions/**/*.jsonl. The first line is a
-// `session` record with the id and cwd; dialogue arrives as `message` records
-// whose `message.role` is user, assistant or toolResult. Assistant thinking
-// blocks and toolResult content are dropped.
+// parsePi reads $HOME/.pi/agent/sessions/**/*.jsonl and the same format under
+// $HOME/.omp/agent/sessions. A `session` record carries the id and cwd;
+// dialogue arrives as `message` records whose `message.role` is user, assistant
+// or toolResult. pi writes the session record first, OMP writes a `title`
+// record before it, so the record is found by type rather than position.
+// Assistant thinking blocks and toolResult content are dropped.
 func parsePi(c Collector, r io.Reader) (parseInput, bool) {
 	out := parseInput{}
 	scanner := newLineScanner(r)
 	var pending *Turn
-	first := true
 	for scanner.scan() {
 		value, ok := decodeLine(scanner.text())
 		if !ok {
@@ -22,13 +23,11 @@ func parsePi(c Collector, r io.Reader) (parseInput, bool) {
 		}
 		kind := stringField(value, "type")
 		out.newest = newestTime(out.newest, timeField(value, "timestamp"))
-		if first && kind == "session" {
-			first = false
+		if kind == "session" && out.sessionID == "" {
 			out.sessionID = stringField(value, "id")
 			out.cwd = stringField(value, "cwd")
 			continue
 		}
-		first = false
 		if kind != "message" {
 			continue
 		}

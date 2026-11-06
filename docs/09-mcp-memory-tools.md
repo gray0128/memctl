@@ -181,6 +181,7 @@ Agent（模型）
 | Claude Code | `~/.claude.json` | `claude mcp add memctl --scope user -- <memctl> mcp --agent claude-code` | 省略 `--scope` 时写入 local 作用域，用户级用 `--scope user` |
 | Codex | `~/.codex/config.toml` | `codex mcp add memctl -- <memctl> mcp --agent codex` | 需要 `default_tools_approval_mode = "approve"`，见下 |
 | pi | `~/.pi/agent/mcp.json` | `pi mcp add memctl --exposure direct -- <memctl> mcp --agent pi` | 省略 `--exposure` 时默认 `codemode`，模型无法直接调用工具，见下 |
+| OMP | `~/.omp/agent/mcp.json`（项目级 `.omp/mcp.json`） | 无 CLI，手工添加 stdio 条目：`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","omp"]` | 还会加载 `.claude/mcp.json`、Gemini、Cursor 与 Codex 的 MCP 配置；只读工具注解会被读取，见 [17. OMP 宿主接入](./17-omp-integration.md#25-mcp-支持机制) |
 | OpenCode | `~/.config/opencode/opencode.json` | `opencode mcp add --global memctl -- <memctl> mcp --agent opencode` | 省略 `--global` 时写入当前目录的 `opencode.json` |
 | Grok | `~/.grok/config.toml` | `grok mcp add --scope user memctl -- <memctl> mcp --agent grok` | `[mcp_servers.memctl]`，写入 `enabled = true` |
 | Command Code | `~/.commandcode/mcp.json` | `commandcode mcp add --scope user memctl <memctl> mcp --agent commandcode` | 省略 `--scope user` 时写入项目级路径 |

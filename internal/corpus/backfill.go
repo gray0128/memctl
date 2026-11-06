@@ -197,6 +197,9 @@ func discoverCandidates(req BackfillRequest, cwdKey string, sweep *sweep) []cand
 	out = append(out, discoverFlat(home, filepath.FromSlash(".codebuddy/projects"), codeBuddyDir(req.Cwd), "codebuddy", claudeSessionID, sweep)...)
 	out = append(out, discoverFlat(home, filepath.FromSlash(".workbuddy/projects"), codeBuddyDir(req.Cwd), "workbuddy", claudeSessionID, sweep)...)
 	out = append(out, discoverFlat(home, filepath.FromSlash(".pi/agent/sessions"), piDir(req.Cwd), "pi", piSessionID, sweep)...)
+	// OMP shares pi's session directory naming and transcript format, so the
+	// same projection finds its store. See docs/17-omp-integration.md.
+	out = append(out, discoverFlat(home, filepath.FromSlash(".omp/agent/sessions"), piDir(req.Cwd), "omp", piSessionID, sweep)...)
 	out = append(out, discoverDSH(home, req.Cwd, sweep)...)
 	// Hosts whose store is not organised by project: the log decides, and a
 	// log of another project is closed after its metadata records.

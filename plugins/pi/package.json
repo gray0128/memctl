@@ -1,7 +1,7 @@
 {
   "name": "memctl-pi",
-  "version": "0.5.2",
-  "description": "Loads memctl memory at pi session start and synchronizes it after each agent run.",
+  "version": "0.6.0",
+  "description": "Loads memctl memory at pi and OMP session start and synchronizes it after each agent run.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gray0128/memctl.git",
@@ -35,6 +35,8 @@
   "keywords": [
     "pi-package",
     "pi-extension",
+    "omp",
+    "omp-plugin",
     "memctl",
     "memory",
     "agent-memory"

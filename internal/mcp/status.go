@@ -36,6 +36,13 @@ func Registrations(memctl string) []Registration {
 		// tool directly, so the registration must request direct exposure.
 		{Agent: "pi", Command: "pi mcp add memctl --exposure direct -- " + server + "pi"},
 		{
+			// OMP has no mcp add subcommand; it reads the user-scope file
+			// ~/.omp/agent/mcp.json (or a project .omp/mcp.json). See
+			// docs/17-omp-integration.md section 2.5.
+			Agent:       "omp",
+			Instruction: `add a stdio entry named "memctl" with command "` + memctl + `" and args ["mcp","--agent","omp"] to ~/.omp/agent/mcp.json, then restart OMP`,
+		},
+		{
 			Agent:       "dsh",
 			Instruction: `add an @deepseek-ai/dsh-mcp-client stdio entry with command "` + memctl + `" and args ["mcp","--agent","dsh"] to the profile's cordis.patch.yml`,
 		},

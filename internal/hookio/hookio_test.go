@@ -110,7 +110,8 @@ func TestResolveSIDPriority(t *testing.T) {
 
 	// Delta injects its thread id into every command the agent runs and has no
 	// lifecycle hook, so this variable is its only session identity. It must
-	// lose to the DSH variables and win over the payload, like the others.
+	// lose to the DSH and pi variables and win over the payload, like the
+	// others.
 	delta := func(key string) string {
 		if key == "DELTA_CURRENT_THREAD_ID" {
 			return "delta-thread"
@@ -133,6 +134,41 @@ func TestResolveSIDPriority(t *testing.T) {
 		return ""
 	}, Input{}); got != "dsh-session" {
 		t.Fatalf("Delta thread environment beat the DSH variable: %q", got)
+	}
+
+	// pi and OMP inject PI_SESSION_ID into the bash tool, so a manual
+	// `memctl write` inside a host session joins the session the extension
+	// already tagged.
+	pi := func(key string) string {
+		if key == "PI_SESSION_ID" {
+			return "pi-session"
+		}
+		return ""
+	}
+	if got := ResolveSID("", pi, Input{SID: "payload"}); got != "pi-session" {
+		t.Fatalf("pi session environment did not beat the payload: %q", got)
+	}
+	if got := ResolveSID("", func(key string) string {
+		if key == "DSH_SESSION_ID" {
+			return "dsh-session"
+		}
+		if key == "PI_SESSION_ID" {
+			return "pi-session"
+		}
+		return ""
+	}, Input{}); got != "dsh-session" {
+		t.Fatalf("pi session environment beat the DSH variable: %q", got)
+	}
+	if got := ResolveSID("", func(key string) string {
+		if key == "PI_SESSION_ID" {
+			return "pi-session"
+		}
+		if key == "DELTA_CURRENT_THREAD_ID" {
+			return "delta-thread"
+		}
+		return ""
+	}, Input{}); got != "pi-session" {
+		t.Fatalf("Delta thread environment beat the pi variable: %q", got)
 	}
 
 	if got := ResolveSID("", func(string) string { return "" }, Input{}); got != "" {

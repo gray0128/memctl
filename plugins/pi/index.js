@@ -1,17 +1,17 @@
 /**
- * memctl pi extension.
+ * memctl pi extension, also loaded by OMP (Oh My Pi).
  *
- * The extension only bridges pi lifecycle events to the memctl binary: it loads
- * the session context at session start, injects the cached text as a system
- * prompt section before each run, triggers a bounded background sync after a
- * settled run and asks memctl to finish when the session runtime is torn down.
- * Memory storage, locking, synchronization and conflict handling stay in
- * memctl. See docs/08-pi-plugin.md.
+ * The extension only bridges host lifecycle events to the memctl binary: it
+ * loads the session context at session start, injects the cached text as a
+ * system prompt section before each run, triggers a bounded background sync
+ * after a settled run and asks memctl to finish when the session runtime is
+ * torn down. Memory storage, locking, synchronization and conflict handling
+ * stay in memctl. See docs/08-pi-plugin.md and docs/17-omp-integration.md.
  */
 import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { basename, delimiter, join } from 'node:path'
 import process from 'node:process'
 
 const SECTION_NAME = 'memctl'
@@ -27,23 +27,57 @@ const FORCE_FINISH_MS = 1_500
 const HOME_BINARY = ['.agent-memory', 'bin', 'memctl']
 const FALLBACK_BINARIES = ['/opt/homebrew/bin/memctl', '/usr/local/bin/memctl']
 
+// OMP runs the pi extension API in its own executable. The package is shared,
+// so commands carry the host identity resolved at load time instead of always
+// claiming pi. An explicit MEMCTL_PI_AGENT covers renamed or wrapped hosts.
+const OMP_EXECUTABLES = ['omp', 'omp.js', 'omp.sh', 'omp.cmd', 'omp.exe', 'omp.bat']
+
 /**
- * Build the lifecycle bridge. Exported for unit tests; the plugin entry point
- * below wires it to a pi ExtensionAPI.
+ * Resolve the host that loaded this extension. OMP keeps the pi lifecycle
+ * events and session manager but reports itself through the process
+ * executable, so the executable names decide; PI_CODING_AGENT_DIR is the
+ * fallback for an OMP profile with a redirect. See
+ * docs/17-omp-integration.md section 4.2.
  */
+export function detectAgent(env = process.env, runtime = {}) {
+  const override = env.MEMCTL_PI_AGENT
+  if (typeof override === 'string' && override.trim() !== '') return override.trim()
+
+  const argv = runtime.argv ?? process.argv
+  const candidates = [runtime.title ?? process.title, env._, argv[1], argv[0]]
+  for (const candidate of candidates) {
+    const name = executableName(candidate)
+    if (name === '') continue
+    if (OMP_EXECUTABLES.includes(name) || name.startsWith('omp-')) return 'omp'
+  }
+
+  const configDir = env.PI_CODING_AGENT_DIR
+  if (typeof configDir === 'string' && /[\\/]\.omp(?:[\\/]|$)/.test(configDir)) return 'omp'
+  return 'pi'
+}
+
+function executableName(value) {
+  if (typeof value !== 'string' || value.trim() === '') return ''
+  return basename(value.trim()).toLowerCase()
+}
+
 /**
  * Build the `sync`/`end` argv for one session. The transcript path is passed
  * only when pi exposes one, so a pi version without `getSessionFile()` behaves
  * exactly as before and memctl skips local distillation.
  */
 export function syncArgs(state, command = 'sync') {
-  const args = [command, '--agent', 'pi', '--sid', state.id]
+  const args = [command, '--agent', state.agent, '--sid', state.id]
   if (typeof state.transcript === 'string' && state.transcript !== '') {
     args.push('--transcript', state.transcript)
   }
   return args
 }
 
+/**
+ * Build the lifecycle bridge. Exported for unit tests; the plugin entry point
+ * below wires it to a host ExtensionAPI.
+ */
 export function createBridge(options = {}) {
   const {
     spawn: spawnImpl = spawn,
@@ -56,6 +90,7 @@ export function createBridge(options = {}) {
     endJoinMs = END_JOIN_MS,
     maxStartBytes = MAX_START_BYTES,
   } = options
+  const agent = typeof options.agent === 'string' && options.agent !== '' ? options.agent : detectAgent(env)
 
   const states = new Map()
   let missingLogged = false
@@ -154,6 +189,9 @@ export function createBridge(options = {}) {
       const bin = resolveBinary()
       const state = {
         id,
+        // The host identity resolved once at load: pi or omp. Every memctl
+        // command for this session carries it as --agent.
+        agent,
         cwd: sessionCwd(ctx),
         // The session's own JSONL record, distilled by memctl into a local
         // digest. pi does not always expose it, so a missing path just means
@@ -375,7 +413,7 @@ export function createBridge(options = {}) {
   }
 
   async function execStart(state) {
-    const result = await runCommand(state.bin, ['start', '--agent', 'pi', '--sid', state.id, '--json'], {
+    const result = await runCommand(state.bin, ['start', '--agent', state.agent, '--sid', state.id, '--json'], {
       timeoutMs: startTimeoutMs,
       cwd: state.cwd,
       maxBytes: maxStartBytes,

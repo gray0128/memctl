@@ -59,15 +59,15 @@ func TestT091MCPStatusRoute(t *testing.T) {
 			t.Fatalf("mcp status tools = %v, missing %s", status.Tools, tool)
 		}
 	}
-	if len(status.Registrations) != 11 {
+	if len(status.Registrations) != 12 {
 		t.Fatalf("expected one registration per adapter, got %d", len(status.Registrations))
 	}
 	for _, registration := range status.Registrations {
-		// dsh and WorkBuddy have no host CLI, so they carry an instruction
-		// instead of a command that quotes the probed executable. Delta has a
-		// CLI but accepts no local stdio server at all, so its instruction must
-		// deny the registration rather than offer a command.
-		if registration.Agent == "dsh" || registration.Agent == "workbuddy" || registration.Agent == "delta" {
+		// dsh, OMP and WorkBuddy have no host MCP CLI, so they carry an
+		// instruction instead of a command that quotes the probed executable.
+		// Delta has a CLI but accepts no local stdio server at all, so its
+		// instruction must deny the registration rather than offer a command.
+		if registration.Agent == "dsh" || registration.Agent == "omp" || registration.Agent == "workbuddy" || registration.Agent == "delta" {
 			if registration.Command != "" || registration.Instruction == "" {
 				t.Fatalf("%s registration = %+v", registration.Agent, registration)
 			}

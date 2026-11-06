@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { createBridge } from '../index.js'
+import { createBridge, detectAgent } from '../index.js'
 
 const silentLogger = { warn() {} }
 const BIN = '/fake/bin/memctl'
@@ -368,4 +368,34 @@ test('a pi session without getSessionFile calls sync without --transcript', asyn
 
   const sync = calls.find((call) => call.args[0] === 'sync')
   assert.deepEqual(sync.args, ['sync', '--agent', 'pi', '--sid', 'sid-plain'])
+})
+
+test('the host executable determines the agent name', () => {
+  assert.equal(detectAgent({}, { title: 'omp', argv: ['/bin/omp'] }), 'omp')
+  assert.equal(detectAgent({}, { title: 'omp-darwin-arm64', argv: [] }), 'omp')
+  assert.equal(detectAgent({ _: '/opt/homebrew/bin/omp' }, { title: 'node', argv: ['node', 'x.js'] }), 'omp')
+  assert.equal(detectAgent({ PI_CODING_AGENT_DIR: '/Users/me/.omp/agent' }, { title: 'node', argv: [] }), 'omp')
+  assert.equal(detectAgent({}, { title: 'node', argv: ['node', 'pi.js'] }), 'pi')
+  assert.equal(detectAgent({ MEMCTL_PI_AGENT: ' omp-custom ' }, { title: 'pi', argv: [] }), 'omp-custom')
+})
+
+test('an OMP host tags start, sync and end with --agent omp', async () => {
+  const { bridge, calls } = bridgeWith(
+    [{ stdout: startPayload('body') }, { stdout: '' }, { stdout: '' }],
+    { agent: 'omp' },
+  )
+  const ctx = fakeCtx('sid-omp')
+  bridge.onSessionStart({ reason: 'startup' }, ctx)
+  await settle()
+  bridge.onAgentSettled({ type: 'agent_settled' }, ctx)
+  await settle()
+  await bridge.onSessionShutdown({ reason: 'quit' }, ctx)
+
+  assert.deepEqual(calls[0].args, ['start', '--agent', 'omp', '--sid', 'sid-omp', '--json'])
+  assert.deepEqual(calls.filter((call) => call.args[0] === 'sync')[0].args, [
+    'sync', '--agent', 'omp', '--sid', 'sid-omp',
+  ])
+  assert.deepEqual(calls.filter((call) => call.args[0] === 'end')[0].args, [
+    'end', '--agent', 'omp', '--sid', 'sid-omp',
+  ])
 })

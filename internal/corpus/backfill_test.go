@@ -22,6 +22,7 @@ func backfillHome(t *testing.T, cwd string) string {
 	writeAntigravitySession(t, home, cwd, "agy-session", "以后审查报告统一用中文")
 	writeCodeBuddySession(t, home, cwd, "codebuddy-session", "发布只推标签，不要在本地 make release")
 	writeWorkBuddySession(t, home, cwd, "workbuddy-session", "以后都用 pnpm")
+	writeOmpSession(t, home, cwd, "omp-session", "OMP 和 pi 共用同一份扩展")
 	return home
 }
 
@@ -81,6 +82,20 @@ func writePiSession(t *testing.T, home, cwd, sid, user string) string {
 	}
 	dir := "--" + strings.Trim(strings.ReplaceAll(cwd, "/", "-"), "-") + "--"
 	return writeNested(t, filepath.Join(home, ".pi", "agent", "sessions", dir, "2026-10-20T02-00-00-000Z_"+sid+".jsonl"), strings.Join(lines, "\n"))
+}
+
+// writeOmpSession writes one OMP transcript. OMP adds a leading title record
+// before the session record, which the shared pi parser must tolerate.
+func writeOmpSession(t *testing.T, home, cwd, sid, user string) string {
+	t.Helper()
+	lines := []string{
+		`{"type":"title","v":1,"title":"session","source":"auto","updatedAt":"2026-10-20T02:00:03Z"}`,
+		`{"type":"session","version":3,"id":"` + sid + `","timestamp":"2026-10-20T02:00:00Z","cwd":"` + cwd + `"}`,
+		`{"type":"message","timestamp":"2026-10-20T02:00:01Z","message":{"role":"user","content":[{"type":"text","text":"` + user + `"}]}}`,
+		`{"type":"message","timestamp":"2026-10-20T02:00:02Z","message":{"role":"assistant","content":[{"type":"text","text":"好的。"}]}}`,
+	}
+	dir := "--" + strings.Trim(strings.ReplaceAll(cwd, "/", "-"), "-") + "--"
+	return writeNested(t, filepath.Join(home, ".omp", "agent", "sessions", dir, "2026-10-20T02-00-00-000Z_"+sid+".jsonl"), strings.Join(lines, "\n"))
 }
 
 // writeDSHSession writes one compressed DSH session record.
@@ -175,8 +190,8 @@ func TestBackfillCollectsCurrentProjectCoversD06(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 
 	result := Backfill(cache, BackfillRequest{Cwd: cwd, Device: "testhost", Home: home, Now: func() time.Time { return now }})
-	if result.Collected != 7 {
-		t.Fatalf("collected = %d, want 7 (%+v)", result.Collected, result)
+	if result.Collected != 8 {
+		t.Fatalf("collected = %d, want 8 (%+v)", result.Collected, result)
 	}
 	for _, want := range []struct{ agent, sid, text string }{
 		{"claude-code", "claude-session", "发布只推标签"},
@@ -186,6 +201,7 @@ func TestBackfillCollectsCurrentProjectCoversD06(t *testing.T) {
 		{"antigravity", "agy-session", "审查报告"},
 		{"codebuddy", "codebuddy-session", "只推标签"},
 		{"workbuddy", "workbuddy-session", "pnpm"},
+		{"omp", "omp-session", "OMP 和 pi 共用同一份扩展"},
 	} {
 		digest, ok := cache.Load(want.agent, want.sid)
 		if !ok {
@@ -215,6 +231,7 @@ func TestBackfillSkipsOtherProjectsCoversD06(t *testing.T) {
 	writeAntigravitySession(t, home, "/work/other", "theirs-agy", "不相关")
 	writeCodeBuddySession(t, home, "/work/other", "theirs-codebuddy", "不相关")
 	writeWorkBuddySession(t, home, "/work/other", "theirs-workbuddy", "不相关")
+	writeOmpSession(t, home, "/work/other", "theirs-omp", "不相关")
 	// A sibling clone with the same basename is a different project: only the
 	// cwdKey tells them apart.
 	writeDSHSession(t, home, "/other/checkout/memctl", "theirs-dsh", "不相关")
@@ -232,6 +249,7 @@ func TestBackfillSkipsOtherProjectsCoversD06(t *testing.T) {
 		{"pi", "theirs-pi"}, {"codex", "theirs-codex"},
 		{"antigravity", "theirs-agy"}, {"dsh", "theirs-dsh"},
 		{"codebuddy", "theirs-codebuddy"}, {"workbuddy", "theirs-workbuddy"},
+		{"omp", "theirs-omp"},
 	} {
 		if _, ok := cache.Load(other.agent, other.sid); ok {
 			t.Fatalf("%s/%s from another project was collected", other.agent, other.sid)

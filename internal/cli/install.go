@@ -168,6 +168,7 @@ func printPlan(stdout io.Writer, plan adapters.InstallPlan) {
 	}
 	printDshHints(stdout, plan)
 	printPiHints(stdout, plan)
+	printOmpHints(stdout, plan)
 	for _, artifact := range plan.Artifacts {
 		path := artifact.Path
 		fmt.Fprintf(stdout, "  %s (%s) %s\n", path, artifact.Format, artifact.Action)
@@ -240,6 +241,22 @@ func printPiHints(stdout io.Writer, plan adapters.InstallPlan) {
 	fmt.Fprintln(stdout, "  离线:  memctl pi plugin-dir")
 	fmt.Fprintln(stdout, "         pi install <输出的绝对目录>")
 	fmt.Fprintln(stdout, "  校验:  pi list")
+}
+
+// printOmpHints mirrors docs/17-omp-integration.md section 4 when OMP has no
+// linked memctl-pi package. OMP links a local package directory, so the
+// offline channel works without publishing to npm; it never runs `omp plugin
+// install` because install --status must stay read-only.
+func printOmpHints(stdout io.Writer, plan adapters.InstallPlan) {
+	if plan.Agent != "omp" || plan.NativePluginDetected || plan.Status != adapters.StatusNeedsAttention {
+		return
+	}
+	if _, err := piplugin.Version(); err != nil {
+		return
+	}
+	fmt.Fprintln(stdout, "  OMP:   memctl pi plugin-dir")
+	fmt.Fprintln(stdout, "         omp plugin install <输出的绝对目录>")
+	fmt.Fprintln(stdout, "  校验:  omp plugin list")
 }
 
 // printDshHints mirrors docs/07-dsh-plugin.md section 6.4 when dsh has no

@@ -55,6 +55,9 @@ var parsers = map[string]parseFunc{
 	"claude-code": parseClaudeCode,
 	"codex":       parseCodex,
 	"pi":          parsePi,
+	// OMP keeps the pi transcript format and adds a leading title record; the
+	// parser reads the session record by type instead of position.
+	"omp":         parsePi,
 	"dsh":         parseDSH,
 	"antigravity": parseAntigravity,
 	// WorkBuddy runs the CodeBuddy agent core, so both hosts share one parser

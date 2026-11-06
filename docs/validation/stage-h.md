@@ -326,3 +326,11 @@
 - 验证时间与环境：2026-11-05，darwin/arm64，Go 1.27.2，Node v26.11.1 / npm 11.20.0（本机默认 `node` 为 v22，`plugins/pi` 的 `node --test` 在 v22 上会把 14 项判为 `cancelledByParent`，须按构建基线显式使用 Node 26）。
 - 验证命令与结果：`make test`（Node 26）全绿；`go test ./tests/integration -count=1` 150 项通过（106.3 秒）；`scripts/test-shards.txt` 重新生成 151 项、四个分片 25.0/24.6/29.0/24.6 秒；真实二进制探针 `tools/list` 返回两个 `hasAnnotations: true` 与三个 `hasAnnotations: false`，`install --status` 的 `mcp:` 块列出五个工具；文档相对链接与锚点校验，本轮新增链接全部解析。
 - 未验证与遗留：宿主侧「读不弹窗、写仍弹窗」未在 ThinkRail 真实交互会话复验；Codex 的逐 hint 到 `AppToolApproval` 模式对应关系来自反汇编推断，需真实会话确认；Claude Code、Command Code、CodeBuddy、WorkBuddy、DSH 是否读取注解仍未验证；本机 `~/.agent-memory/bin/memctl` 未升级（本轮只验证临时构建的二进制），需随下一次发布带入。
+
+## T133：OMP 宿主接入调研与最佳方案
+
+- 目标与范围：调研 OMP 宿主的接入现状，寻找 `memctl` 在 OMP 中的最佳使用方式并形成权威文档与技术方案。实测取证 OMP `18.17.0`（Bun Standalone 单文件、配置在 `~/.omp/agent`），证实其与 Pi 扩展运行时兼容，原生开启 `skills.enableAgentsUser` 与递归 `AGENTS.md` 发现，原生支持全局 `~/.omp/agent/mcp.json`。确立「Extension 自动化生命周期注入/同步 + Skill / AGENTS.md 显式约束契约」双轨最佳实践，制定即刻接入操作指南与项目侧代码适配改动规划。本轮只做调研与方案，未实现代码。
+- 对应契约：[17. OMP 宿主接入](../17-omp-integration.md)、[08. pi 专用插件](../08-pi-plugin.md)、[00. 目标与需求](../00-goal-and-requirements.md)。
+- 验证时间与环境：2026-11-06，darwin/arm64，memctl v0.15.0，OMP 18.17.0。
+- 验证命令与结果：实机取证 OMP 二进制字符串与源码片段、`omp config list --json`、`omp plugin install/link --dry-run`、`~/.omp/agent/extensions/orca-agent-status.ts` 注释与实现、`~/.omp/logs/` 会话运行时日志；新增文档 `docs/17-omp-integration.md` 并完成交叉引用更新；文档检查相对链接与 Frontmatter，无损坏。
+- 未验证与遗留：OMP 内置终端中 `PI_SESSION_ID` 的自动关联尚未在 Go CLI 中实现（需补充进 SID 回退链）；`internal/adapters/registry.go` 尚未注册 `omp`。以上两项由 `T134` 完成。

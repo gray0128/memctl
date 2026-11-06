@@ -649,3 +649,28 @@ func TestResolveProjectRootSkipsGitWhenThereIsNoWork(t *testing.T) {
 		t.Fatalf("git was called %d times for work-free input", calls)
 	}
 }
+
+// TestOmpDigestCoversD06 distills an OMP transcript. OMP writes a title record
+// before the session record, so the shared pi parser must still read the id and
+// cwd; the extension passes the same transcript path to sync and end.
+func TestOmpDigestCoversD06(t *testing.T) {
+	lines := []string{
+		`{"type":"title","v":1,"title":"OMP session","source":"auto","updatedAt":"2026-10-20T03:00:00Z"}`,
+		`{"type":"session","version":3,"id":"01a1b11b","cwd":"/Users/me/memctl","timestamp":"2026-10-20T02:59:59Z"}`,
+		`{"type":"message","timestamp":"2026-10-20T03:00:01Z","message":{"role":"user","content":[{"type":"text","text":"OMP 会话也要进入摘要"}]}}`,
+		`{"type":"message","timestamp":"2026-10-20T03:00:02Z","message":{"role":"assistant","content":[{"type":"text","text":"已记录。"},{"type":"toolCall","name":"bash","arguments":{"command":"git status"}}]}}`,
+	}
+	digest, ok := testCollector(t).Collect("omp", "fallback", strings.NewReader(strings.Join(lines, "\n")))
+	if !ok {
+		t.Fatal("the OMP session produced no digest")
+	}
+	if digest.SessionID != "01a1b11b" || digest.CwdBase != "memctl" {
+		t.Fatalf("digest metadata = %q/%q", digest.SessionID, digest.CwdBase)
+	}
+	if digest.Agent != "omp" || digest.SourceTag != "agent://testhost/omp/01a1b11b" {
+		t.Fatalf("digest identity = %q/%q", digest.Agent, digest.SourceTag)
+	}
+	if len(digest.Turns) != 1 || !strings.Contains(digest.Turns[0].User, "OMP 会话") {
+		t.Fatalf("turns = %+v", digest.Turns)
+	}
+}

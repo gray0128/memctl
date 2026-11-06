@@ -10,7 +10,7 @@ references: [memctl-mcp]
 
 # 08. pi 专用插件：调研、分发与实现方案
 
-> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`v0.5.1` 重新打包插件，`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。`memctl-pi@0.5.2` 已发布到 npm。非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
+> 状态：`F-1` 至 `F-4` 已随 `v0.5.0` 发布（2026-10-18），`v0.5.1` 重新打包插件，`F-5` 真实宿主验证完成；pi `1.3.0` 上的注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级已验证。`memctl-pi@0.5.2` 已发布到 npm；`0.6.0` 起同一份包也由 OMP 加载（宿主识别与 `--agent omp`），尚未发布到 npm。非 macOS 平台仍未验证。结论是新增 `memctl-pi` 原生扩展作为 pi 的默认接入；`pi-yaml-hooks` 保留为 legacy 兼容路径。实现证据见 §11，OMP 适配见 [17. OMP 宿主接入](./17-omp-integration.md)，验收编号已登记到 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
 
 ## 1. 结论
 
@@ -18,7 +18,7 @@ references: [memctl-mcp]
 - dsh 专用插件已经实现并完成真实会话验证，验证了「宿主插件只做桥接、memctl 负责存储与同步」的模式；pi 的主要差异在宿主 API 和安装入口，见 [dsh 专用插件](./07-dsh-plugin.md)。
 - `memctl-pi` 只负责三件事：会话开始时读取记忆并同步、每次 agent run 开始时注入上下文、run 结束同步与会话结束时收尾。记忆仓库、锁、冲突处理、Git 提交和远端同步仍由 memctl 二进制负责。
 - 与 dsh 专用插件相比，pi 插件更小：不需要 bundle patch、locale、icon，也不需要自定义 tarball 安装通道；pi 包就是普通 npm 包或本地目录，安装入口是 `pi install`。
-- 推荐分发组合：npm 包 `memctl-pi` 为主通道，`memctl pi plugin-dir` 输出的本地包目录为离线备用通道。pi 不把本地 `.tgz` 当作 npm tarball 解包，不能照搬 dsh 的 tarball 通道。
+- 推荐分发组合：npm 包 `memctl-pi` 为主通道，`memctl pi plugin-dir` 输出的本地包目录为离线备用通道。pi 不把本地 `.tgz` 当作 npm tarball 解包，不能照搬 dsh 的 tarball 通道。同一本地目录也供 `omp plugin install` 使用；插件按宿主可执行文件决定 `--agent pi` 或 `--agent omp`。
 - 推荐生命周期映射：`session_start` 后台执行 `memctl start --json`；`before_agent_start` 把缓存的正文写入 `systemPromptOptions.sections["memctl"]`；`agent_settled` 触发 `memctl sync`；`session_shutdown` 触发 `memctl end`。
 - 不采用两套接入同时启用；不自动修改 pi 的 `settings.json`；不自动删除旧 `hooks.yaml`；不在插件内实现记忆存储、检索、向量库或后台模型整理。
 
@@ -34,7 +34,7 @@ references: [memctl-mcp]
 
 ### 2.2 本方案不覆盖
 
-- OMP 原生插件。OMP 是独立宿主，其实测调研与接入方案见 [17. OMP 宿主接入](./17-omp-integration.md)；本方案专注于 pi 原生扩展。
+- OMP 的宿主接入面与适配器。`memctl-pi` 在运行时兼容 OMP，见 [17. OMP 宿主接入](./17-omp-integration.md)；本方案只描述插件本身与 pi 专属的适配器行为。
 - 由 memctl 自动安装、升级或卸载 pi 包；安装仍由 `pi install` / `pi remove` 完成。
 - pi 客户端面板、`/memctl` 命令、模型可调用的 memctl 工具或 MCP server。
 - 记忆格式、检索策略、Dreaming、锁和同步协议的变化。
@@ -89,7 +89,7 @@ pi 扩展是运行在 pi 进程内的 TypeScript/JavaScript 模块，通过默�
 | 平台 | README 声明 macOS/Linux，不支持 Windows | 跟随 pi 支持的平台；不额外依赖 bash |
 | 版本兼容 | 精确测试矩阵，当前止于 0.86.1 | 需要自建矩阵；pi 没有 `engines.dsh` 式强制拒绝 |
 | 分发 | npm + YAML 配置 | npm 包或本地包目录；不需要 YAML 合并 |
-| 通用性 | 同时支持 pi 和 OMP，可配置任意 hook | 只服务 memctl，不支持 OMP |
+| 通用性 | 同时支持 pi 和 OMP，可配置任意 hook | 只服务 memctl；`0.6.0` 起同一份包由 OMP 插件管理器加载 |
 | 维护 | 第三方维护，memctl 只维护 YAML 模板 | memctl 维护插件与适配器，控制力更强 |
 
 结论：如果目标是「最低维护成本 + 继续支持 OMP」，保留 `pi-yaml-hooks` 合理；如果目标是「pi 的默认接入可控、可测试、可在 Windows 使用，并去掉通用 bash/YAML 执行面」，原生插件更合适。两者不应同时启用。
@@ -154,7 +154,7 @@ pi 内置 MCP 扩展是目前最接近「只做桥接」的第一方示例：它
 7. **分发优先 npm，本地路径用于开发和离线。** 成熟 pi 包都支持 `pi install npm:...`；本地路径不复制文件，目录必须长期存在。
 8. **避免原生依赖和安装脚本。** `pi-hermes-memory` 的 `better-sqlite3`、`pi-memory` 的 `postinstall` 都增加了安装失败面；`memctl-pi` 应保持零依赖、零安装脚本。
 9. **测试规模与生命周期覆盖相关。** `pi-mind` 标注 345 项测试，`pi-hermes-memory` 标注 732 项；memctl 插件不需要同等规模，但至少要有假宿主单元测试、隔离宿主集成测试和真实会话验收。
-10. **OMP 是独立宿主。** `pi-yaml-hooks` 能同时覆盖 pi 和 OMP；原生 `memctl-pi` 不能。若 OMP 在支持范围内，应保留 YAML 路径或另做 OMP 插件。
+10. **OMP 与 pi 共用扩展 API。** OMP 能直接加载 pi 格式的扩展包，`memctl-pi` 在 `0.6.0` 起按宿主可执行文件切换 `--agent`，因此不需要维护第二份插件；OMP 的安装通道与验证边界另见 [17](./17-omp-integration.md)。
 
 ## 5. 方案选择
 
@@ -171,7 +171,7 @@ pi 内置 MCP 扩展是目前最接近「只做桥接」的第一方示例：它
 - 新用户默认使用 `memctl-pi`；`memctl install pi --dry-run` 输出 npm 包名和本地目录两种入口。
 - 已有 `pi-yaml-hooks` + `agent-memory-*` 条目的用户继续可用；适配器标记 legacy，并提示迁移。
 - 两套同时存在时报告 `needs_attention`，不自动删除任何一方。
-- OMP 不在本文档范围内；其实测调研与双轨接入方案见 [17. OMP 宿主接入](./17-omp-integration.md)。
+- OMP 复用同一份 `memctl-pi`；安装、探测与验证边界见 [17. OMP 宿主接入](./17-omp-integration.md)。
 
 ## 6. 插件设计
 
@@ -294,9 +294,9 @@ export default function memctlPi(pi) {
 
 ### 6.8 身份、二进制与配置
 
-- agent 名固定为 `pi`；SID 使用 `ctx.sessionManager.getSessionId()`，通过 `--sid` 显式传递。
+- agent 名在加载时解析：`MEMCTL_PI_AGENT` → 进程可执行文件名（`omp*` 判为 `omp`）→ `PI_CODING_AGENT_DIR` 含 `/.omp/` → 默认 `pi`；`start`/`sync`/`end` 使用该值。SID 使用 `ctx.sessionManager.getSessionId()`，通过 `--sid` 显式传递。
 - 子进程的 `cwd` 使用 `ctx.sessionManager.getCwd()`，不依赖 pi 进程的启动目录；memctl 的仓库仍由 `AGENT_MEMORY_DIR` 决定。
-- 不使用 `PI_SESSION_ID` 环境变量，不读取 `hooks.yaml`，不解析宿主注入的 JSON。
+- 插件不使用 `PI_SESSION_ID` 环境变量；该变量只作为 CLI 的 SID 回退（`T134`），覆盖宿主 bash 工具里手工执行的命令。插件不读取 `hooks.yaml`，不解析宿主注入的 JSON。
 - memctl 路径按以下顺序解析：
   1. `MEMCTL_PI_BIN` 环境变量。
   2. `~/.agent-memory/bin/memctl`。
@@ -310,10 +310,10 @@ export default function memctlPi(pi) {
 
 | 动作 | 调用 | 超时 | 输出 | 生命周期 |
 | --- | --- | --- | --- | --- |
-| 会话开始 | `start --agent pi --sid <id> --json` | `START_TIMEOUT_MS = 20 s` | stdout 上限 1 MiB；stderr 尾部 8 KiB | 后台 promise 等待；shutdown 时终止 |
+| 会话开始 | `start --agent <host> --sid <id> --json` | `START_TIMEOUT_MS = 20 s` | stdout 上限 1 MiB；stderr 尾部 8 KiB | 后台 promise 等待；shutdown 时终止 |
 | 首次注入等待 | 等待 `start` 完成 | `START_WAIT_MS = 8 s` | 无 | 超时后本轮跳过，下一次 prompt 再试 |
-| 每次 run 同步 | `sync --agent pi --sid <id>` | `SYNC_TIMEOUT_MS = 15 s` | 忽略 stdout；stderr 保留尾部 | 后台；shutdown 时终止 |
-| 会话收尾 | `end --agent pi --sid <id>` | `END_JOIN_MS = 1.5 s` 观察早期退出 | 忽略 | detached + unref；超时后由子进程继续 |
+| 每次 run 同步 | `sync --agent <host> --sid <id>` | `SYNC_TIMEOUT_MS = 15 s` | 忽略 stdout；stderr 保留尾部 | 后台；shutdown 时终止 |
+| 会话收尾 | `end --agent <host> --sid <id>` | `END_JOIN_MS = 1.5 s` 观察早期退出 | 忽略 | detached + unref；超时后由子进程继续 |
 
 - 使用 `spawn(bin, args, { shell: false, windowsHide: true })`，不拼接命令字符串。
 - POSIX 下超时先发 `SIGTERM`，宽限 `KILL_GRACE_MS = 1 s` 后发 `SIGKILL`；Windows 下先 `kill`，必要时使用 `taskkill /T /F`，并记录无法清理的残留。
@@ -451,6 +451,8 @@ pi 适配器当前把 `pi-yaml-hooks` 作为必需插件，并管理 `$HOME/.pi/
          pi install <输出的绝对目录>
   校验:  pi list
   ```
+
+  OMP 的缺失插件提示由 `install omp` 单独输出 `memctl pi plugin-dir` → `omp plugin install <绝对目录>` → `omp plugin list`，不附加 pi 的 npm 行。
 
 - 不猜测 pi 的 profile 或 settings 路径；不自动执行 `pi install`，不写 `settings.json`，不修改 `hooks.yaml` 之外的宿主配置。
 - `install --dry-run` 与 `install --status` 只报告计划和探测结果，不写文件。
@@ -632,7 +634,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 | 上下文过大 | token 成本和压缩成本上升 | 复用 memctl 的 `MEMORY.md` 上限；section 只注入一次；不做每轮重复拼接 |
 | 正文变化导致 section delta | 缓存失效 | 快照式正文；避免时间戳和易变字段；只在会话开始或显式刷新时更新 |
 | 原生插件在进程内执行 | 安装即信任，扩展可访问会话和凭据 | 零依赖、固定二进制和参数、无任意命令配置、发布源码和校验和 |
-| OMP 不在范围内 | OMP 用户仍需要 YAML 路径 | 保留 legacy；另立 OMP 方案，不把 `memctl-pi` 宣称为跨宿主 |
+| OMP 与 pi 的运行时差异 | 包版本识别错误会标错 `--agent`，或把 pi 的事件语义套到 OMP | `0.6.0` 起按可执行文件名识别宿主；OMP `18.17.0` 无 `sections`，走字符串回退；适配器分别报告两套最低版本 |
 | npm 名称或发布权限变化 | 主通道不可用 | 发布前复查；本地目录备用可独立工作 |
 | Windows 进程清理差异 | 子进程残留或退出变慢 | 分平台测试 `kill`/`taskkill`；未验证平台不报告 `verified` |
 | 真实宿主未验证 | 只能算设计可行，不能算已支持 | 完成 §9.4 后再标记 `verified` |
@@ -644,7 +646,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 | ID | 事项 | 建议 | 影响 |
 | --- | --- | --- | --- |
 | `D1` | 是否新增原生插件 | 是，作为 pi 默认接入 | 决定是否进入 F 阶段 |
-| `D2` | 是否保留 `pi-yaml-hooks` | 保留为 legacy，不自动删除 | 影响迁移和 OMP |
+| `D2` | 是否保留 `pi-yaml-hooks` | 保留为 legacy，不自动删除 | 影响迁移；OMP 已改用 `memctl-pi` |
 | `D3` | 分发组合 | npm 主通道 + 本地目录备用 | 影响发布工程和离线能力 |
 | `D4` | 注入频率 | 会话开始快照，section 注入；每轮新鲜度作为后续选项 | 影响 token、缓存和进程延迟 |
 | `D5` | 子代理策略 | v1 不跳过；需要时用 `PI_SUBAGENT_CHILD=1` 显式开关 | 影响子代理记忆和重复同步 |
@@ -659,7 +661,8 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 - `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、`LICENSE`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
 - 生命周期：`start` 后台执行并有 20 秒上限；首个 `before_agent_start` 最多等待 8 秒；正文写入 `sections["memctl"]`，`sections` 缺失或 `forceSystemPrompt` 时回退到替换 `systemPrompt`；`agent_settled` 与 `agent_end` 共用一个 pending 去重；`session_shutdown` 的 `reload` 只清理子进程，其余 reason 分离执行 `end` 并最多等待 1.5 秒。
 - 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.5.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
-- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1`、`v0.6.0` 与 `v0.7.0` Release 的插件 tarball 均为 `0.5.1`（插件源码自 `v0.5.1` 起未改动）。
+- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1`、`v0.6.0` 与 `v0.7.0` Release 的插件 tarball 均为 `0.5.1`（插件源码自 `v0.5.1` 起未改动）。`0.6.0` 增加 OMP 宿主识别与 `--agent omp`，已写入 `$STATE/pi` 并由本机 OMP 链接；尚未发布到 npm。
+- OMP 兼容（`T134`）：`detectAgent` 按可执行文件名识别 OMP；`start`/`sync`/`end` 使用解析后的 agent；`memctl install omp` 探测 `~/.omp/plugins/node_modules/memctl-pi`；OMP 会话进入 `internal/corpus`（共享 pi 解析器）与补扫。验证见 [17 §6](./17-omp-integration.md#6-实现状态与验证记录t134)。
 
 已验证：
 

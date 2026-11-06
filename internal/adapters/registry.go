@@ -274,6 +274,27 @@ var registry = []AdapterSpec{
 		}},
 	},
 	{
+		// OMP is a pi fork: it loads the same extension API and links a local
+		// package directory under ~/.omp/plugins/node_modules. One memctl-pi
+		// package therefore serves both hosts; the extension detects the
+		// executable and tags every command with --agent omp. memctl only
+		// probes the linked package; `omp plugin install` owns the install.
+		// See docs/17-omp-integration.md.
+		Agent:        "omp",
+		HostCommands: []string{"omp"},
+		HostPaths:    []string{"$HOME/.omp/agent"},
+		// OMP 18.17.0 is the version the extension lifecycle, the injected
+		// session file and the plugin loader were verified on.
+		HostMinVersion: "18.17.0",
+		NativePlugin: &PluginSpec{
+			Name:       "memctl-pi",
+			MinVersion: "0.6.0",
+			Manifests: []string{
+				"$HOME/.omp/plugins/node_modules/memctl-pi/package.json",
+			},
+		},
+	},
+	{
 		// Delta ships no lifecycle hook: it neither runs commands at session
 		// start, per turn or at session end, nor accepts a local stdio MCP
 		// server. What it does provide is an unsandboxed agent, so the agent

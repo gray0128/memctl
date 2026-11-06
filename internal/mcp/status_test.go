@@ -28,16 +28,16 @@ func TestStatusEnvReportsServingBinary(t *testing.T) {
 	if !status.Available || status.Version != "v9.9.9" || len(status.Tools) != 3 {
 		t.Fatalf("unexpected status: %+v", status)
 	}
-	if len(status.Registrations) != 11 {
-		t.Fatalf("expected 11 registrations, got %d", len(status.Registrations))
+	if len(status.Registrations) != 12 {
+		t.Fatalf("expected 12 registrations, got %d", len(status.Registrations))
 	}
 	if got := status.Registrations[0].Command; got != "claude mcp add memctl --scope user -- /opt/memctl mcp --agent claude-code" {
 		t.Fatalf("claude-code command = %q", got)
 	}
-	// Three hosts have no usable CLI command: dsh edits a profile patch file,
-	// WorkBuddy has no mcp subcommand at all, and Delta cannot load a local
+	// Four hosts have no usable CLI command: dsh edits a profile patch file,
+	// WorkBuddy and OMP have no mcp subcommand, and Delta cannot load a local
 	// stdio server in the first place.
-	for _, agent := range []string{"dsh", "workbuddy", "delta"} {
+	for _, agent := range []string{"dsh", "workbuddy", "omp", "delta"} {
 		registration, ok := registrationFor(status.Registrations, agent)
 		if !ok {
 			t.Fatalf("%s registration is missing", agent)
@@ -47,6 +47,9 @@ func TestStatusEnvReportsServingBinary(t *testing.T) {
 		}
 		if agent == "workbuddy" && !strings.Contains(registration.Instruction, "~/.workbuddy/mcp.json") {
 			t.Fatalf("workbuddy instruction must name the user-scope mcp.json: %q", registration.Instruction)
+		}
+		if agent == "omp" && !strings.Contains(registration.Instruction, "~/.omp/agent/mcp.json") {
+			t.Fatalf("omp instruction must name the user-scope mcp.json: %q", registration.Instruction)
 		}
 		if agent == "delta" && !strings.Contains(registration.Instruction, "not supported") {
 			t.Fatalf("delta instruction must say the stdio server is unsupported: %q", registration.Instruction)
@@ -76,7 +79,7 @@ func TestStatusEnvReportsUnavailableBinary(t *testing.T) {
 	if status.Available || status.Reason == "" || len(status.Tools) != 0 {
 		t.Fatalf("unavailable status = %+v", status)
 	}
-	if len(status.Registrations) != 11 {
+	if len(status.Registrations) != 12 {
 		t.Fatalf("registrations should stay visible, got %d", len(status.Registrations))
 	}
 }

@@ -237,8 +237,8 @@ var helpRootData = helpRoot{
 		{
 			Name: "AGENT_MEMORY_SID",
 			Description: loc(
-				"Session id for source tags and provenance. --sid wins; AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, DELTA_CURRENT_THREAD_ID and Hook JSON are fallbacks.",
-				"用于来源标签和溯源信息的会话 ID。`--sid` 优先，`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON 是回退来源。",
+				"Session id for source tags and provenance. --sid wins; AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, PI_SESSION_ID, DELTA_CURRENT_THREAD_ID and Hook JSON are fallbacks.",
+				"用于来源标签和溯源信息的会话 ID。`--sid` 优先，`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`PI_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON 是回退来源。",
 			),
 		},
 		{
@@ -253,6 +253,13 @@ var helpRootData = helpRoot{
 			Description: loc(
 				"DSH session id exported to session shells; another fallback before Hook JSON. MCP and hook child processes do not inherit it.",
 				"DSH 导出到会话 shell 的会话 ID，在 Hook JSON 之前作为回退。MCP 与 Hook 子进程不继承该变量。",
+			),
+		},
+		{
+			Name: "PI_SESSION_ID",
+			Description: loc(
+				"pi and OMP session id injected into the host bash tool; another fallback before Hook JSON. The native extension passes the session id explicitly, so this only covers manual CLI calls inside a host session.",
+				"pi 与 OMP 注入到宿主 bash 工具的会话 ID，在 Hook JSON 之前作为回退。原生扩展会显式传会话 ID，因此该变量只覆盖宿主会话内手工执行的 CLI 调用。",
 			),
 		},
 		{
@@ -623,7 +630,7 @@ var helpCommandData = []helpCommand{
 		Flags: []helpItem{
 			{Name: "--stdin", Description: loc("Consume at most 1 MiB of Hook JSON. Invalid JSON exits 2.", "消费最多 1 MiB 的 Hook JSON。JSON 无效时返回 2。")},
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded in the session digest source tag and the session identity for capture provenance.", "会话摘要来源标签中的 Agent 名称，同时作为 capture 溯源的会话身份。")},
-			{Name: "--sid", Value: "ID", Description: loc("Session id recorded in the session digest source tag. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, DELTA_CURRENT_THREAD_ID, then Hook JSON.", "会话摘要来源标签中的会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id recorded in the session digest source tag. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, PI_SESSION_ID, DELTA_CURRENT_THREAD_ID, then Hook JSON.", "会话摘要来源标签中的会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`PI_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON。")},
 			{Name: "--transcript", Value: "PATH", Description: loc("Absolute path of the host session log to distill into the local corpus cache. Takes precedence over the Hook JSON transcript_path.", "要蒸馏进本地会话摘要缓存的宿主会话日志绝对路径。优先于 Hook JSON 中的 `transcript_path`。")},
 		},
 		Output: []localizedText{
@@ -653,7 +660,7 @@ var helpCommandData = []helpCommand{
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name for session identity.", "用于会话身份的 Agent 名称。")},
-			{Name: "--sid", Value: "ID", Description: loc("Session id. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, DELTA_CURRENT_THREAD_ID, then Hook JSON.", "会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON。")},
+			{Name: "--sid", Value: "ID", Description: loc("Session id. Falls back to AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, PI_SESSION_ID, DELTA_CURRENT_THREAD_ID, then Hook JSON.", "会话 ID。依次回退到 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`PI_SESSION_ID`、`DELTA_CURRENT_THREAD_ID` 和 Hook JSON。")},
 			{Name: "--stdin", Description: loc("Read at most 1 MiB of Hook JSON. Invalid JSON exits 2.", "读取最多 1 MiB 的 Hook JSON。JSON 无效时返回 2。")},
 			{Name: "--json", Description: loc("Emit the SessionStart hookSpecificOutput envelope.", "输出 SessionStart 的 hookSpecificOutput envelope。")},
 			{Name: "--agy", Description: loc("Emit the Antigravity injectSteps envelope.", "输出 Antigravity 的 injectSteps envelope。")},
@@ -760,7 +767,7 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl tag --agent claude-code --sid \"$AGENT_MEMORY_SID\""},
-			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID or DSH_SESSION_ID is set.", "仅在设置了 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID` 或 `DSH_SESSION_ID` 时可用。")},
+			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID or PI_SESSION_ID is set.", "仅在设置了 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 或 `PI_SESSION_ID` 时可用。")},
 		},
 		Notes: []localizedText{
 			loc("`wrap` exports AGENT_MEMORY_SID to its child, so a wrapped program can call tag without --sid.", "`wrap` 会向子进程导出 `AGENT_MEMORY_SID`，因此被包装程序可以不带 `--sid` 调用 `tag`。"),
@@ -994,7 +1001,7 @@ var helpCommandData = []helpCommand{
 		),
 		Arguments: []helpItem{
 			{Name: "[agent...]", Description: loc(
-				"One or more adapter names: claude-code, codebuddy, codex, grok, antigravity, commandcode, workbuddy, opencode, pi, dsh, delta.",
+				"One or more adapter names: claude-code, codebuddy, codex, grok, antigravity, commandcode, workbuddy, opencode, pi, dsh, omp, delta.",
 				"一个或多个适配器名称：claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh、delta。",
 			)},
 		},
@@ -1023,6 +1030,7 @@ var helpCommandData = []helpCommand{
 			loc("Run --dry-run first when a user configuration already exists, then apply the same agent to avoid surprise changes.", "用户配置已存在时，先运行 `--dry-run` 确认改动，再对同一 Agent 执行安装。"),
 			loc("The DSH native plugin is installed by DSH Plugin Manager. install only probes it and never writes the DSH profile.", "DSH 原生插件由 DSH Plugin Manager 安装。`install` 只探测，不写 DSH profile。"),
 			loc("The pi native plugin is installed through `pi install`. install only probes it; it never writes hooks.yaml unless legacy agent-memory-* entries already exist.", "pi 原生插件通过 `pi install` 安装。`install` 只探测；只有旧 agent-memory-* 条目已存在时才继续更新 hooks.yaml。"),
+			loc("OMP loads the same memctl-pi package through `omp plugin install`; install only probes the linked package under ~/.omp/plugins/node_modules and never runs the host.", "OMP 通过 `omp plugin install` 加载同一份 memctl-pi 包；`install` 只探测 `~/.omp/plugins/node_modules` 下的链接包，绝不执行宿主命令。"),
 			loc("The `mcp:` block only probes the running binary and prints registration actions for each host; memctl never runs a host's `mcp add` and never edits host MCP configuration. When the binary cannot answer `mcp`, it reports `mcp: unavailable` and prints no commands.", "`mcp:` 块只探测当前二进制并输出各宿主的注册动作；memctl 不运行宿主的 `mcp add`，也不修改宿主 MCP 配置。二进制无法响应 `mcp` 时输出 `mcp: unavailable`，不输出注册命令。"),
 		},
 		Related: []string{"dsh", "pi", "mcp", "start", "context"},
