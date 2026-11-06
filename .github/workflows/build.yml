@@ -4,9 +4,11 @@
 # artifacts and the local candidates come from one code path.
 #
 # The test suite is the long pole: it is split into shards that run as parallel
-# jobs, and the packaging job runs alongside them instead of after them. A
-# publish job that needs both keeps a failing test from producing a release.
-# See docs/04-ui-and-cli-specification.md section 6 and
+# jobs, and the packaging job runs alongside them instead of after them. The
+# release and npm jobs both need verify and build, so a failing test produces
+# neither artifact. npm publishing uses OIDC trusted publishing, so the
+# repository stores no npm token; a version already on npm is skipped to keep a
+# rerun idempotent. See docs/04-ui-and-cli-specification.md section 6 and
 # docs/05-validation-and-delivery.md section 4.
 
 name: build
@@ -135,3 +137,32 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "memctl $GITHUB_REF_NAME" \
             --generate-notes
+
+  # Publishes memctl-pi and memctl-dsh when their package.json versions are not
+  # on npm. Trusted publishing exchanges the job's OIDC token for a short-lived
+  # credential, so no npm secret exists in this repository. Both packages need a
+  # one-time Trusted Publisher entry on npmjs.com: user gray0128, repository
+  # memctl, workflow build.yml. Do not add registry-url or NODE_AUTH_TOKEN here:
+  # setup-node would write an empty token line and disable the OIDC exchange.
+  npm-publish:
+    needs: [verify, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.10.0"
+
+      - name: Report npm version
+        run: npm --version
+
+      - name: Publish unpublished plugin versions
+        run: scripts/publish-npm.sh

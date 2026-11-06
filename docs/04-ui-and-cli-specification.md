@@ -386,13 +386,14 @@ clean:
 
 `make release` 的定位是离线或调试时验证构建链路，以及在没有网络的机器上产出候选包；它不是发布步骤，重复执行只会得到一份会被流水线覆盖的产物。发布前在本地应运行 `make test` 验证代码，而不是 `make release` 构建产物。
 
-发布轮次的操作顺序：更新版本与台账 → 推送 `main` → 创建并推送 `v*` 标签 → 等待流水线的 `publish` 作业创建 Release → 把附件下载到独立目录（不与本地 `dist/` 混用）并按 `SHA256SUMS` 校验 → 升级本机二进制。本地构建产物不参与其中的校验步骤。
+发布轮次的操作顺序：更新版本与台账 → 推送 `main` → 创建并推送 `v*` 标签 → 等待流水线的 `publish` 作业创建 Release、`npm-publish` 作业发布尚未上架的插件版本 → 把附件下载到独立目录（不与本地 `dist/` 混用）并按 `SHA256SUMS` 校验 → 用 `npm view <pkg> version dist-tags` 核对 npm → 升级本机二进制。本地构建产物不参与其中的校验步骤。
 
-GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分三个作业：
+GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/workflows/build.yml)）分四个作业：
 
 - `verify`：矩阵作业，四个分片并行。每个分片运行全部单元包与该分片分到的集成测试；前端与两个插件的 Node 测试只在分片 1 运行一次。
 - `build`：与 `verify` 并行，不等待测试，运行 `make release-dist` 构建四个候选二进制与两个插件包并上传 `dist/`。
 - `publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，检出仓库历史、下载构建产物后创建 GitHub Release。检出是必需的：`--generate-notes` 要与上一个标签比较生成变更说明，缺少 `.git` 会以 `fatal: not a git repository` 失败。测试失败时该作业不会运行，因此不产出 Release。
+- `npm-publish`：`needs: [verify, build]`，只在推送 `v*` 标签时运行，执行 `scripts/publish-npm.sh`。脚本逐个读取 `plugins/pi` 与 `plugins/dsh` 的 `package.json`，`npm view <name>@<version>` 已存在就跳过，否则用 npm trusted publishing（OIDC，`id-token: write`）执行 `npm publish --access public`；仓库不保存 `NPM_TOKEN`，重跑已失败的发布不会重复上传。每个包需在 npmjs.com 一次性配置 Trusted Publisher：GitHub 用户 `gray0128`、仓库 `memctl`、workflow 文件名 `build.yml`、环境留空。该作业与 `publish` 并行，npm 失败不撤销已创建的 Release，测试或构建失败时两者都不运行。
 
 `make release` 等于 `make test` 加 `scripts/release.sh`，用于本地验证构建链路；发布入口见 6.1。`make test` 保持全量语义：它一次跑完所有单元包与全部集成测试。分片只是 CI 的调度手段，两者覆盖同一批测试，靠 `scripts/test-shards.txt` 保证。
 
@@ -408,4 +409,4 @@ GitHub Actions 的 `build` 工作流（[.github/workflows/build.yml](../.github/
 
 `main` 推送与标签推送使用不同的并发策略：前者 `cancel-in-progress: true`，新提交取消排队中的旧运行；后者为 `false`，已开始的发布不被取消。
 
-运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需记忆仓库已配置并确认私有 GitHub 远端、仓库内存在 `.github/workflows/memctl-dream.yml` 以及在 GitHub Actions Secrets 中配置所选模型提供商的 API Key。未配置远端或工作流只影响整理生成，不影响 CLI、本地读写、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。
+运行时核心依赖为 Git，以及所选 Git 传输需要的 SSH 或凭据环境；Dreaming 另需记忆仓库已配置并确认私有 GitHub 远端、仓库内存在 `.github/workflows/memctl-dream.yml` 以及在 GitHub Actions Secrets 中配置所选模型提供商的 API Key；npm 自动发布另需两个包各自的 Trusted Publisher 配置，不需要仓库 Secret。未配置远端或工作流只影响整理生成，不影响 CLI、本地读写、诊断和 UI。发布包含校验和、依赖许可证、工具版本与平台测试结果，不将交叉编译通过当成运行验收。

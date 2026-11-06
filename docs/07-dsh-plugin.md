@@ -395,7 +395,7 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - 在现有 GitHub Actions `v*` 标签流水线中增加：
   1. 运行插件单元测试和 `npm pack --dry-run` 文件清单检查。
   2. 产出 tarball，加入 Release 附件与 `SHA256SUMS`；二进制构建不依赖该 tarball。
-  3. 如启用 npm，使用 `NPM_TOKEN` 发布 `memctl-dsh@<version>`；优先使用 npm provenance。
+  3. `v*` 标签流水线的 `npm-publish` 作业自动发布 `memctl-dsh@<version>`：先检查该版本是否已上架，已存在则跳过；未上架时通过 npm trusted publishing（OIDC）发布，仓库不保存 `NPM_TOKEN`。
   4. 如启用独立 GitHub 仓库，验证仓库根 `package.json` 的 bundle 声明和预构建入口；不从主仓库子目录发布。
   5. 如启用市场索引，生成并校验 `index.json`，发布到静态托管地址。
 - npm 发布失败不应导致二进制 Release 失败；反之，二进制测试失败不能发布插件。两类产物分别报告状态。
@@ -403,15 +403,15 @@ memctl 的 Go 包直接 `go:embed` 插件源文件，`go build`/`go test` 不依
 - 不在 CI 中运行 `dsh plugin add` 修改真实用户 profile；安装验证使用隔离的 `DSH_HOME` 和临时 profile。
 - 安装验证至少覆盖界面使用的三种 spec：npm 包名、绝对 tarball 路径、绝对目录路径；GitHub URL 在独立仓库可用后单独验证。
 
-npm 发布的实际操作（`memctl-pi` 同样适用）：
+npm 发布由 `v*` 标签流水线自动执行（`memctl-pi` 同样适用）：
 
 1. 升 `package.json` 版本，同步包内 `README.md` 的安装示例；`npm pack --dry-run` 核对文件清单与版本。
-2. `npm stage publish . --registry=https://registry.npmjs.org` 入队，记录输出的 stage id 与 shasum；`npm stage list` 确认 `status: staged`。
-3. 审批需要 npm 账号的二次认证，必须由维护者在终端执行 `npm stage approve <stage-id> --registry=https://registry.npmjs.org`；浏览器流程无法在无 TTY 的 Agent 会话内完成。
-4. 发布后用 `npm view <pkg> version dist-tags` 与 `npm view <pkg>@<version> dist.shasum` 核对，并确认 `npm stage list` 已为空。
+2. 推送 `v*` 标签；`npm-publish` 作业执行 `scripts/publish-npm.sh`，用 `npm view <pkg>@<version>` 判断是否已上架，已存在则跳过，否则通过 npm trusted publishing（OIDC）执行 `npm publish --access public`。仓库不保存 `NPM_TOKEN`，重跑失败作业是幂等的。
+3. 一次性前置条件：在 npmjs.com 每个包的 Settings → Trusted Publisher 中添加 GitHub Actions，用户 `gray0128`、仓库 `memctl`、workflow 文件名 `build.yml`、环境留空；npm CLI 需 ≥ 11.5.1、Node ≥ 22.14.0（流水线使用 Node 26.10.0）。不要给 workflow 设置 `registry-url` 或 `NODE_AUTH_TOKEN`，空的 token 行会让 OIDC 交换失败。
+4. 发布后用 `npm view <pkg> version dist-tags` 与 `npm view <pkg>@<version> dist.shasum` 核对；provenance 由 trusted publishing 自动生成。
 5. 升级本机宿主 profile（例如 `dsh plugin --profile desktop add memctl-dsh@<version>`），再更新 `README`、本文与 `STATUS` 中的版本表述。
 
-本机环境有两个固定前提：`~/.npmrc` 的 registry 指向镜像而 `_authToken` 属于 `registry.npmjs.org`，因此每条命令都要带 `--registry=https://registry.npmjs.org`，否则 `npm whoami` 报 `ENEEDAUTH`；沙箱会话不能写 `~/.npm` 缓存，需用 `npm_config_cache=/tmp/<dir>` 指定可写缓存。
+本地手工发布仍可用 `scripts/publish-npm.sh` 预览：`scripts/publish-npm.sh --dry-run` 对已上架版本只打印跳过；没有 OIDC 的机器不能完成真实发布。
 
 ### 7.4 版本矩阵
 
@@ -563,7 +563,7 @@ npm 发布的实际操作（`memctl-pi` 同样适用）：
 - `memctl dsh plugin-path` 把 `go:embed` 的源文件写成 `$STATE/dsh/memctl-dsh-<version>.tgz`；`memctl dsh plugin-dir` 写成 `$STATE/dsh/<version>/`。两者只输出绝对路径，不修改 DSH profile，也不执行 `pnpm`。
 - dsh 适配器同时探测原生 `memctl-dsh` 与旧 `dsh-hooks-plugin`。原生插件存在时 `artifacts` 为空、状态 `configured`，不写 `hooks.json`；两者共存或都不存在时返回 `needs_attention`；只存在旧插件时保留 deprecated 的 hooks 合并路径。
 - `install --status` 在缺少任何 dsh 插件时打印「插件 → 添加插件」的 npm 名、内嵌 tarball 命令和 CLI 等价入口。
-- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`；`v0.6.0` 与 `v0.7.0` Release 附带同名 `memctl-dsh-0.5.1.tgz`（插件源码未改动，版本保持 `0.5.1`）。2026-10-20 起两个插件统一为 `0.5.2`，该版本随 `v0.9.0` 发布并已发布到 npm。同日 `memctl-dsh` 单独发布 `0.5.3` 到 npm（`latest`，shasum `115791a5…`）：只改 `start` 非零退出时的 envelope 处理与版本号，未进 Release，二进制仍为 `v0.9.0`，其内嵌 tarball 已是 `0.5.3`。本机 `desktop` profile 已升级到 `0.5.3`，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.3`。真实会话复验与缺陷定位见 [T096 验证记录](./validation/t096-dsh-plugin-0-5-2-verification.md)。
+- `make test` 运行插件 Node 单元测试；`make release` 在 `dist/` 生成 `memctl-dsh-<version>.tgz`，并纳入 `SHA256SUMS` 与 `RELEASE-INFO.txt`。`v0.4.0` Release 已附带 `memctl-dsh-0.4.0.tgz`；`v0.5.0` Release 附带 `memctl-dsh-0.5.0.tgz` 与 `memctl-pi-0.5.0.tgz`；`v0.5.1` Release 附带 `memctl-dsh-0.5.1.tgz` 与 `memctl-pi-0.5.1.tgz`；`v0.6.0` 与 `v0.7.0` Release 附带同名 `memctl-dsh-0.5.1.tgz`（插件源码未改动，版本保持 `0.5.1`）。2026-10-20 起两个插件统一为 `0.5.2`，该版本随 `v0.9.0` 发布并已发布到 npm。同日 `memctl-dsh` 单独发布 `0.5.3` 到 npm（`latest`，shasum `115791a5…`）：只改 `start` 非零退出时的 envelope 处理与版本号，未进 Release，二进制仍为 `v0.9.0`，其内嵌 tarball 已是 `0.5.3`。本机 `desktop` profile 已升级到 `0.5.3`，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.3`。`v0.16.0` 起 `memctl-pi` 为 `0.6.0`；自该轮起 npm 发布改由标签流水线的 `npm-publish` 作业自动完成。真实会话复验与缺陷定位见 [T096 验证记录](./validation/t096-dsh-plugin-0-5-2-verification.md)。
 - 插件卸载时，对仍 live 且尚未收尾的会话触发一次 detached `end`；`agent/disposed` 已清理的会话不重复触发。`end` 是幂等的后台同步，不写入会话关闭状态。
 - 验证证据：插件 Node 单元测试 15 项；Go 包清单、tarball 内容与路径测试；隔离 `DSH_HOME` 的 `test` profile 通过 `dsh plugin add <tgz>` 安装，`dsh --profile test --dump-config` 出现 `memctl-dsh`，删除 tarball 后仍可加载；该隔离 HOME 中 `memctl install --status` 返回 `configured`，且未生成 `hooks.json`。`v0.2.0` 发布后，本机 `desktop` 真实会话已出现 `[agent-memory]` 上下文快照；`v0.4.0` 已发布，`desktop` profile 的 `memctl-dsh` 已更新到 `0.4.0`；`v0.5.0` 已发布，`desktop` profile 的插件仍为 `0.4.0`；`v0.5.1` 已发布，两个插件均可在 npm 安装；本机 `desktop` profile 已通过 DSH 界面 npm 包名安装升级到 `0.5.1`，profile 的 bundle 列表与依赖一致，`install --status` 返回 `configured host=dsh@0.2.1-rc.2 plugin@0.5.1`；当前真实会话的 `runtime-context` 快照包含 `memctl:memory`，同步缓存于 23:20:24 更新为 `synced`。`0.3.0` 在隔离 headless 与 web host 正常退出时都通过插件卸载兜底恰好触发一次 `end`；隔离 web 会话完成两次成功模型轮次，两次 `runtime-context` 快照都包含 `memctl:memory` section，`turn/end` 后触发 `sync`；重启 web host 并恢复同一会话后再次注入并同步，仓库 HEAD 不重复提交；绝对 tarball 已通过「插件 → 添加插件」界面安装并启用。`0.4.0` 隔离 web 会话中模型实际执行 `memctl write`，产生提交 `61fd68e`，`turn/end` 后触发 `sync`；人工持锁时 `sync --wait` 在 3.1 秒内返回 `BUSY`，会话继续且本地提交保留；远端离线时缓存记录 `NETWORK_UNAVAILABLE`，会话继续且本地提交保留。`agent/disposed` 事件本身未在真实宿主观察到；DSH 0.2.1-rc.2 没有单会话销毁入口。
 

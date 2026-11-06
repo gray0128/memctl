@@ -521,7 +521,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
   2. `npm pack --dry-run` 文件清单检查：只包含运行时文件，无测试、无依赖、无安装脚本。
   3. 隔离 `PI_CODING_AGENT_DIR` 下 `pi install <本地目录>`、`pi list` 和 `pi --help` 加载检查。
   4. 适配器状态矩阵测试：原生、旧路径、共存、缺失、版本过低。
-- `make pi-plugin-test`、`make pi-plugin-pack` 与现有 dsh 入口并列；`make pi-plugin-pack` 生成 `dist/memctl-pi-<version>.tgz`，用于 npm 发布和审计；本地目录源由 `memctl pi plugin-dir` 在运行时生成，不提交到仓库。
+- `make pi-plugin-test`、`make pi-plugin-pack` 与现有 dsh 入口并列；`make pi-plugin-pack` 生成 `dist/memctl-pi-<version>.tgz`，用于审计；npm 发布由标签流水线的 `npm-publish` 作业通过 trusted publishing 完成，本地目录源由 `memctl pi plugin-dir` 在运行时生成，不提交到仓库。
 - npm 发布失败不应导致二进制 Release 失败；两类产物分别报告状态。
 
 ### 8.5 安装、升级与卸载
@@ -661,7 +661,7 @@ pi 的包安装文档列出的来源是 npm、git 和本地路径；当前 1.3.0
 - `plugins/pi/`：`package.json`、单文件 ESM `index.js`、`README.md`、`LICENSE`、Node 单元测试和 `embed.go`。入口只注册 `session_start`、`before_agent_start`、`agent_settled`、`agent_end` 与 `session_shutdown`，进程和定时器只从 `session_start` 启动。
 - 生命周期：`start` 后台执行并有 20 秒上限；首个 `before_agent_start` 最多等待 8 秒；正文写入 `sections["memctl"]`，`sections` 缺失或 `forceSystemPrompt` 时回退到替换 `systemPrompt`；`agent_settled` 与 `agent_end` 共用一个 pending 去重；`session_shutdown` 的 `reload` 只清理子进程，其余 reason 分离执行 `end` 并最多等待 1.5 秒。
 - 适配器：`memctl-pi` 从 npm 清单、`$STATE/pi/package.json` 和 `~/.pi/agent/settings.json` 的字符串或 `{source}` 本地包声明探测；旧路径按 `hooks.yaml` 中实际的 `agent-memory-*` 条目判定；`pi` 宿主下界 `0.86.1`、原生插件最低版本 `0.5.0`；原生存在时 `artifacts` 为空，`capabilities` 为 `[plugin]`。
-- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1`、`v0.6.0` 与 `v0.7.0` Release 的插件 tarball 均为 `0.5.1`（插件源码自 `v0.5.1` 起未改动）。`0.6.0` 增加 OMP 宿主识别与 `--agent omp`，已写入 `$STATE/pi` 并由本机 OMP 链接，2026-11-06 发布到 npm（`latest`，shasum `14e7ae91…`）。
+- 分发：`memctl pi plugin-dir` 从 `go:embed` 写到 `$STATE/pi/`，输出稳定绝对路径；`make pi-plugin-test`、`make pi-plugin-pack`；`scripts/release.sh` 附带 `memctl-pi-<version>.tgz` 供 npm 发布和审计，不把它写成 pi 安装输入。npm 包 `memctl-pi@0.5.0` 与 `0.5.1` 均已发布，`latest` 为 `0.5.1`；`v0.5.1`、`v0.6.0` 与 `v0.7.0` Release 的插件 tarball 均为 `0.5.1`（插件源码自 `v0.5.1` 起未改动）。`0.6.0` 增加 OMP 宿主识别与 `--agent omp`，已写入 `$STATE/pi` 并由本机 OMP 链接，2026-11-06 发布到 npm（`latest`，shasum `14e7ae91…`）。后续版本的 npm 发布由 `v*` 标签流水线的 `npm-publish` 作业自动完成（`scripts/publish-npm.sh`，已上架版本跳过）。
 - OMP 兼容（`T134`）：`detectAgent` 按可执行文件名识别 OMP；`start`/`sync`/`end` 使用解析后的 agent；`memctl install omp` 探测 `~/.omp/plugins/node_modules/memctl-pi`；OMP 会话进入 `internal/corpus`（共享 pi 解析器）与补扫。验证见 [17 §6](./17-omp-integration.md#6-实现状态与验证记录t134)。
 
 已验证：

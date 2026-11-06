@@ -345,3 +345,15 @@
 - 验证命令与结果：`make test`（Node 26）全绿：`web` 测试、dsh/pi 插件测试（pi 19 项）、全部 Go 包与 `tests/integration`（116.6 秒）。真机：`omp plugin install ~/.agent-memory/pi` 后 `omp plugin list --json` 为 `memctl-pi 0.6.0`；`memctl install omp --dry-run` 输出 `configured host=omp@18.17.0 plugin@0.6.0`；`omp -p` 会话的假 `memctl` 记录 `start/end --agent omp`，`end` 携带真实转录；`memctl sync --agent omp --transcript` 生成 `agent: omp` 的摘要；另以真实二进制为 `MEMCTL_PI_BIN`、临时仓库与状态目录运行 `omp -p`，`end` 收尾后缓存出现 `agent: omp`、1 个回合的摘要；`PI_SESSION_ID=... memctl tag --agent omp` 生效。`V-OMP-04` 与蒸馏、SID、适配器项通过；`V-OMP-01` 只验证到回退路径。
 - 未验证与遗留：交互式 OMP 会话的 `agent_settled` 每轮同步与 `/quit` 收尾、`V-OMP-02` 缓存稳定、`V-OMP-05` Skill 驱动写入、`V-OMP-06` MCP 工具连通性未复验；`memctl-pi@0.6.0` 未发布到 npm；OMP 无 `sections`，只能替换系统提示词。
 
+
+## T135：发布 v0.16.0 与 memctl-pi 0.6.0
+
+- 目标与范围：发布 `v0.16.0`，带入 `T134` 的 OMP 宿主接入（`omp` 适配器、`memctl-pi` 宿主识别与 `--agent omp`、`PI_SESSION_ID` 回退、OMP 会话蒸馏与补扫、MCP 注册提示），并把 `memctl-pi@0.6.0` 发布到 npm。次版本递增，属向后兼容的宿主能力增量；插件源码从 `0.5.2` 升到 `0.6.0`，`memctl-dsh` 保持 `0.5.3`。
+- 对应契约：[17. OMP 宿主接入](../17-omp-integration.md)、[08. pi 专用插件](../08-pi-plugin.md)、[04 §6.1 发布入口](../04-ui-and-cli-specification.md#61-发布入口)、[05 §4 发布前检查](../05-validation-and-delivery.md#4-发布前检查)。
+- 验证时间与环境：2026-11-06，darwin/arm64，OMP `18.17.0`，Go 1.27.2，Node v26.11.1 / npm 11.20.0。
+- 发布前检查：`make test` 全绿（web 测试、`plugins/dsh` 与 `plugins/pi` 的 Node 测试 19 项、Go 全包与 `tests/integration` 116.6 秒）；本机 OMP 已链接 `~/.agent-memory/pi`，`install omp --dry-run` 为 `configured host=omp@18.17.0 plugin@0.6.0`；真实 OMP 打印会话完成 `start/end --agent omp` 并产出 `agent: omp` 的摘要。
+- 流水线与 Release：[运行 42232416774](https://github.com/gray0128/memctl/actions/runs/42232416774) 的 `verify` 四个分片、`build` 与 `publish` 全部成功，`publish` 于 2026-11-06T14:26:45Z 创建 [v0.16.0](https://github.com/gray0128/memctl/releases/tag/v0.16.0)；九项附件为四个平台二进制、`memctl-dsh-0.5.3.tgz`、`memctl-pi-0.6.0.tgz`、`SHA256SUMS`、`THIRD_PARTY_LICENSES.txt` 与 `RELEASE-INFO.txt`。附件下载到独立目录后 `shasum -a 256 -c SHA256SUMS` 六项全部 OK；`RELEASE-INFO.txt` 记录 `commit c87d240`、Go 1.27.1、Node v26.10.0 与 darwin/arm64 runtime-verified。
+- npm：`memctl-pi@0.6.0` 于 2026-11-06T14:21:47Z 发布成功，`latest` 为 `0.6.0`，shasum `14e7ae9189093bca109a768a40669ba5ed8c4508`；从 registry 重新下载的 tarball 为 `0.6.0` 且包含 `detectAgent`。
+- 本机交付：`~/.agent-memory/bin/memctl` 原子替换为 `v0.16.0`，`update --check` 报告 `up to date`；`pi plugin-dir` 刷新 `$STATE/pi` 为 `0.6.0`，OMP `plugin list` 显示 `memctl-pi 0.6.0 enabled`，`install omp --dry-run` 为 `configured host=omp@18.17.0 plugin@0.6.0`。
+- 未验证与遗留：交互式 OMP 会话的每轮同步、`/quit` 收尾、Skill 驱动写入与 MCP 工具连通性未复验；OMP 的 `omp plugin install npm:memctl-pi@0.6.0` 通道未实测；OMP 无 `systemPromptOptions.sections`，只能替换系统提示词。
+

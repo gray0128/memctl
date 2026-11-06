@@ -257,12 +257,12 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 - 文档中的命令、参数、状态字段和 REST 路由与实现一致；契约测试覆盖全部路由和错误类别。
 - 帮助目录覆盖全部命令；`R06` 在无仓库、空 `PATH` 的隔离环境通过，中英文与 JSON 输出和 [CLI 契约](./04-ui-and-cli-specification.md#13-面向-agent-的帮助与中英-i18n) 一致。
 - 同步与写入测试不接触真实用户配置或公网远端；真实宿主验证使用明确隔离的测试账户或目录。
-- 单文件包包含默认指引、工作流模板、adapter 模板、`memctl-dsh` 与 `memctl-pi` 源文件，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和、第三方许可证、`memctl-dsh-<version>.tgz` 与 `memctl-pi-<version>.tgz`（两个插件包均已发布到 npm；tarball 用于审计，不作为 pi 安装输入）。
+- 单文件包包含默认指引、工作流模板、adapter 模板、`memctl-dsh` 与 `memctl-pi` 源文件，静态资源没有外部 CDN 依赖；发布附 SHA-256 校验和、第三方许可证、`memctl-dsh-<version>.tgz` 与 `memctl-pi-<version>.tgz`（tarball 用于审计，不作为 pi 安装输入；npm 发布由 `npm-publish` 作业按 `package.json` 版本自动完成，已上架版本跳过）。
 - `--readonly`、无 remote、缺少 Dreaming 工作流、无 GUI 浏览器等降级路径都有明确结果。
 - 事务与配置安装恢复演练通过；不以手工删除锁或强制重置仓库作为测试通过条件。
 - 视觉 UI/UX 验证仅在明确安排时开展，不用本方案的静态检查代替浏览器实际效果验证。
 - 发布唯一入口是推送 `v*` 标签，Release 附件只由流水线产生，不从本地 `dist/` 上传；本地 `make release` 只用于验证构建链路，不构成发布步骤，也不作为发布产物证据。判断依据见 [发布入口](./04-ui-and-cli-specification.md#61-发布入口)。
-- GitHub 构建流水线（`.github/workflows/build.yml`）的 `verify`、`build` 与 `publish` 三个作业都调用本地同一套入口（`make test` 的分片形式与 `scripts/release.sh`）；`publish` 依赖 `verify` 与 `build`，测试不通过时不产出 Release。分片清单 `scripts/test-shards.txt` 必须覆盖 `tests/integration` 的全部测试，新增、重命名或删除测试时重新生成。`v*` 标签发布附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与三个元数据文件（插件 tarball 的 `<version>` 取插件包自身版本，可能落后于二进制版本）。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
+- GitHub 构建流水线（`.github/workflows/build.yml`）的 `verify`、`build`、`publish` 与 `npm-publish` 四个作业都调用本地同一套入口（`make test` 的分片形式与 `scripts/release.sh`/`scripts/publish-npm.sh`）；`publish` 与 `npm-publish` 都依赖 `verify` 与 `build`，测试或构建不通过时既不产出 Release，也不发布 npm。`npm-publish` 使用 npm trusted publishing（OIDC），仓库不保存 npm token；两个包需在 npmjs.com 配置 Trusted Publisher（用户 `gray0128`、仓库 `memctl`、workflow `build.yml`）。分片清单 `scripts/test-shards.txt` 必须覆盖 `tests/integration` 的全部测试，新增、重命名或删除测试时重新生成。`v*` 标签发布附带四个候选二进制、`memctl-dsh-<version>.tgz`、`memctl-pi-<version>.tgz` 与三个元数据文件（插件 tarball 的 `<version>` 取插件包自身版本，可能落后于二进制版本）。流水线通过属于发布候选包门槛，不替代目标平台的运行时、生命周期与隔离验证。
 
 ## 5. 上轮审查问题追踪
 

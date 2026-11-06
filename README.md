@@ -187,7 +187,7 @@ make test
 
 `version` 与 `help` 不访问仓库，不要求 Git 或 Node.js。`make test` 同时运行前端测试、`plugins/dsh/test/` 与 `plugins/pi/test/` 的 Node 单元测试以及 Go 测试。
 
-发布唯一入口是推送 `v*` 标签，Release 附件只由流水线产生，不从本地 `dist/` 上传。原因是构建环境与元数据语义：流水线从干净检出开始，`RELEASE-INFO.txt` 记录的构建宿主与验证状态描述的是实际产出该文件的环境。
+发布唯一入口是推送 `v*` 标签，Release 附件只由流水线产生，不从本地 `dist/` 上传。流水线的 `npm-publish` 作业还会把两个插件的未上架版本自动发布到 npm（已上架版本跳过，仓库不保存 npm token）；原因是构建环境与元数据语义：流水线从干净检出开始，`RELEASE-INFO.txt` 记录的构建宿主与验证状态描述的是实际产出该文件的环境。
 
 ```bash
 git tag -a <version> -m "<说明>"
@@ -204,7 +204,7 @@ shasum -a 256 -c SHA256SUMS
 
 GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）分三个作业：`verify` 四个分片并行跑测试，`build` 与测试并行运行 `make release-dist` 产出候选包，`publish` 在两者成功后创建 Release。工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
 
-发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。`memctl-pi` 的 tarball 只用于 npm 发布和审计，不作为 `pi install` 的输入。`dist/` 与 `bin/` 不提交。
+发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。`memctl-pi` 的 tarball 只用于审计，不作为 `pi install` 的输入。`dist/` 与 `bin/` 不提交。
 
 ## 上游与参考
 
