@@ -42,7 +42,7 @@ status: active
 | 记忆生命周期 | 状态型条目就地改写，事件型条目只增不改，有时效型条目到期后由读取层隐藏并经过删除闸门 | [10](./10-memory-lifecycle.md) |
 | 整理 | 两条提案生成路径：GitHub Actions 远端多提供商整理，以及本地当前 Agent 会话内的跨会话提炼；两者都产出待确认提案，确认前不修改主库 | [11](./11-github-actions-dreaming.md)、[12](./12-session-corpus-dreaming.md) |
 | 会话蒸馏 | 本地确定性提取与脱敏宿主会话文本，写入可重建缓存，作为跨会话提炼的输入，不调用模型 | [12](./12-session-corpus-dreaming.md) |
-| 宿主接入 | 版本匹配的配置模板安装与探测、dsh 与 pi 的原生插件、无 Hook 宿主的人工接入步骤 | [07](./07-dsh-plugin.md)、[08](./08-pi-plugin.md)、[13](./13-delta-integration.md)、[15](./15-delta-corpus-adaptation.md) |
+| 宿主接入 | 版本匹配的配置模板安装与探测、dsh 与 pi 的原生插件、无 Hook 宿主的人工接入步骤、OMP 双轨接入 | [07](./07-dsh-plugin.md)、[08](./08-pi-plugin.md)、[13](./13-delta-integration.md)、[15](./15-delta-corpus-adaptation.md)、[17](./17-omp-integration.md) |
 | MCP 通道 | 受宿主沙箱限制的 Agent 通过标准输入输出 MCP 读取、检索、受管写入并发起本地整理提案 | [09](./09-mcp-memory-tools.md) |
 | 自更新 | 从固定发布地址查询、下载校验后原子替换当前二进制 | [04](./04-ui-and-cli-specification.md) |
 

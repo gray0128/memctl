@@ -34,7 +34,7 @@ references: [memctl-mcp]
 
 ### 2.2 本方案不覆盖
 
-- OMP 原生插件。OMP 是另一个宿主，包名和扩展 API 不同；v1 不为 OMP 提供 `memctl-pi`。
+- OMP 原生插件。OMP 是独立宿主，其实测调研与接入方案见 [17. OMP 宿主接入](./17-omp-integration.md)；本方案专注于 pi 原生扩展。
 - 由 memctl 自动安装、升级或卸载 pi 包；安装仍由 `pi install` / `pi remove` 完成。
 - pi 客户端面板、`/memctl` 命令、模型可调用的 memctl 工具或 MCP server。
 - 记忆格式、检索策略、Dreaming、锁和同步协议的变化。
@@ -171,7 +171,7 @@ pi 内置 MCP 扩展是目前最接近「只做桥接」的第一方示例：它
 - 新用户默认使用 `memctl-pi`；`memctl install pi --dry-run` 输出 npm 包名和本地目录两种入口。
 - 已有 `pi-yaml-hooks` + `agent-memory-*` 条目的用户继续可用；适配器标记 legacy，并提示迁移。
 - 两套同时存在时报告 `needs_attention`，不自动删除任何一方。
-- OMP 不在 v1 范围内；需要 OMP 时继续使用 YAML 路径或另立方案。
+- OMP 不在本文档范围内；其实测调研与双轨接入方案见 [17. OMP 宿主接入](./17-omp-integration.md)。
 
 ## 6. 插件设计
 
