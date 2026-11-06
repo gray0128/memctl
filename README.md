@@ -42,7 +42,7 @@ dsh plugin --profile <profile> add memctl-dsh@0.5.3
 pi 的原生插件 `memctl-pi` 通过 npm 安装，也可使用离线本地目录：
 
 ```bash
-pi install npm:memctl-pi@0.5.2
+pi install npm:memctl-pi@0.6.0
 
 # 离线备用
 ./bin/memctl pi plugin-dir       # 输出稳定的绝对目录
@@ -60,7 +60,7 @@ omp plugin install /absolute/path/printed/by/the/command
 omp plugin list
 ```
 
-插件在加载时识别 OMP，并以 `--agent omp` 调用 CLI；`memctl install omp` 只探测 `~/.omp/plugins/node_modules/memctl-pi`，不写宿主文件。`memctl-pi@0.6.0` 尚未发布到 npm，离线目录是当前支持通道。详见 [OMP 宿主接入](./docs/17-omp-integration.md)。
+插件在加载时识别 OMP，并以 `--agent omp` 调用 CLI；`memctl install omp` 只探测 `~/.omp/plugins/node_modules/memctl-pi`，不写宿主文件。`memctl-pi@0.6.0` 已发布到 npm（`latest`）；OMP 的 npm 安装通道尚未实测，本地目录仍是已验证路径。详见 [OMP 宿主接入](./docs/17-omp-integration.md)。
 
 受沙箱限制的宿主要让 Agent 主动写记忆，需要 `memctl mcp`：一个在标准输入输出上运行 MCP 的工具进程，由宿主启动，因此不受 Agent 的 bash 沙箱限制。Delta 没有沙箱，也不能注册本地 stdio server，因此不使用它，直接在终端执行 `memctl`：
 
@@ -136,7 +136,7 @@ npx skills add gray0128/memctl -g -s memctl -a codex pi opencode claude-code -y
 - Dreaming：统一在记忆仓库所在 GitHub 远端的 Actions 运行器中执行，本地不再依赖平台沙箱；已在 `gray0128/agent-memory-repo` 用 DeepSeek 端点跑通一次，但两次真实运行模型都判定无需改动，「带实际变更的提案被 apply 提交」仍未验证。
 - 真实宿主：`install` 支持 12 个宿主（claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh、omp、delta）；macOS arm64 已完成本机 Hook 配置与部分会话级验证，逐宿主的实测边界见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)；`install` 探测到的版本不代表 Hook 已被宿主采纳。
 - Delta：没有生命周期 Hook，也接受不了本地 stdio MCP server，因此没有自动注入与每轮同步；`install delta` 只探测并列出人工步骤，不写任何文件。Delta 不对 Agent 施加沙箱，Agent 在终端里直接执行 `memctl`，会话身份来自 Delta 注入的 `DELTA_CURRENT_THREAD_ID`。见 [Delta 宿主接入](./docs/13-delta-integration.md)。
-- pi 专用插件：`memctl-pi` 已在 npm 发布 `0.5.2`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
+- pi 专用插件：`memctl-pi` 已在 npm 发布 `0.6.0`，`memctl pi plugin-dir` 与适配器探测随 `v0.5.0` 发布；pi `1.3.0`/darwin arm64 完成真实会话验证（注入、每轮同步、收尾、恢复、分叉、后台子代理与失败降级）；前台 in-process 子代理不注入记忆，非 macOS 平台未验证，见 [pi 专用插件](./docs/08-pi-plugin.md)。
 - OMP 宿主：`memctl-pi 0.6.0` 在运行时识别 OMP 并以 `--agent omp` 调用 CLI，`memctl install omp` 探测 OMP 插件管理器链接的包；OMP 18.17.0/darwin arm64 已验证插件加载、start/end 命令与转录传递，OMP 不提供 `systemPromptOptions.sections`，走替换 `systemPrompt` 的回退；每轮同步、Skill 驱动写入与 MCP 工具未验证，见 [OMP 宿主接入](./docs/17-omp-integration.md)。
 - dsh 专用插件：已实现包清单、适配器状态与隔离 profile 安装验证；npm 包名界面安装与 `desktop` profile `0.5.1` 已复验，`0.5.2` 完成真实会话的注入、轮次同步与收尾复验；`0.5.3` 修复了非零退出的 `start` 丢弃上下文，已发布到 npm 并升级本机 `desktop`；绝对目录界面安装与 `agent/disposed` 事件仍受限制或未验证，见 [dsh 专用插件](./docs/07-dsh-plugin.md)。
 - 记忆写入通道：生命周期插件在宿主进程内运行，Agent 在 bash 中执行 `memctl read/write` 时会受工作区沙箱限制，无法写 `~/memory`。`memctl mcp` 提供不受该沙箱限制的 MCP 工具；DSH、Codex、pi、OpenCode、Command Code 与 Antigravity 已完成 MCP 受管写入实测，Grok 需要把记忆仓库加入 `read_write`（同时放开 shell），Claude Code 因代理未运行未实测，见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#62-真实验证边界)。

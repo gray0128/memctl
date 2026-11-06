@@ -10,7 +10,7 @@ references: [memctl-mcp]
 
 # 07. dsh 专用插件：分发、安装与实现方案
 
-> 状态：已实现（`T048`，2026-10-17）。插件版本自 2026-10-20 起为 `0.5.3`，与 `memctl-pi` 的 `0.5.2` 相差一个补丁版本（补丁可独立，见 §9 `D4`）；`0.5.1`、`0.5.2` 是此前长期使用的版本，`v0.5.1` 起各次 Release 曾共用同一 tarball。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile 复验到 `0.5.2`，本机已通过 `dsh plugin --profile desktop add memctl-dsh@0.5.3` 升级；绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
+> 状态：已实现（`T048`，2026-10-17）。插件版本自 2026-10-20 起为 `0.5.3`，与 `memctl-pi` 的 `0.6.0` 独立演进（补丁可独立，见 §9 `D4`）；`0.5.1`、`0.5.2` 是此前长期使用的版本，`v0.5.1` 起各次 Release 曾共用同一 tarball。`D1` 取 A：npm 主通道 + 内嵌 tarball 备用；两条通道均可用，npm 包名界面安装与 `desktop` profile 复验到 `0.5.2`，本机已通过 `dsh plugin --profile desktop add memctl-dsh@0.5.3` 升级；绝对目录与独立 GitHub 仓库、Discover 索引尚未验证或发布。实现与验证边界见 [§13](#13-实现状态)。
 
 ## 1. 结论
 

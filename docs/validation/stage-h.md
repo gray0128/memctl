@@ -337,10 +337,10 @@
 
 ## T134：OMP 宿主代码适配
 
-- 目标与范围：把 OMP 正式接入 `memctl`。落地 [17](./17-omp-integration.md) §4.2 的三项代码改动（适配器注册、扩展多宿主、SID 回退），并按实测把「包装扩展文件」改为复用 OMP 插件管理器链接的 `memctl-pi` 包；另外补齐 OMP 会话蒸馏、补扫、MCP 注册提示与文档。不改变既有命令、REST 契约与数据格式。
+- 目标与范围：把 OMP 正式接入 `memctl`。落地 [17](../17-omp-integration.md) §4.2 的三项代码改动（适配器注册、扩展多宿主、SID 回退），并按实测把「包装扩展文件」改为复用 OMP 插件管理器链接的 `memctl-pi` 包；另外补齐 OMP 会话蒸馏、补扫、MCP 注册提示与文档。不改变既有命令、REST 契约与数据格式。
 - 代码：`plugins/pi/index.js` 新增 `detectAgent` 与 `state.agent`，`start`/`sync`/`end` 使用解析后的 `--agent`；`plugins/pi/package.json` 升到 `0.6.0`。`internal/adapters/registry.go` 新增 `omp`（`HostCommands: [omp]`、`HostPaths: [~/.omp/agent]`、`HostMinVersion: 18.17.0`、`NativePlugin: memctl-pi@0.6.0`、清单 `~/.omp/plugins/node_modules/memctl-pi/package.json`，无 `Artifacts`），`internal/cli/install.go` 增加离线安装提示。`internal/hookio` 在 `DSH_SESSION_ID` 与 `DELTA_CURRENT_THREAD_ID` 之间加入 `PI_SESSION_ID`；`internal/corpus` 把 `omp` 映射到 `parsePi`、解析器按记录类型查找 `session`、补扫 `~/.omp/agent/sessions`；`internal/mcp` 增加 OMP 手工注册提示。
 - 测试：新增插件 `detectAgent` 与 OMP 生命周期用例（19 项通过），`internal/adapters` 的 OMP 配置/缺插件/旧插件/低版本/状态目录矩阵，`internal/hookio` 的 `PI_SESSION_ID` 优先级，`internal/corpus` 的 OMP 摘要与补扫；同步更新适配器与 MCP 注册数量断言。
-- 对应契约：[17. OMP 宿主接入](./17-omp-integration.md)、[08. pi 专用插件](./08-pi-plugin.md)、[04. CLI 与 UI](./04-ui-and-cli-specification.md)、[12. 会话蒸馏](./12-session-corpus-dreaming.md)、[09. MCP 记忆工具](./09-mcp-memory-tools.md)、[05. 验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵)。
+- 对应契约：[17. OMP 宿主接入](../17-omp-integration.md)、[08. pi 专用插件](../08-pi-plugin.md)、[04. CLI 与 UI](../04-ui-and-cli-specification.md)、[12. 会话蒸馏](../12-session-corpus-dreaming.md)、[09. MCP 记忆工具](../09-mcp-memory-tools.md)、[05. 验收与交付](../05-validation-and-delivery.md#2-核心测试矩阵)。
 - 验证时间与环境：2026-11-06，darwin/arm64，OMP `18.17.0`，Go 1.27.2，Node v26.11.1。
 - 验证命令与结果：`make test`（Node 26）全绿：`web` 测试、dsh/pi 插件测试（pi 19 项）、全部 Go 包与 `tests/integration`（116.6 秒）。真机：`omp plugin install ~/.agent-memory/pi` 后 `omp plugin list --json` 为 `memctl-pi 0.6.0`；`memctl install omp --dry-run` 输出 `configured host=omp@18.17.0 plugin@0.6.0`；`omp -p` 会话的假 `memctl` 记录 `start/end --agent omp`，`end` 携带真实转录；`memctl sync --agent omp --transcript` 生成 `agent: omp` 的摘要；另以真实二进制为 `MEMCTL_PI_BIN`、临时仓库与状态目录运行 `omp -p`，`end` 收尾后缓存出现 `agent: omp`、1 个回合的摘要；`PI_SESSION_ID=... memctl tag --agent omp` 生效。`V-OMP-04` 与蒸馏、SID、适配器项通过；`V-OMP-01` 只验证到回退路径。
 - 未验证与遗留：交互式 OMP 会话的 `agent_settled` 每轮同步与 `/quit` 收尾、`V-OMP-02` 缓存稳定、`V-OMP-05` Skill 驱动写入、`V-OMP-06` MCP 工具连通性未复验；`memctl-pi@0.6.0` 未发布到 npm；OMP 无 `sections`，只能替换系统提示词。

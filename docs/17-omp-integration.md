@@ -153,8 +153,9 @@ omp plugin list                       # 确认 memctl-pi 已启用
 ```
 
 `memctl-pi 0.6.0` 起在加载时识别 OMP，并以 `--agent omp` 调用 CLI。更早的版本会把命令
-标成 `--agent pi`，不要使用。包装扩展会让同一份插件被加载两次，`start`/`sync` 重复触发，
-因此不作为受支持路径。
+标成 `--agent pi`，不要使用。`0.6.0` 已发布到 npm，但 OMP 的
+`omp plugin install npm:memctl-pi@0.6.0` 通道尚未实测；上面的本地目录通道是已验证路径。
+包装扩展会让同一份插件被加载两次，`start`/`sync` 重复触发，因此不作为受支持路径。
 
 #### 步骤 2：验证 Skill 与规则自动生效
 - 检查 `~/.agents/skills/memctl` 是否存在。OMP 会自动索引该目录。
@@ -257,6 +258,8 @@ OMP:   memctl pi plugin-dir
   `omp -p "Reply with exactly: ok"`。`end` 收尾后缓存中出现
   `agent: "omp"`、1 个回合的摘要，证明「OMP 插件 → `--agent omp` → `end` →
   `--transcript` → 蒸馏」整条链路可用。
+- npm 发布：`memctl-pi@0.6.0` 于 2026-11-06 发布到 npm，`latest` 为 `0.6.0`，shasum
+  `14e7ae9189093bca109a768a40669ba5ed8c4508`；OMP 的 npm 安装通道未实测。
 - 会话身份：`PI_SESSION_ID=... memctl tag --agent omp` 输出
   `agent://<device>/omp/<PI_SESSION_ID>`。
 - `V-OMP-01`（部分）：扩展在 OMP 中加载并调用 `start`，但 OMP `18.17.0` 不提供
