@@ -142,6 +142,67 @@ func (r *Root) ReadFile(rel string) (FileRead, error) {
 	}, nil
 }
 
+// FileReadFromBlob validates and constructs a FileRead from a committed Git
+// blob using the same path, size, UTF-8/binary, mode and FileRevision rules as
+// Root.ReadFile.
+func FileReadFromBlob(rel, gitMode string, size int64, content []byte) (FileRead, error) {
+	clean, err := ValidateRelPath(rel)
+	if err != nil {
+		return FileRead{}, err
+	}
+	if size > MaxTextFileBytes || int64(len(content)) > MaxTextFileBytes {
+		actual := size
+		if int64(len(content)) > actual {
+			actual = int64(len(content))
+		}
+		return FileRead{}, memerr.New(memerr.LimitExceeded,
+			"file %q is %d bytes, exceeding the %d byte text limit", clean, actual, MaxTextFileBytes)
+	}
+	if !isText(content) {
+		return FileRead{}, memerr.New(memerr.Unsupported,
+			"file %q is not UTF-8 text; binary assets are synchronized by Git but not read as text", clean)
+	}
+	normalizedMode, permMode := normalizeGitMode(gitMode)
+	return FileRead{
+		RelPath:      clean,
+		FileRevision: FileRevision(normalizedMode, content),
+		Kind:         ClassifyKind(clean),
+		SizeBytes:    int64(len(content)),
+		Mode:         permMode,
+		Editable:     true,
+		RawContent:   string(content),
+	}, nil
+}
+
+// FileMetaFromBlob builds a FileMeta from a committed Git blob using the same
+// bounded revision rule as Root.Stat.
+func FileMetaFromBlob(rel, gitMode string, size int64, boundedContent []byte) (FileMeta, error) {
+	clean, err := ValidateRelPath(rel)
+	if err != nil {
+		return FileMeta{}, err
+	}
+	normalizedMode, permMode := normalizeGitMode(gitMode)
+	rev := FileRevision(normalizedMode, boundedContent)
+	if int64(len(boundedContent)) < size {
+		rev = revisionWithLength(normalizedMode, size, boundedContent)
+	}
+	return FileMeta{
+		RelPath:  clean,
+		Exists:   true,
+		Size:     size,
+		Mode:     normalizedMode,
+		FsMode:   permMode,
+		Revision: rev,
+	}, nil
+}
+
+func normalizeGitMode(gitMode string) (string, fs.FileMode) {
+	if gitMode == "100755" {
+		return "100755", 0o755
+	}
+	return "100644", 0o644
+}
+
 // RepoRevision is the documented whole-repository revision: HEAD, the canonical
 // repository path and every managed file's mode and revision, in sorted path
 // order, with length-prefixed fields. It is a comparison baseline shared by the

@@ -197,6 +197,9 @@ func (a *App) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 func (a *App) ReadFile(ctx context.Context, relPath string) (vault.FileRead, error) {
 	session, err := a.beginRead(ctx)
 	if err != nil {
+		if code, ok := memerr.As(err); ok && code.Code == memerr.Busy {
+			return a.readSnapshotFile(ctx, relPath)
+		}
 		return vault.FileRead{}, err
 	}
 	defer session.Close()

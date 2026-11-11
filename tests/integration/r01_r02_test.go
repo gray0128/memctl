@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gray0128/memctl/internal/assets"
 )
 
 // This file verifies the stage A-6 part of R01 (the embedded default
@@ -73,6 +75,8 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		"memctl dream --prepare --json",
 		"only persist a `ready` proposal",
 		"Do not apply a proposal yourself",
+		"memctl add",
+		"memory_append",
 		// The session id fallback is documented inline so an agent on a host
 		// without a lifecycle hook still records provenance.
 		"DELTA_CURRENT_THREAD_ID",
@@ -81,6 +85,12 @@ func TestR01EmbeddedInstructionsFromEmptyHome(t *testing.T) {
 		if !strings.Contains(start.stdout, want) {
 			t.Fatalf("embedded context is missing %q:\n%s", want, start.stdout)
 		}
+	}
+	if lines := strings.Count(strings.TrimRight(assets.Instructions, "\n"), "\n") + 1; lines > 30 {
+		t.Fatalf("embedded INSTRUCTIONS.md has %d lines, want <= 30", lines)
+	}
+	if size := len(assets.Instructions); size > 1500 {
+		t.Fatalf("embedded INSTRUCTIONS.md is %d bytes, want <= 1500", size)
 	}
 }
 

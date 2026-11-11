@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -303,15 +305,23 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 		return EntryPage{}, memerr.New(memerr.InvalidArgument, "offset must not be negative")
 	}
 
+	var scan *vaultScan
 	session, err := a.beginRead(ctx)
 	if err != nil {
-		return EntryPage{}, err
-	}
-	defer session.Close()
-
-	scan, err := scanVault(session, a.clock())
-	if err != nil {
-		return EntryPage{}, err
+		if code, ok := memerr.As(err); ok && code.Code == memerr.Busy {
+			scan, err = a.scanSnapshot(ctx, a.clock())
+			if err != nil {
+				return EntryPage{}, err
+			}
+		} else {
+			return EntryPage{}, err
+		}
+	} else {
+		defer session.Close()
+		scan, err = scanVault(session, a.clock())
+		if err != nil {
+			return EntryPage{}, err
+		}
 	}
 	filtered := filterEntries(scan.entries, query)
 	total := len(filtered)
@@ -854,4 +864,243 @@ func findFile(files []MemoryFileDTO, relPath string) *MemoryFileDTO {
 		}
 	}
 	return nil
+}
+
+// ensureSnapshotAllowed verifies that a lock-busy fallback read is not masking
+// an unresolved conflict or an unfinished local transaction.
+func (a *App) ensureSnapshotAllowed(ctx context.Context) (string, string, error) {
+	repoPath, err := a.requireRepoRoot(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	gitDir, err := git.GitDir(ctx, repoPath)
+	if err != nil {
+		return "", "", err
+	}
+	store := state.OpenStore(gitDir)
+	if conflict, ok, err := store.LoadConflict(); err != nil {
+		return "", "", err
+	} else if ok {
+		return "", "", memerr.New(memerr.OperationActive,
+			"conflict %s is awaiting resolution; run `memctl resolve`", conflict.ConflictID)
+	}
+	pending, err := store.Pending()
+	if err != nil {
+		return "", "", err
+	}
+	if len(pending) > 0 {
+		return "", "", memerr.New(memerr.RecoveryRequired,
+			"transaction %s is unfinished; run `memctl recover --status`", pending[0].ID)
+	}
+	return repoPath, gitDir, nil
+}
+
+// readSnapshotFile reads one managed file from the committed Git tree of the
+// current branch reference when the repository lock is held by a background
+// synchronization worker. It enforces the same path, symlink, binary, size and
+// expiry-hiding rules as a locked read without touching the worktree or index.
+func (a *App) readSnapshotFile(ctx context.Context, relPath string) (vault.FileRead, error) {
+	clean, err := vault.ValidateRelPath(relPath)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	repoPath, gitDir, err := a.ensureSnapshotAllowed(ctx)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	commit, err := git.SnapshotCommit(ctx, repoPath, gitDir)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	if commit == "" {
+		if clean == vault.EntryPointName {
+			return a.readEntryWithoutLock()
+		}
+		return vault.FileRead{}, memerr.New(memerr.NotFound, "file %q does not exist", clean)
+	}
+
+	segments := strings.Split(clean, "/")
+	for i := 1; i < len(segments); i++ {
+		prefix := strings.Join(segments[:i], "/")
+		entry, ok, err := git.LookupTreeEntry(ctx, repoPath, commit, prefix)
+		if err != nil {
+			return vault.FileRead{}, err
+		}
+		if ok && entry.Mode == "120000" {
+			return vault.FileRead{}, memerr.New(memerr.Unsupported,
+				"path %q traverses the symbolic link %q; links are not readable memory", clean, prefix)
+		}
+	}
+
+	entry, ok, err := git.LookupTreeEntry(ctx, repoPath, commit, clean)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	if !ok {
+		return vault.FileRead{}, memerr.New(memerr.NotFound, "file %q does not exist", clean)
+	}
+	if entry.Type == "tree" || entry.Mode == "040000" {
+		return vault.FileRead{}, memerr.New(memerr.InvalidPath, "path %q is a directory, not a file", clean)
+	}
+	if entry.Mode == "120000" {
+		return vault.FileRead{}, memerr.New(memerr.Unsupported,
+			"path %q is a symbolic link; links are not readable memory", clean)
+	}
+	if entry.Type != "blob" || (entry.Mode != "100644" && entry.Mode != "100755") {
+		return vault.FileRead{}, memerr.New(memerr.Unsupported, "path %q is not a regular file", clean)
+	}
+	if entry.Size > vault.MaxTextFileBytes {
+		return vault.FileRead{}, memerr.New(memerr.LimitExceeded,
+			"file %q is %d bytes, exceeding the %d byte text limit", clean, entry.Size, vault.MaxTextFileBytes)
+	}
+
+	raw, err := git.ReadBlob(ctx, repoPath, entry.Object)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	file, err := vault.FileReadFromBlob(clean, entry.Mode, entry.Size, raw)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	if info, statErr := os.Lstat(filepath.Join(repoPath, clean)); statErr == nil {
+		file.ModTime = info.ModTime()
+	} else {
+		file.ModTime = a.clock().UTC()
+	}
+	return a.projectRead(clean, file, nil)
+}
+
+// scanSnapshot scans all managed files from the committed Git tree of the
+// current branch reference when the repository lock is held by a background
+// synchronization worker.
+func (a *App) scanSnapshot(ctx context.Context, now time.Time) (*vaultScan, error) {
+	repoPath, gitDir, err := a.ensureSnapshotAllowed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commit, err := git.SnapshotCommit(ctx, repoPath, gitDir)
+	if err != nil {
+		return nil, err
+	}
+	scan := &vaultScan{
+		head:  commit,
+		files: []MemoryFileDTO{},
+		graph: KnowledgeGraphDTO{Nodes: []GraphNodeDTO{}, Edges: []GraphEdgeDTO{}},
+	}
+	if commit == "" {
+		scan.revision = vault.RepoRevisionFrom("", repoPath, nil)
+		return scan, nil
+	}
+
+	treeEntries, err := git.ListTreeEntries(ctx, repoPath, commit)
+	if err != nil {
+		return nil, err
+	}
+	managed := make([]git.TreeEntry, 0, len(treeEntries))
+	paths := make([]string, 0, len(treeEntries))
+	for _, entry := range treeEntries {
+		if entry.Type != "blob" || (entry.Mode != "100644" && entry.Mode != "100755") {
+			continue
+		}
+		clean, err := vault.ValidateRelPath(entry.Path)
+		if err != nil {
+			continue
+		}
+		entry.Path = clean
+		managed = append(managed, entry)
+		paths = append(paths, clean)
+	}
+	sort.Slice(managed, func(i, j int) bool { return managed[i].Path < managed[j].Path })
+	sort.Strings(paths)
+
+	index := vault.NewLinkIndex(paths)
+	metas := make([]vault.FileMeta, 0, len(managed))
+
+	for _, entry := range managed {
+		if entry.Size > vault.MaxTextFileBytes {
+			bounded, err := git.ReadBlobBounded(ctx, repoPath, entry.Object, vault.MaxRevisionBytes)
+			if err != nil {
+				return nil, err
+			}
+			meta, err := vault.FileMetaFromBlob(entry.Path, entry.Mode, entry.Size, bounded)
+			if err != nil {
+				return nil, err
+			}
+			metas = append(metas, meta)
+			continue
+		}
+		raw, err := git.ReadBlob(ctx, repoPath, entry.Object)
+		if err != nil {
+			return nil, err
+		}
+		file, err := vault.FileReadFromBlob(entry.Path, entry.Mode, entry.Size, raw)
+		if err != nil {
+			contractErr, ok := memerr.As(err)
+			if !ok || (contractErr.Code != memerr.Unsupported && contractErr.Code != memerr.LimitExceeded) {
+				return nil, err
+			}
+			meta, metaErr := vault.FileMetaFromBlob(entry.Path, entry.Mode, entry.Size, raw)
+			if metaErr != nil {
+				return nil, metaErr
+			}
+			metas = append(metas, meta)
+			continue
+		}
+		metas = append(metas, vault.FileMeta{
+			RelPath:  file.RelPath,
+			Exists:   true,
+			Size:     file.SizeBytes,
+			Mode:     vault.GitMode(file.Mode),
+			FsMode:   file.Mode,
+			Revision: file.FileRevision,
+		})
+		parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
+		parsed.ResolveLinks(index)
+		for i := range parsed.Entries {
+			if vault.EntryExpired(parsed.Entries[i].UntilDate, now) {
+				scan.hiddenExpired++
+				continue
+			}
+			scan.entries = append(scan.entries, toEntryDTO(parsed.Entries[i]))
+		}
+	}
+
+	scan.revision = vault.RepoRevisionFrom(commit, repoPath, metas)
+	return scan, nil
+}
+
+// listManagedPaths returns sorted managed file paths from the locked worktree
+// or from the committed branch snapshot when the repository lock is busy.
+func (a *App) listManagedPaths(ctx context.Context) ([]string, error) {
+	session, err := a.beginRead(ctx)
+	if err == nil {
+		defer session.Close()
+		return session.root.ListManaged()
+	}
+	if code, ok := memerr.As(err); !ok || code.Code != memerr.Busy {
+		return nil, err
+	}
+	repoPath, gitDir, err := a.ensureSnapshotAllowed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commit, err := git.SnapshotCommit(ctx, repoPath, gitDir)
+	if err != nil || commit == "" {
+		return nil, err
+	}
+	treeEntries, err := git.ListTreeEntries(ctx, repoPath, commit)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(treeEntries))
+	for _, entry := range treeEntries {
+		if entry.Type != "blob" || (entry.Mode != "100644" && entry.Mode != "100755") {
+			continue
+		}
+		if clean, err := vault.ValidateRelPath(entry.Path); err == nil {
+			paths = append(paths, clean)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }

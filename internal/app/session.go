@@ -3,13 +3,18 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gray0128/memctl/internal/assets"
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/corpus"
+	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/state"
@@ -29,6 +34,15 @@ const (
 	SessionSyncNoRepo = "norepo"
 )
 
+// Documented session injection budget and folding thresholds from
+// docs/18-agent-memory-review-and-optimization.md section 4.2.3.
+const (
+	MaxInjectedLines       = 200
+	MaxInjectedBytes       = 25 * 1024
+	MaxUnrelatedIndexLines = 20
+	MemoryTruncatedNotice  = "[agent-memory] MEMORY.md truncated at 200 lines / 25 KiB; run 'memctl dream --prepare' to move details into notes/."
+)
+
 // userInstructionsLimit bounds the optional user instruction file.
 const userInstructionsLimit = 256 << 10
 
@@ -36,6 +50,9 @@ const userInstructionsLimit = 256 << 10
 type SessionOptions struct {
 	Agent     string
 	SessionID string
+	// Cwd is the working directory from the Hook payload; when empty,
+	// PrepareSession falls back to os.Getwd() for current-project memory lookup.
+	Cwd string
 	// Once suppresses the context body when this session already injected it.
 	Once bool
 	// NoBody skips assembling the context body entirely. pull sets it because
@@ -132,7 +149,7 @@ func (a *App) buildSessionBodyIfNeeded(ctx context.Context, opts SessionOptions,
 		out.Inject = false
 		return
 	}
-	a.buildSessionBody(ctx, out)
+	a.buildSessionBody(ctx, opts, out)
 }
 
 // MarkSessionInjected records that the context body reached stdout. It is
@@ -211,8 +228,9 @@ func (a *App) saveSessionRecord(cache *state.Cache, record state.SessionRecord, 
 }
 
 // buildSessionBody assembles the text delivered to the host: banner, source
-// tag, embedded instructions, optional user instructions and the entry file.
-func (a *App) buildSessionBody(ctx context.Context, out *SessionOutcome) {
+// tag, embedded instructions, optional user instructions, the budgeted entry
+// file and any preloaded current-project memory dashboard.
+func (a *App) buildSessionBody(ctx context.Context, opts SessionOptions, out *SessionOutcome) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[agent-memory] repo=%s sync=%s device=%s\n", out.RepoPath, out.SyncState, out.Device)
 	if out.StableSID {
@@ -241,30 +259,48 @@ func (a *App) buildSessionBody(ctx context.Context, out *SessionOutcome) {
 		return
 	}
 
+	forceTruncated := false
 	file, err := a.ReadFile(ctx, vault.EntryPointName)
 	if err != nil {
 		if code, ok := memerr.As(err); ok && code.Code == memerr.Busy {
-			// The lock is held by another memctl process. The host still gets
-			// the most recent complete entry file; the banner already reports
-			// sync=busy. A conflict or a pending transaction is not a lock
-			// contention and keeps refusing the read.
 			file, err = a.readEntryWithoutLock()
 		}
 	}
 	if err != nil {
 		if code, ok := memerr.As(err); ok && code.Code == memerr.LimitExceeded {
-			fmt.Fprintf(&b, "[agent-memory] %s exceeds the %d byte injection limit and was not included in full. Use `memctl read %s` for a bounded read.\n",
-				vault.EntryPointName, vault.MaxTextFileBytes, vault.EntryPointName)
-		} else {
-			fmt.Fprintf(&b, "[agent-memory] cannot read %s: %v\n", vault.EntryPointName, err)
+			prefix, prefixErr := a.readOversizedEntryPrefix()
+			if prefixErr == nil {
+				file = prefix
+				err = nil
+				forceTruncated = true
+			}
 		}
+	}
+	if err != nil {
+		fmt.Fprintf(&b, "[agent-memory] cannot read %s: %v\n", vault.EntryPointName, err)
 		out.Body = b.String()
 		return
 	}
 
+	cwdBase := a.resolveSessionCwdBase(ctx, opts.Cwd)
+	managedPaths, _ := a.listManagedPaths(ctx)
+	linkIdx := vault.NewLinkIndex(managedPaths)
+
+	renderedMemory, usedBytes, linkedProjectPaths := renderInjectedMemory(file.RawContent, cwdBase, linkIdx, forceTruncated)
+
 	fmt.Fprintf(&b, "----- %s -----\n", filepath.Join(out.RepoPath, vault.EntryPointName))
-	b.WriteString(strings.TrimRight(file.RawContent, "\n"))
-	b.WriteString("\n")
+	if renderedMemory != "" {
+		b.WriteString(strings.TrimRight(renderedMemory, "\n"))
+		b.WriteString("\n")
+	}
+
+	if cwdBase != "" && usedBytes < MaxInjectedBytes {
+		projectSection := a.buildProjectMemorySection(ctx, cwdBase, managedPaths, linkedProjectPaths, MaxInjectedBytes-usedBytes)
+		if projectSection != "" {
+			b.WriteString(projectSection)
+		}
+	}
+
 	out.Body = b.String()
 }
 
@@ -275,13 +311,407 @@ func valueOrUnknown(value string) string {
 	return value
 }
 
-// readEntryWithoutLock reads the context entry file for injection while the
-// repository lock is held elsewhere. The hook path must keep the local content
-// available in that case (docs/03-workflows-and-dataflows.md section 3), and
-// the busy sync state in the banner marks the content as the last readable
-// snapshot rather than a verified current revision. The read goes through the
-// same hide projection as the locked path, so a busy lock never leaks an
-// expired entry.
+// resolveSessionCwdBase resolves the current project's normalized root basename
+// from opts.Cwd or os.Getwd(), returning an empty string when the working
+// directory is a host configuration directory, the memory repository itself,
+// the user's home directory, or cannot be determined.
+func (a *App) resolveSessionCwdBase(ctx context.Context, rawCwd string) string {
+	cwd := strings.TrimSpace(rawCwd)
+	if cwd != "" {
+		if corpus.IsHostConfigDir(cwd) {
+			return ""
+		}
+	} else {
+		dir, err := os.Getwd()
+		if err != nil || corpus.IsHostConfigDir(dir) {
+			return ""
+		}
+		cwd = dir
+	}
+	projectRoot := corpus.ResolveProjectRoot(ctx, git.Run, cwd)
+	if projectRoot == "" || corpus.IsHostConfigDir(projectRoot) {
+		return ""
+	}
+	if config.Canonical(projectRoot) == config.Canonical(a.cfg.RepoPath) {
+		return ""
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if config.Canonical(projectRoot) == config.Canonical(home) {
+			return ""
+		}
+	}
+	base := corpus.CwdBase(projectRoot)
+	if base == "" || base == "." || base == "/" {
+		return ""
+	}
+	return base
+}
+
+type memoryLine struct {
+	text string
+	// tier 1: top title, `## Working preferences`, `## Index` heading & current-project index lines
+	// tier 2: other non-index sections
+	// tier 3: unrelated index lines & omitted-index summary line
+	tier int
+}
+
+// renderInjectedMemory folds unrelated `## Index` lines beyond
+// MaxUnrelatedIndexLines and truncates the result at MaxInjectedLines /
+// MaxInjectedBytes while prioritizing `## Working preferences` and
+// current-project index lines.
+func renderInjectedMemory(rawContent, cwdBase string, linkIdx *vault.LinkIndex, forceTruncated bool) (string, int, []string) {
+	trimmed := strings.TrimRight(rawContent, "\n")
+	if trimmed == "" {
+		if forceTruncated {
+			return MemoryTruncatedNotice, len(MemoryTruncatedNotice), nil
+		}
+		return "", 0, nil
+	}
+	rawLines := strings.Split(trimmed, "\n")
+
+	var folded []memoryLine
+	var linkedProjectPaths []string
+	currentSection := ""
+	unrelatedIndexCount := 0
+	omittedUnrelatedCount := 0
+
+	flushOmittedIndex := func() {
+		if omittedUnrelatedCount <= 0 {
+			return
+		}
+		summary := fmt.Sprintf("[+%d other project topics omitted; query with 'memctl entries --q <keyword>']", omittedUnrelatedCount)
+		omittedUnrelatedCount = 0
+		if len(folded) > 0 && strings.TrimSpace(folded[len(folded)-1].text) == "" {
+			last := folded[len(folded)-1]
+			folded[len(folded)-1] = memoryLine{text: summary, tier: 3}
+			folded = append(folded, last)
+			return
+		}
+		folded = append(folded, memoryLine{text: summary, tier: 3})
+	}
+
+	for _, line := range rawLines {
+		cleanLine := strings.TrimSpace(line)
+		if strings.HasPrefix(cleanLine, "# ") {
+			if currentSection == "## index" {
+				flushOmittedIndex()
+			}
+			currentSection = strings.ToLower(cleanLine)
+			folded = append(folded, memoryLine{text: line, tier: 1})
+			continue
+		}
+		if strings.HasPrefix(cleanLine, "## ") {
+			if currentSection == "## index" {
+				flushOmittedIndex()
+			}
+			currentSection = strings.ToLower(cleanLine)
+			tier := 2
+			if currentSection == "## working preferences" || currentSection == "## index" {
+				tier = 1
+			}
+			folded = append(folded, memoryLine{text: line, tier: tier})
+			continue
+		}
+
+		switch currentSection {
+		case "## working preferences":
+			folded = append(folded, memoryLine{text: line, tier: 1})
+		case "## index":
+			if strings.HasPrefix(cleanLine, "- ") || strings.HasPrefix(cleanLine, "* ") {
+				related, targets := matchIndexLine(line, cwdBase, linkIdx)
+				if related {
+					linkedProjectPaths = append(linkedProjectPaths, targets...)
+					folded = append(folded, memoryLine{text: line, tier: 1})
+				} else {
+					unrelatedIndexCount++
+					if unrelatedIndexCount <= MaxUnrelatedIndexLines {
+						folded = append(folded, memoryLine{text: line, tier: 3})
+					} else {
+						omittedUnrelatedCount++
+					}
+				}
+			} else {
+				folded = append(folded, memoryLine{text: line, tier: 2})
+			}
+		default:
+			folded = append(folded, memoryLine{text: line, tier: 2})
+		}
+	}
+	if currentSection == "## index" {
+		flushOmittedIndex()
+	}
+
+	totalLines := len(folded)
+	totalBytes := 0
+	for i, item := range folded {
+		if i > 0 {
+			totalBytes++
+		}
+		totalBytes += len(item.text)
+	}
+
+	if !forceTruncated && totalLines <= MaxInjectedLines && totalBytes <= MaxInjectedBytes {
+		out := make([]string, len(folded))
+		for i, item := range folded {
+			out[i] = item.text
+		}
+		rendered := strings.Join(out, "\n")
+		return rendered, len(rendered), linkedProjectPaths
+	}
+
+	byteBudget := MaxInjectedBytes - len(MemoryTruncatedNotice) - 1
+	if byteBudget < 0 {
+		byteBudget = 0
+	}
+	lineBudget := MaxInjectedLines
+
+	keep := make([]bool, len(folded))
+	keptLines := 0
+	keptBytes := 0
+
+	for tier := 1; tier <= 3; tier++ {
+		for i, item := range folded {
+			if item.tier != tier {
+				continue
+			}
+			cost := len(item.text) + 1
+			if keptLines+1 <= lineBudget && keptBytes+cost <= byteBudget {
+				keep[i] = true
+				keptLines++
+				keptBytes += cost
+			}
+		}
+	}
+
+	var outLines []string
+	for i, item := range folded {
+		if keep[i] {
+			outLines = append(outLines, item.text)
+		}
+	}
+	outLines = append(outLines, MemoryTruncatedNotice)
+	rendered := strings.Join(outLines, "\n")
+	return rendered, len(rendered), linkedProjectPaths
+}
+
+// matchIndexLine reports whether one bullet line under `## Index` belongs to
+// cwdBase (via `[project: <cwdBase>]` metadata or a `[[...]]` link target
+// matching `notes/<cwdBase>.md` / `notes/<cwdBase>-*.md`) and returns any
+// resolved target paths referenced by the line.
+func matchIndexLine(line, cwdBase string, linkIdx *vault.LinkIndex) (bool, []string) {
+	if cwdBase == "" {
+		return false, nil
+	}
+	hasProjectTag := lineHasProjectMeta(line, cwdBase)
+	rawTargets := extractWikiLinkTargets(line)
+	var resolvedTargets []string
+	matchedByLink := false
+
+	for _, rawTarget := range rawTargets {
+		resolved := resolveNoteTarget(rawTarget, linkIdx)
+		if resolved != "" {
+			resolvedTargets = append(resolvedTargets, resolved)
+		}
+		if isProjectNotePath(resolved, cwdBase) || isProjectNotePath(rawTarget, cwdBase) {
+			matchedByLink = true
+		}
+	}
+	if hasProjectTag || matchedByLink {
+		return true, resolvedTargets
+	}
+	return false, nil
+}
+
+func lineHasProjectMeta(line, cwdBase string) bool {
+	if cwdBase == "" {
+		return false
+	}
+	for i := 0; i < len(line); i++ {
+		if line[i] != '[' {
+			continue
+		}
+		if i+1 < len(line) && line[i+1] == '[' {
+			if end := strings.Index(line[i+2:], "]]"); end >= 0 {
+				i += 2 + end + 1
+				continue
+			}
+		}
+		end := strings.IndexByte(line[i+1:], ']')
+		if end < 0 {
+			break
+		}
+		block := line[i+1 : i+1+end]
+		for _, field := range strings.Split(block, ";") {
+			key, val, ok := strings.Cut(field, ":")
+			if !ok {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(key), "project") && strings.EqualFold(strings.TrimSpace(val), cwdBase) {
+				return true
+			}
+		}
+		i += end + 1
+	}
+	return false
+}
+
+func extractWikiLinkTargets(line string) []string {
+	var targets []string
+	rest := line
+	for {
+		start := strings.Index(rest, "[[")
+		if start < 0 {
+			break
+		}
+		rest = rest[start+2:]
+		end := strings.Index(rest, "]]")
+		if end < 0 {
+			break
+		}
+		if target := strings.TrimSpace(rest[:end]); target != "" {
+			targets = append(targets, target)
+		}
+		rest = rest[end+2:]
+	}
+	return targets
+}
+
+func resolveNoteTarget(rawTarget string, linkIdx *vault.LinkIndex) string {
+	target := strings.TrimSpace(rawTarget)
+	if target == "" {
+		return ""
+	}
+	if linkIdx != nil {
+		if res := linkIdx.Resolve(target); res.ResolvedPath != "" {
+			return res.ResolvedPath
+		}
+	}
+	clean := strings.TrimPrefix(filepath.ToSlash(target), "./")
+	if !strings.Contains(clean, "/") {
+		clean = "notes/" + clean
+	}
+	lower := strings.ToLower(clean)
+	if !strings.HasSuffix(lower, ".md") && !strings.HasSuffix(lower, ".markdown") {
+		clean += ".md"
+	}
+	if validated, err := vault.ValidateRelPath(clean); err == nil {
+		return validated
+	}
+	return ""
+}
+
+func isProjectNotePath(relPath, cwdBase string) bool {
+	if cwdBase == "" || relPath == "" {
+		return false
+	}
+	clean := strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(relPath)), "./")
+	lowerPath := strings.ToLower(clean)
+	lowerBase := strings.ToLower(strings.TrimSpace(cwdBase))
+	if lowerBase == "" || !strings.HasPrefix(lowerPath, "notes/") {
+		return false
+	}
+	var stem string
+	switch {
+	case strings.HasSuffix(lowerPath, ".md"):
+		stem = strings.TrimSuffix(strings.TrimPrefix(lowerPath, "notes/"), ".md")
+	case strings.HasSuffix(lowerPath, ".markdown"):
+		stem = strings.TrimSuffix(strings.TrimPrefix(lowerPath, "notes/"), ".markdown")
+	default:
+		return false
+	}
+	return stem == lowerBase || strings.HasPrefix(stem, lowerBase+"-")
+}
+
+type projectMemoryItem struct {
+	relPath    string
+	lineNumber int
+	addedDate  string
+	rawLine    string
+}
+
+func (a *App) buildProjectMemorySection(ctx context.Context, cwdBase string, managedPaths, linkedProjectPaths []string, remainingBytes int) string {
+	if cwdBase == "" || remainingBytes <= 0 {
+		return ""
+	}
+	seen := map[string]bool{}
+	var targetFiles []string
+	for _, rel := range managedPaths {
+		if isProjectNotePath(rel, cwdBase) && !seen[rel] {
+			seen[rel] = true
+			targetFiles = append(targetFiles, rel)
+		}
+	}
+	for _, rel := range linkedProjectPaths {
+		clean, err := vault.ValidateRelPath(rel)
+		if err == nil && clean != vault.EntryPointName && !seen[clean] {
+			seen[clean] = true
+			targetFiles = append(targetFiles, clean)
+		}
+	}
+	sort.Strings(targetFiles)
+	if len(targetFiles) == 0 {
+		return ""
+	}
+
+	now := a.clock()
+	var items []projectMemoryItem
+	for _, relPath := range targetFiles {
+		file, err := a.ReadFile(ctx, relPath)
+		if err != nil {
+			continue
+		}
+		parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
+		for _, entry := range parsed.Entries {
+			if vault.EntryExpired(entry.UntilDate, now) || entry.FactText == vault.ExpiredFactPlaceholder {
+				continue
+			}
+			items = append(items, projectMemoryItem{
+				relPath:    relPath,
+				lineNumber: entry.LineNumber,
+				addedDate:  entry.AddedDate,
+				rawLine:    entry.RawLine,
+			})
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].addedDate != items[j].addedDate {
+			return items[i].addedDate > items[j].addedDate
+		}
+		if items[i].relPath != items[j].relPath {
+			return items[i].relPath < items[j].relPath
+		}
+		return items[i].lineNumber < items[j].lineNumber
+	})
+
+	header := fmt.Sprintf("----- CURRENT PROJECT MEMORY (%s) -----\n", cwdBase)
+	if len(header) >= remainingBytes {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(header)
+	count := 0
+	for _, item := range items {
+		body := strings.TrimPrefix(strings.TrimSpace(item.rawLine), "- ")
+		line := fmt.Sprintf("- [%s] %s\n", item.relPath, body)
+		if b.Len()+len(line) > remainingBytes {
+			break
+		}
+		b.WriteString(line)
+		count++
+	}
+	if count == 0 {
+		return ""
+	}
+	return b.String()
+}
+
+// readEntryWithoutLock reads the context entry file for injection when an
+// unborn repository has no commits yet while the lock is held.
 func (a *App) readEntryWithoutLock() (vault.FileRead, error) {
 	root, err := vault.OpenRoot(a.cfg.RepoPath)
 	if err != nil {
@@ -290,6 +720,35 @@ func (a *App) readEntryWithoutLock() (vault.FileRead, error) {
 	defer root.Close()
 	file, err := root.ReadFile(vault.EntryPointName)
 	return a.projectRead(vault.EntryPointName, file, err)
+}
+
+// readOversizedEntryPrefix reads a bounded prefix of MEMORY.md when the on-disk
+// file exceeds MaxTextFileBytes, so `start` and `context` can still inject the
+// valid top lines and append the documented truncation notice instead of
+// failing the hook.
+func (a *App) readOversizedEntryPrefix() (vault.FileRead, error) {
+	path := filepath.Join(a.cfg.RepoPath, vault.EntryPointName)
+	f, err := os.Open(path)
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	defer f.Close()
+	buf, err := io.ReadAll(io.LimitReader(f, int64(MaxInjectedBytes*2)))
+	if err != nil {
+		return vault.FileRead{}, err
+	}
+	for len(buf) > 0 && !utf8.Valid(buf) {
+		buf = buf[:len(buf)-1]
+	}
+	raw := vault.FileRead{
+		RelPath:      vault.EntryPointName,
+		FileRevision: vault.FileRevision("100644", buf),
+		Kind:         vault.KindEntryPoint,
+		SizeBytes:    int64(len(buf)),
+		Editable:     true,
+		RawContent:   string(buf),
+	}
+	return a.projectRead(vault.EntryPointName, raw, nil)
 }
 
 // readUserInstructions returns the optional $STATE/INSTRUCTIONS.md, bounded and

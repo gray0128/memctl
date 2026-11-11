@@ -374,7 +374,7 @@ func TestA5NoRemoteMissingSIDAndOversizedEntryCoversH06(t *testing.T) {
 	if oversized.code != 0 {
 		t.Fatalf("context: code=%d stderr=%q", oversized.code, oversized.stderr)
 	}
-	if !strings.Contains(oversized.stdout, "exceeds the 2097152 byte injection limit") {
+	if !strings.Contains(oversized.stdout, "[agent-memory] MEMORY.md truncated at 200 lines / 25 KiB; run 'memctl dream --prepare' to move details into notes/.") {
 		t.Fatalf("oversized entry was not reported:\n%s", oversized.stdout)
 	}
 	if len(oversized.stdout) > 300<<10 {

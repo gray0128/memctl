@@ -827,12 +827,13 @@ func TestApplyRejectsStaleBaseRevision(t *testing.T) {
 	}
 }
 
-// TestReadFileRefusesProtectedStates covers P2-1: a CLI read must not return
-// transaction-intermediate content. It reports busy while the lock is held,
-// recovery while an unfinished transaction exists, and the operation state
-// while a managed conflict or Git operation is active.
+// TestReadFileRefusesProtectedStates covers P2-1 and I-2b: while the repository
+// lock is held by a background sync, ReadFile serves the committed branch-ref
+// tree snapshot (ignoring uncommitted worktree edits) while writes still fail
+// with BUSY; an unfinished transaction still refuses reads with
+// RECOVERY_REQUIRED.
 func TestReadFileRefusesProtectedStates(t *testing.T) {
-	t.Run("lock busy", func(t *testing.T) {
+	t.Run("lock busy serves committed snapshot while write stays busy", func(t *testing.T) {
 		service, repo := newTestService(t)
 		ctx := context.Background()
 		gitDir, err := git.GitDir(ctx, repo)
@@ -845,8 +846,22 @@ func TestReadFileRefusesProtectedStates(t *testing.T) {
 		}
 		defer held.Release()
 
-		if _, err := service.ReadFile(ctx, "MEMORY.md"); err == nil {
-			t.Fatal("ReadFile returned while the repository lock was held")
+		if err := os.WriteFile(filepath.Join(repo, "MEMORY.md"), []byte("# Memory\n\n## Index\n- dirty worktree\n"), 0o644); err != nil {
+			t.Fatalf("dirty worktree: %v", err)
+		}
+
+		got, err := service.ReadFile(ctx, "MEMORY.md")
+		if err != nil {
+			t.Fatalf("ReadFile while lock held should read committed snapshot: %v", err)
+		}
+		if got.RawContent != testInitialMemory {
+			t.Fatalf("ReadFile returned %q, want committed snapshot %q", got.RawContent, testInitialMemory)
+		}
+
+		if _, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+			Path: "MEMORY.md", ExpectedRevision: got.FileRevision, Action: ActionPut, RawContent: "# Memory\n\n## Index\n- write\n",
+		}}}); err == nil {
+			t.Fatal("Apply succeeded while the repository lock was held")
 		} else {
 			requireContractCode(t, err, memerr.Busy)
 		}

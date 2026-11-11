@@ -127,6 +127,7 @@ func runSessionCommand(cmd string, flags sessionFlags, event string, stdin io.Re
 	outcome, err := service.PrepareSession(context.Background(), app.SessionOptions{
 		Agent:              agent,
 		SessionID:          sid,
+		Cwd:                strings.TrimSpace(payload.Cwd),
 		Once:               flags.once,
 		NoBody:             cmd == "pull",
 		SkipSyncWhenSynced: cmd == "context" || cmd == "pull",

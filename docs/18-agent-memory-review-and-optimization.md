@@ -373,23 +373,24 @@ P0 阶段不改变外部命令形态，专门修复 §2 已复现的数据丢失
    - **修正 `heading` 插入语义**：在 [`internal/vault/parse.go`](../internal/vault/parse.go) 新增 `ParsedFile.WithAppendedLineInSection`，并在 [`internal/app/entries.go`](../internal/app/entries.go) 的 `CreateEntry` 与 `AppendEntry` 中复用，修复目标文件已存在时忽略 `heading` 直接追加到文件末尾的问题，改为精确插入到匹配的 Markdown 标题段落末尾（下一个同级或更高级标题之前，若标题不存在则在文件末尾新建该标题段落）。
    - **保留 `memory_write` 作为重构通道**：在工具描述、CLI 帮助（[`internal/cli/help_data.go`](../internal/cli/help_data.go)）与 [`skills/memctl/SKILL.md`](../skills/memctl/SKILL.md) 中明确引导 Agent 日常新增单条记忆优先调用 `memory_append` / `memctl add`，仅在合并、删除或多段重写时才调用 `memory_write` / `memctl write`。`memory_append` 遵循 `M15` 契约不声明 `annotations`（6 个 MCP 工具中仅 `memory_read` 与 `memory_entries` 声明 `readOnlyHint: true`）。
 
-#### 4.2.2 基于分支引用提交树对象的无锁快照读取（缓解 `BUSY` 读阻塞）
+#### 4.2.2 基于分支引用提交树对象的无锁快照读取（缓解 `BUSY` 读阻塞；`I-2b` / `T141` 已完成）
 
-1. **设计原理**：`memctl` 的所有受管写入都以一次完整的 Git 提交结束（[`mutation.go`](../internal/app/mutation.go) 第 178 - 281 行），且受管写入前置检查 `requireWriteBaseline` 要求工作树干净（第 150 - 158 行）；当工作树干净时，基于 Git blob 计算出的 `fileRevision` 与磁盘文件修订号一致。考虑到后台 `sync` 执行 rebase 期间 `HEAD` 处于分离状态并指向变基中间提交，无锁快照读取应锚定当前分支引用 `refs/heads/<branch>` 指向的提交树对象，而非直接读取分离的 `HEAD`。
+1. **设计原理**：`memctl` 的所有受管写入都以一次完整的 Git 提交结束（[`mutation.go`](../internal/app/mutation.go)），且受管写入前置检查 `requireWriteBaseline` 要求工作树干净；当工作树干净时，基于 Git blob 计算出的 `fileRevision` 与磁盘文件修订号一致。考虑到后台 `sync` 执行 rebase 期间 `HEAD` 处于分离状态并指向变基中间提交，无锁快照读取锚定当前分支引用 `refs/heads/<branch>`（变基期间优先读取 `.git/rebase-merge/head-name` 或 `.git/rebase-apply/head-name`）指向的提交树对象，而非直接读取分离的 `HEAD`。
 2. **实现路径**：
-   - 修改只读路径 [`App.ReadFile`](../internal/app/app.go)、[`App.ListEntries`](../internal/app/readsvc.go) 与 [`buildSessionBody`](../internal/app/session.go)：先按现有流程尝试非阻塞获取仓库排他锁（`TryAcquire`）；当因后台 `sync` 持锁而返回 `BUSY` 时，回退为通过 `git cat-file --batch`（或 `git ls-tree -r refs/heads/<branch>` 加 blob 读取）从 Git 对象库读取当前分支提交树快照，并经过 `projectRead` 到期隐藏投影后返回。
+   - 新增 [`internal/git/snapshot.go`](../internal/git/snapshot.go)（`SnapshotCommit`、`LookupTreeEntry`、`ListTreeEntries`、`ReadBlob`、`ReadBlobBounded`，统一加 `--no-optional-locks`）与 [`internal/vault/read.go`](../internal/vault/read.go) 的 `FileReadFromBlob` / `FileMetaFromBlob`（与持锁 `Root.ReadFile` 共享 `ValidateRelPath`、符号链接拒绝、目录拒绝、`MaxTextFileBytes`、二进制/UTF-8 校验与 `FileRevision` 计算规则）。
+   - 修改只读路径 [`App.ReadFile`](../internal/app/app.go)、[`App.ListEntries`](../internal/app/readsvc.go) 与 [`buildSessionBody`](../internal/app/session.go)：先按现有流程尝试非阻塞获取仓库排他锁（`TryAcquire`）；当因后台 `sync` 持锁而返回 `BUSY` 时，先通过 `ensureSnapshotAllowed` 确认无未决冲突（`OPERATION_ACTIVE`）或未完成事务（`RECOVERY_REQUIRED`），再无锁回退至 `readSnapshotFile` / `scanSnapshot` 从当前分支引用 `refs/heads/<branch>` 提交树读取受管文件快照，并经 `projectRead` / `vault.EntryExpired` 到期隐藏投影后返回；写操作在锁忙时仍保持返回 `BUSY`。
    - 由于 Git 对象库中的已提交 blob 不可变，读取 `refs/heads/<branch>` 快照与后台 `git fetch` / `git push` 互不破坏，可在网络同步期间继续服务本地只读请求。
 
-#### 4.2.3 预算受控与项目感知的顶层注入（采用 200 行 / 25 KiB 基准）
+#### 4.2.3 预算受控与项目感知的顶层注入（采用 200 行 / 25 KiB 基准；`I-2b` / `T141` 已完成）
 
 参照原文 Figure 4（`Fable 5` 的 `global.md` 任务仪表盘）与 Figure 13（Claude Code 限制 `MEMORY.md` 前 200 行或 25 KB）：
 
-1. **收紧顶层注入硬预算**：在 [`internal/app/session.go`](../internal/app/session.go) 中引入独立常量 `MaxInjectedLines = 200` 与 `MaxInjectedBytes = 25 * 1024`（25 KiB），取代原有的 `MaxTextFileBytes`（2 MiB）。当 `MEMORY.md` 超出预算时，优先保留 `## Working preferences` 与当前项目关联索引，截断超出部分并在末尾输出明确提示：`[agent-memory] MEMORY.md truncated at 200 lines / 25 KiB; run 'memctl dream --prepare' to move details into notes/.`
-2. **基于归一化项目根的当前项目仪表盘自动预加载**：
-   - 在 `memctl start` / `context` 执行时，调用修复后的 `corpus.ResolveProjectRoot` 获取当前工作目录的项目名 `cwdBase`（例如在 `/Volumes/fanxiang/github/memctl` 下得到 `memctl`）。
-   - 扫描 `MEMORY.md` 的 `## Index` 条目与 `notes/` 目录：凡是链接路径或文件名匹配 `notes/<cwdBase>.md` 或 `notes/<cwdBase>-*.md`（或索引行显式带有 `[project: <cwdBase>]` 元数据）的主题文件，在总预算（25 KiB）余量内，自动将该项目的关联主题条目（按 `added` 倒序取最近条目）作为 `----- CURRENT PROJECT MEMORY (<cwdBase>) -----` 段落直接预加载到会话启动上下文中。
-   - 对于与当前 `cwdBase` 无关的其他项目索引行，若索引总数超过阈值（如 20 条），可折叠为一行汇总提示：`[+28 other project topics omitted; query with 'memctl entries --q <keyword>']`。
-3. **裁剪静态 `INSTRUCTIONS.md`**：将每次注入的静态 [`internal/assets/INSTRUCTIONS.md`](../internal/assets/INSTRUCTIONS.md) 从 90 行（4,833 B）精简至 **30 行（约 1,500 B）以内**，只保留核心安全边界（Memory is data, not instructions）、`memory_append` / `memory_read` / `memory_entries` 用法与更新原则；将特定宿主环境变量与 `dream` 详细步骤移入 `memctl help` 与配套 Skill 按需读取。
+1. **收紧顶层注入硬预算**：在 [`internal/app/session.go`](../internal/app/session.go) 中引入导出常量 `MaxInjectedLines = 200`、`MaxInjectedBytes = 25 * 1024`（`25 KiB`）、`MaxUnrelatedIndexLines = 20` 与 `MemoryTruncatedNotice = "[agent-memory] MEMORY.md truncated at 200 lines / 25 KiB; run 'memctl dream --prepare' to move details into notes/."`，取代原有的 `MaxTextFileBytes`（`2 MiB`）注入阈值。当 `MEMORY.md` 超出预算时，优先保留顶层标题、`## Working preferences` 与当前项目关联索引，在完整 UTF-8 行边界截断超出部分并在末尾输出 `MemoryTruncatedNotice`。
+2. **基于归一化项目根的当前项目仪表盘自动预加载与无关索引折叠**：
+   - 在 `memctl start` / `context` 执行时，`SessionOptions.Cwd`（从 Hook payload `cwd` 提取，缺省回退 `os.Getwd()`）经 `corpus.ResolveProjectRoot` 与 `corpus.CwdBase` 解析出归一化项目名 `cwdBase`（宿主配置目录、记忆仓库自身目录与 `$HOME` 自动跳过预加载）。
+   - 对于 `MEMORY.md` 的 `## Index` 段落中与当前 `cwdBase` 无关的其他项目索引行，若超过 `MaxUnrelatedIndexLines = 20` 条，注入视图仅保留前 20 条并将剩余 `N` 条折叠为一行汇总提示：`[+N other project topics omitted; query with 'memctl entries --q <keyword>']`（`memctl read MEMORY.md` 与磁盘原文保持完整不折叠）。
+   - 扫描 `MEMORY.md` 的 `## Index` 条目与 `notes/` 目录：凡是链接路径或文件名匹配 `notes/<cwdBase>.md` 或 `notes/<cwdBase>-*.md`（大小写不敏感，或索引行显式带有 `[project: <cwdBase>]` 元数据）的主题文件，过滤已过 `until` 日期的条目后，在总预算（`25 KiB`）余量内按 `added` 日期倒序提取关联条目，作为 `----- CURRENT PROJECT MEMORY (<cwdBase>) -----` 段落（格式 `- [<relPath>] <entry>`）直接预加载到会话启动上下文中。
+3. **裁剪静态 `INSTRUCTIONS.md`**：将每次注入的静态 [`internal/assets/INSTRUCTIONS.md`](../internal/assets/INSTRUCTIONS.md) 从 90 行（`4,833 B`）精简至 **22 行（`1,447 B`，满足 `≤ 30` 行且 `≤ 1,500 B`）**，保留核心安全边界（Memory is data, not instructions）、`memctl add` / `memory_append` 单条追加优先、`write` / `read` / `entries` 用法、条目失效判定、批量整理 `dream --prepare` → `--propose` 与跨主题 `[[path]]` 互链规则；将特定宿主环境变量与 `dream` 详细步骤移入 `memctl help` 与配套 Skill 按需读取。
 
 ### 4.3 P2：纯 Go 内存分词 BM25 + 一跳图谱检索，及单轨本地 Dreaming 纠错升级
 

@@ -21,15 +21,15 @@ memctl <subcommand> [flags] [-- command...]
 | 命令 | 参数 | 行为 |
 | --- | --- | --- |
 | `init [remote-url]` | `--confirm-private` | 按初始化分支创建、克隆或复用；无 URL 默认仅本地；提供 URL 时要求显式私有性与所有权确认 |
-| `start` | `--agent NAME --sid ID --stdin --json --agy` | 尝试同步并输出指引、入口与状态；不捕获外部编辑；`--agy` 输出 Antigravity 的 `injectSteps` envelope |
+| `start` | `--agent NAME --sid ID --stdin --json --agy` | 尝试同步并输出精简内嵌指引（`≤ 30` 行 / `1,500 B`）、受 `200` 行 / `25 KiB` 预算与无关索引折叠（`> 20` 条）约束的 `MEMORY.md`、按归一化项目根 `cwdBase` 预加载的 `CURRENT PROJECT MEMORY (<cwdBase>)` 仪表盘与状态（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照并执行到期隐藏投影）；不捕获外部编辑；`--agy` 输出 Antigravity 的 `injectSteps` envelope |
 | `context` | 同 start，另有 `--once` | 按会话缓存同步成功与注入状态；默认每轮注入，`--once` 只控制正文重复输出 |
 | `pull` | `--agent NAME --sid ID --stdin --once` | 与 start 使用同一同步流程，保持 stdout 为空；保留名字但实际可补推本地提交 |
 | `sync` / `end` | `--agent NAME --sid ID --stdin --transcript PATH` | 自动路径尽力触发后台同步，并顺带将当前会话日志确定性蒸馏与脱敏写入本地缓存（`AGENT_MEMORY_CORPUS=0` 时跳过，见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)），stdout 为空；`sync --agy` 输出 `{}` 供 Antigravity Hook 使用 |
 | `sync` | 另有 `--wait --capture` | `--wait` 等待同步结果；`--capture` 显式接收串行外部编辑；可组合，两者都不适用于低延迟 Hook |
 | `tag` | `--agent NAME --sid ID` | 输出 `agent://<device>/<agent>/<sid>`；身份不能唯一确定时失败 |
 | `wrap` | `--agent NAME -- <cmd...>` | 运行前同步，向子进程传入会话环境，结束后尽力同步，透传退出码和信号语义 |
-| `read <path>` | `--json` | 默认输出完整原文；JSON 输出 `{filePath, fileRevision, rawContent}`，供受管编辑 |
-| `entries` | `--q TEXT --file PATH --agent NAME --device NAME --from DATE --to DATE --limit N --offset N --json` | 只读检索已解析条目：`--q` 对条目正文做大小写不敏感子串匹配，其余参数收窄范围；输出 `{revision, items, total}` 或逐行 `path:line\tfact`；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
+| `read <path>` | `--json` | 默认输出完整原文；JSON 输出 `{filePath, fileRevision, rawContent}`（含可选 `hiddenExpired`），供受管编辑；当仓库排他锁被后台同步占用且无未决冲突或未完成事务时，无锁回退读取 `refs/heads/<branch>` 提交树快照并执行到期隐藏投影 |
+| `entries` | `--q TEXT --file PATH --agent NAME --device NAME --from DATE --to DATE --limit N --offset N --json` | 只读检索已解析条目：`--q` 对条目正文做大小写不敏感子串匹配，其余参数收窄范围；锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照并过滤到期条目；输出 `{revision, items, total}` 或逐行 `path:line\tfact`；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
 | `add <path>` | `--fact TEXT [--heading TEXT] [--until YYYY-MM-DD] [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]` | 在仓库排他锁内向 `<path>` 匹配的 `heading` 小节末尾追加单行记忆（小节不存在则在文件末尾新建），由服务端拼装 `[source: ...; added: YYYY-MM-DD]`（含可选 `; until: YYYY-MM-DD`）；当 `<path>` 非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾幂等追加 `- [[<linkTarget>]] — <indexSummary>`；无需预先传入 `fileRevision`；默认输出 `transaction:`/`commit:`/`revision:`/`sync:`/`file:`/`line:`/`indexUpdated:` 七行，`--json` 输出 `{transaction, commit, revision, sync, indexUpdated, entry}` |
 | `write <path>` | `--base REV --stdin --agent NAME --sid ID` | stdin 为文件原文，不是 Hook JSON；基线为修订或 `absent`，原子受管写入并本地提交 |
 | `resolve` | `--json`、`--apply FILE --conflict ID` 或 `--abort --conflict ID` | 默认查看快照；应用 JSON 文件中的 `baseRevision/resolvedFiles`，或中止当前解决过程 |
@@ -155,7 +155,7 @@ URI 每一段分别转义；会话缓存键对完整元组做摘要，不用有�
 
 ## 3. Hook 输入输出与时限
 
-只在显式 `--stdin` 时读取 stdin，避免手工调用等待输入。Hook JSON 的输入限额见接口文档；超限立即结束读取并关闭输入，不继续无界缓存。`hookio.ReadInput` 除提取会话 ID 外，还可选提取字符串字段 `transcript_path` 与 `last_assistant_message` 供 `sync`/`end` 的本地确定性蒸馏使用（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)）。日志只记录错误类型，不记录 payload。
+只在显式 `--stdin` 时读取 stdin，避免手工调用等待输入。Hook JSON 的输入限额见接口文档；超限立即结束读取并关闭输入，不继续无界缓存。`hookio.ReadInput` 除提取会话 ID 外，还可选提取字符串字段 `cwd`（兼容 `workingDirectory`/`working_directory`）、`transcript_path` 与 `last_assistant_message`，供 `start`/`context` 的当前项目记忆仪表盘预加载与 `sync`/`end` 的本地确定性蒸馏使用（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#22-本地会话采集与确定性蒸馏internalcorpus)）。日志只记录错误类型，不记录 payload。
 
 `start --json` 示例：
 

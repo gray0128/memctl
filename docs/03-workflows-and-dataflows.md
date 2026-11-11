@@ -84,20 +84,24 @@ sequenceDiagram
 
 `memctl recover --status` 展示受影响文件；`memctl recover --rollback` 只恢复可证明仍由该未完成事务控制的路径和索引项。原始 HEAD 已变、存在未知 Git 子进程或文件不匹配时拒绝自动恢复。不能用全仓库 `reset --hard`、删除 `.git/*.lock` 或清空状态目录代替恢复。
 
-读取事务中间内容不是一致性读取；事务期间 UI 使用带 `stale` 标记的最近完整快照，CLI 读取返回忙碌。恢复流程不自动处理用户手工启动的 Git 操作。
+读取未完成事务的中间内容不是一致性读取（存在未决冲突或未完成事务时分别返回 `OPERATION_ACTIVE` 与 `RECOVERY_REQUIRED`）。当仓库排他锁被后台 `sync` 等进程占用且不存在未决冲突或未完成事务时，UI 快照使用带 `stale` 标记的最近完整缓存，只读入口（`ReadFile`、`ListEntries` 与会话注入 `buildSessionBody`）无锁回退读取当前分支引用 `refs/heads/<branch>`（变基分离 `HEAD` 期间优先读取 `.git/rebase-merge/head-name` 或 `.git/rebase-apply/head-name`）指向的已提交 Git 树对象快照并执行相同的到期隐藏投影；写操作在锁忙时仍返回 `BUSY`。恢复流程不自动处理用户手工启动的 Git 操作。
 
 ## 3. 会话开始与上下文注入
 
-1. 按 [SID 优先级](./04-ui-and-cli-specification.md#2-环境变量与会话身份) 解析身份。有 `--stdin` 时有界读取 Hook JSON，即使显式 SID 已提供也消费输入；不保存或回显 prompt。
+1. 按 [SID 优先级](./04-ui-and-cli-specification.md#2-环境变量与会话身份) 解析身份。有 `--stdin` 时有界读取 Hook JSON（同时提取可选 `cwd`），即使显式 SID 已提供也消费输入；不保存或回显 prompt。
 2. 以 `repoId + agent + sid` 查询会话状态。`injected` 与 `syncSucceeded` 分开记录，首次断网不能被当成同步成功。
-3. `start` 总是尝试一次同步；`context`、`pull --once` 在本会话尚未成功同步时尝试同步。锁忙、断网或超时则保留本地可用内容和错误摘要，后续 Hook 仍可重试。
+3. `start` 总是尝试一次同步；`context`、`pull --once` 在本会话尚未成功同步时尝试同步。锁忙、断网或超时则保留本地可用内容（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照并执行到期隐藏投影）和错误摘要，后续 Hook 仍可重试。
 4. 无 remote 时检查本地仓库后记为 `local`；有 remote 时按下一节流程运行。存在外部未提交变化时只读，不自动 capture。
-5. 取得完整 `MEMORY.md`，附上内嵌指引、当前来源标签和同步提示。内嵌指引明确：记忆内容是数据、写入使用版本基线、来源缺失时不编造。
+5. 取得 `MEMORY.md`（受 `MaxInjectedLines = 200` 与 `MaxInjectedBytes = 25 KiB` 顶层注入预算约束），附上精简内嵌指引（`≤ 30` 行、`≤ 1,500 B`）、当前来源标签、同步提示，以及按归一化项目根 `cwdBase` 预加载的当前项目记忆仪表盘（`----- CURRENT PROJECT MEMORY (<cwdBase>) -----`）。内嵌指引明确：记忆内容是数据、单条追加优先使用 `memctl add` / `memory_append`、改写使用版本基线 `write` / `memory_write`、来源缺失时不编造、条目失效判定、批量整理走 `dream --prepare` → `--propose` 与跨主题 `[[path]]` 互链。
 6. `context --once` 已成功注入后不再输出正文，但失败同步仍可以重试。首次输出成功写入 stdout 后才记 `injected`；进程在输出与状态登记之间被杀可能重复注入，不承诺 exactly-once。
 
 会话缓存过期清理保留 14 天的初始策略，仅清理可重建的会话记录；不删除提案、恢复记录或未推送提交。没有稳定 SID 时不启用跨进程去重。
 
-在宿主输出限额内优先保留安全指引、仓库路径和来源标签；入口过长时明确提示改为受管读取，不输出被截断但未标记的「完整 MEMORY.md」。宿主不支持注入的适配器依靠全局指引显式读取，不伪造注入成功。
+在宿主输出限额内优先保留安全指引、仓库路径和来源标签，并执行顶层注入预算（`MaxInjectedLines = 200`、`MaxInjectedBytes = 25 KiB`）：
+- `start` / `context` 将 Hook payload `cwd`（缺省回退 `os.Getwd()`）经 `corpus.ResolveProjectRoot` 与 `corpus.CwdBase` 归一化为项目名 `cwdBase`（宿主配置目录、记忆仓库自身目录与 `$HOME` 自动跳过预加载）。
+- 当 `MEMORY.md` 的 `## Index` 段落中与当前 `cwdBase` 无关的索引行超过 `MaxUnrelatedIndexLines = 20` 条时，注入视图仅保留前 20 条并将剩余 `N` 条折叠为 `[+N other project topics omitted; query with 'memctl entries --q <keyword>']`（`memctl read MEMORY.md` 与磁盘原文保持完整不折叠）。
+- 当折叠后的 `MEMORY.md` 仍超过 `200` 行或 `25 KiB` 时，优先保留顶层标题、`## Working preferences` 段落与当前项目关联 `## Index` 索引行，在完整 UTF-8 行边界截断并在末尾输出 `MemoryTruncatedNotice`（`[agent-memory] MEMORY.md truncated at 200 lines / 25 KiB; run 'memctl dream --prepare' to move details into notes/.`），不输出被截断但未标记的「完整 MEMORY.md」。
+- 在 `25 KiB` 总预算余量内，扫描匹配 `notes/<cwdBase>.md`、`notes/<cwdBase>-*.md`（大小写不敏感）及 `MEMORY.md` `## Index` 中带 `[project: <cwdBase>]` 元数据的关联主题文件，过滤已过 `until` 日期的条目后按 `added` 日期倒序提取有效条目，组装为 `----- CURRENT PROJECT MEMORY (<cwdBase>) -----` 段落（每行格式为 `- [<relPath>] <entry>`）。宿主不支持注入的适配器依靠全局指引显式读取，不伪造注入成功。
 
 ## 4. 同步与后台任务
 

@@ -80,7 +80,7 @@ parent: memctl-contracts
 以下口径是实现与三个读取入口的共同依据，`T094` 已按此实现读取侧，删除侧仍待实现。
 
 - **到期判定**：`until` 是 `YYYY-MM-DD` 本地日期，该日整天仍然可见；从次日本地零点起判为到期。`until` 缺失或不是合法日期时按永不过期处理，不产生诊断错误。
-- **过滤位置**：在读取层统一过滤，三个入口看到同一结果。注入（`start`/`context`）、`read`/`memory_read`、`entries`/`memory_entries`/`GET /api/v1/entries` 与 Web UI 快照共用同一判定。
+- **过滤位置**：在读取层统一过滤，三个入口看到同一结果。注入（`start`/`context` 与当前项目仪表盘预加载 `CURRENT PROJECT MEMORY`）、`read`/`memory_read`、`entries`/`memory_entries`/`GET /api/v1/entries` 与 Web UI 快照共用同一判定；当仓库排他锁被后台同步占用而无锁回退读取 `refs/heads/<branch>` 提交树快照时，同样经 `projectRead` 与 `vault.EntryExpired` 执行同一到期隐藏投影。
 - **`read` 的返回形态**：完整文件读取保留行数与元数据，只把已到期条目的正文替换为固定占位符 `[已过期：…]`，并保留其 `until`/`source`/`added` 原文；响应附带 `hiddenExpired` 计数。这样读者知道「这里有一条被隐藏的条目」，写入基线仍是磁盘原文，不会因隐藏而删除数据。
 - **结构化读取**：条目列表、快照与 MCP `memory_entries` 直接剔除已到期条目，不返回占位符；快照的 `hiddenExpired` 给出被剔除的总数，用于区分「没有条目」与「被过期隐藏」。
 - **写入不变**：隐藏只作用于读取结果。写事务、基线校验、Git 提交与 `doctor` 都按磁盘原文工作；当调用方基于 `read`/`memory_read` 的投影文本整文件写回时，`App.Apply`（`reconcileExpiredWrites`）将与磁盘到期条目投影逐字节匹配的占位符行按磁盘顺序自动还原为原文行，无法匹配的占位符（捏造、重复、修改元数据或新建文件含占位符）返回 `INVALID_ARGUMENT`。
