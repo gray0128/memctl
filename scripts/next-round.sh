@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# 校验下一轮交接提示词与 Git 同步前置条件，或为下一轮开发启动一个新的独立 Agent 会话。
+# 校验下一轮交接提示词、docs/STATUS.md 字符预算与 Git 同步前置条件，或为下一轮开发启动一个新的独立 Agent 会话。
 #
-# 契约：docs/06-development-loop.md 第 6 节「交接与中断」及 6.1 节「接续的执行机制」。
-# 使用 --check-only 时仅校验四要素与 Git 同步状态并输出宿主无关启动示例，不查找也不调用 orca；
+# 契约：docs/06-development-loop.md 第 1 节「最小记录结构」、第 6 节「交接与中断」及 6.1 节「接续的执行机制」。
+# 使用 --check-only 时仅校验四要素、docs/STATUS.md 字符数上限（<= 12,000 UTF-8 字符）与 Git 同步状态并输出宿主无关启动示例，不查找也不调用 orca；
 # 未传 --check-only 时保留 Orca 终端创建、等待与提示词投递兼容分支。
 # 本脚本不生成交接提示词，也不能强制旧会话停止开发。
 set -euo pipefail
 
 readonly REQUIRED_SECTIONS=("有效规则与边界" "本轮结果与证据" "剩余事项与依赖" "下一轮目标")
+readonly MAX_STATUS_CHARS=12000
 
 die() {
 	printf '错误：%s\n' "$1" >&2
@@ -18,7 +19,7 @@ usage() {
 	cat <<'EOF'
 用法：scripts/next-round.sh (--prompt <text> | --prompt-file <path>) [选项]
 
-校验下一轮交接提示词四要素与 Git 同步前置条件，或启动全新的 Agent 会话接续下一轮开发。
+校验下一轮交接提示词四要素、docs/STATUS.md 字符预算与 Git 同步前置条件，或启动全新的 Agent 会话接续下一轮开发。
 
 交接提示词（二选一，必需）：
   --prompt <text>          交接提示词正文
@@ -28,7 +29,7 @@ usage() {
   有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标
 
 选项：
-  --check-only             仅校验交接提示词四要素与 Git 同步状态（配合 --dry-run 时跳过 Git 检查），打印回执与宿主无关启动示例后退出，不查找也不调用 orca
+  --check-only             仅校验交接提示词四要素、docs/STATUS.md 字符上限（<= 12,000）与 Git 同步状态（配合 --dry-run 时跳过 Git 检查），打印回执与宿主无关启动示例后退出，不查找也不调用 orca
   --agent <id>             Agent 标识，默认 pi
   --worktree <selector>    工作区选择器，默认 active，即当前目录所属的 Orca 工作区
   --model <id>             模型标识，拼入 Agent 启动命令
@@ -37,7 +38,7 @@ usage() {
   --terminal <handle>      重放提示词投递时指定的目标终端句柄（需与 --retry-request 同用）
   --retry-request <id>     用 requestId 在已创建终端上重放同一次提示词投递，不新建终端
   --retry-launch <id>      --retry-request 的兼容别名（需与 --terminal 同用）
-  --dry-run                只打印将执行的命令参数（或配合 --check-only 跳过 Git 状态检查），不启动会话，不检查接续前置条件
+  --dry-run                只打印将执行的命令参数（或配合 --check-only 跳过 Git 状态检查），不启动会话，不检查 Git 同步前置条件
   -h, --help               显示本说明
 EOF
 }
@@ -267,6 +268,44 @@ fi
 
 prompt_body="$(cat "$check_file")"
 
+# 热台账 docs/STATUS.md 字符预算校验（归一化 CRLF -> LF 后的 UTF-8 字符数 <= MAX_STATUS_CHARS）。
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+status_file="${MEMCTL_STATUS_FILE:-$repo_root/docs/STATUS.md}"
+[ -f "$status_file" ] || die "热台账文件不存在：$status_file"
+
+count_utf8_chars() {
+	local target_file="$1"
+	if command -v python3 >/dev/null 2>&1; then
+		python3 - "$target_file" <<'PY'
+import sys
+with open(sys.argv[1], "rb") as fh:
+    raw = fh.read()
+try:
+    text = raw.decode("utf-8")
+except UnicodeDecodeError:
+    sys.exit(2)
+print(len(text.replace("\r\n", "\n")), end="")
+PY
+		return $?
+	fi
+	if command -v perl >/dev/null 2>&1; then
+		perl -MEncode=decode,FB_CROAK -0777 -ne '$_ = decode("UTF-8", $_, FB_CROAK); s/\r\n/\n/g; print length($_)' "$target_file" 2>/dev/null
+		return $?
+	fi
+	LC_ALL=C.UTF-8 tr -d '\r' <"$target_file" | LC_ALL=C.UTF-8 wc -m | tr -d '[:space:]'
+}
+
+status_chars=""
+status_chars_rc=0
+status_chars="$(count_utf8_chars "$status_file")" || status_chars_rc=$?
+if [ "${status_chars_rc:-0}" -ne 0 ] || ! [[ "$status_chars" =~ ^[0-9]+$ ]]; then
+	die "无法按有效 UTF-8 统计热台账字符数：$status_file"
+fi
+if [ "$status_chars" -gt "$MAX_STATUS_CHARS" ]; then
+	die "docs/STATUS.md 字符数超限：当前 ${status_chars} UTF-8 字符，强制上限 ${MAX_STATUS_CHARS}。请先将历史任务记录归档至 docs/validation/stage-<x>.md、清理「近期待办与下一步」已完成项并精简「当前事实」后再接续"
+fi
+
 # 接续前置条件：本轮变更已提交并推送。重放已接受的启动或仅打印命令时跳过。
 if [ -z "$retry_request" ] && [ "$dry_run" = 0 ]; then
 	git rev-parse --git-dir >/dev/null 2>&1 || die "当前目录不在 Git 仓库内"
@@ -283,9 +322,9 @@ if [ "$check_only" = 1 ]; then
 	else
 		git_check_state="clean-and-synced"
 	fi
-	printf '接续前置检查通过：mode=check-only, sections=4/4, git=%s\n' "$git_check_state"
+	printf '接续前置检查通过：mode=check-only, sections=4/4, status_chars=%s/%s, git=%s\n' "$status_chars" "$MAX_STATUS_CHARS" "$git_check_state"
 	printf '宿主无关新会话启动示例：agy -i "$(cat %s)"\n' "$(quote_sh_arg "$prompt_ref")"
-	printf '接续前置检查通过回执：mode=check-only, sections=4/4, git=%s。可在支持子智能体隔离的宿主中按轮次串行委派全新独立上下文子智能体，或在新终端执行：agy -i "$(cat %s)"\n' "$git_check_state" "$(quote_sh_arg "$prompt_ref")" >&2
+	printf '接续前置检查通过回执：mode=check-only, sections=4/4, status_chars=%s/%s, git=%s。可在支持子智能体隔离的宿主中按轮次串行委派全新独立上下文子智能体，或在新终端执行：agy -i "$(cat %s)"\n' "$status_chars" "$MAX_STATUS_CHARS" "$git_check_state" "$(quote_sh_arg "$prompt_ref")" >&2
 	exit 0
 fi
 

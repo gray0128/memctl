@@ -319,6 +319,16 @@
 - 本机升级：原子替换 `~/.agent-memory/bin/memctl`；`version` 为 `memctl v0.12.0`，`update --check` 返回 `up to date`，`install --status` 仍为 `codebuddy: configured host=codebuddy@2.164.0` 与 `workbuddy: configured host=app`。
 - 未验证与遗留：`T115` 记录的 `SessionEnd`（交互式退出）、WorkBuddy 桌面 GUI 会话、`CODEBUDDY_CONFIG_DIR` 自定义根与 Windows 盘符转义仍未验证；平台验证范围与 `v0.11.1` 相同。
 
+## T118：MCP 写入的会话溯源（`M14`）
+
+- 目标与范围：让 DSH 的 MCP 写入在提交里记录会话标识。MCP 服务是应用级子进程、不继承 `DSH_*`，传输层也没有会话通道，因此改为在 `memory_write` 上接受调用方传入的会话 ID，并补一条 CLI 侧可直接取到的环境变量来源。只改身份解析、工具参数与注入指引，不改变存储、锁、同步与审计读取路径。
+- 改动：`internal/mcp/tools.go` 的 `memory_write` 新增可选 `sid`：服务器配置了 `--sid` 时忽略调用值，否则写入 `Session:` trailer；超过 200 字节或含控制字符返回 `INVALID_ARGUMENT` 且不产生提交（`sessionFor`）。`internal/hookio/hookio.go` 的 `ResolveSID` 在 `DSH_HOOK_SESSION_ID` 之后增加 `DSH_SESSION_ID` 回退，使 DSH 会话 shell 内的 CLI 调用能自行识别会话。`internal/assets/INSTRUCTIONS.md` 的 Writing 段说明 MCP 写入需带 `sid`，取值为注入 `source` 标签的最后一段。`04` 第 2 节环境变量与优先级、`07` §5.6、`09` §4.2 与工具表同步；`09` 新增 M14 并改写 M10。
+- 对应契约：[04. CLI、UI 与分发 §2](../04-ui-and-cli-specification.md#2-环境变量与会话身份)、[07. dsh 专用插件 §5.6](../07-dsh-plugin.md#56-身份与配置)、[09. MCP 记忆工具 §4.2](../09-mcp-memory-tools.md#42-会话身份)。
+- 验证时间与环境：2026-10-27，darwin/arm64，Go 1.27.1。
+- 验证命令与结果：`go test ./internal/mcp ./internal/hookio ./internal/assets ./internal/cli` 通过（新增 `TestM05SessionArgument` 与 `DSH_SESSION_ID` 回退断言）。临时仓库端到端：`memctl mcp --agent dsh` 收到带 `sid` 的 `memory_write` 后提交为 `Agent: dsh` / `Session: session-e2e-2` / `Device: MacBookPro.local`；同一进程在环境存在 `DSH_SESSION_ID` 时优先采用环境值，证明配置优先于调用值。`go test ./...` 全绿（`internal/app` 72.3 秒、`tests/integration` 261.2 秒，其余包均通过）；`node --test plugins/dsh/test/*.test.js plugins/pi/test/*.test.js` 35 项通过。
+- 真实宿主验证（2026-10-27 10:22，重启 DSH 后）：`lsof` 显示 MCP 子进程 txt 为 10212754（新构建），`start` 注入含新指引，真实写入提交 `c7a9e03` 记录 `Session: session-4c79e553-a149-429d-b2c4-18a2e22f5612`。沙箱内的 `kill` 与同内容重写 profile 不会触发重连，只有重启应用才会重新派生 MCP 子进程。
+- 未验证与遗留：生效前提是模型按指引传 `sid`，服务端无法校验该值是否属于当前会话；会话 ID 由调用方提供，属模型可写字段，审计只能如实记录不能证明归属。
+
 ## T119：发布 `v0.13.0`
 
 - 目标与范围：发布 `v0.13.0`，把 `T118` 的 MCP 写入会话溯源带入 Release。版本号按次版本递增：`memory_write` 新增可选 `sid` 参数，`ResolveSID` 增加 `DSH_SESSION_ID` 回退，属向后兼容的能力增量；旧客户端不传 `sid` 时行为与 `v0.12.0` 一致。插件源码未改动，tarball 保持 `memctl-dsh 0.5.3` 与 `memctl-pi 0.5.2`，本轮不发布 npm。
