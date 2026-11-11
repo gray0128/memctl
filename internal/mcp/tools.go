@@ -138,7 +138,7 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_dream_prepare",
-			Description: "Sweep the local session stores, fix a clean baseline and return the memory files, the static diagnosis and the unconsumed SessionDigest list the current agent organizes from. Requires neither a remote nor the Actions workflow. Run it before memory_dream_propose; session indices from this bundle are the only valid citations.",
+			Description: "Sweep the local session stores, fix a clean baseline and return the memory files, the static diagnosis, the unconsumed SessionDigest list (with bounded toolOutcomes evidence) and up to 20 relatedExistingEntries the current agent organizes from. Follow rules.tasks: distil new memories, and check relatedExistingEntries against the sessions' troubleshooting path and toolOutcomes, correcting a wrong or outdated entry with replace_entry or delete_entry. Requires neither a remote nor the Actions workflow. Run it before memory_dream_propose; session indices from this bundle are the only valid citations.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -160,7 +160,7 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_dream_propose",
-			Description: "Validate the current agent's structured organization and persist a ready local-agent DreamProposal. Every new memory cites integer sessionIndices; memctl assembles the authoritative [source: ...; added: ...] suffix and requires each assembled line to appear verbatim in files[]. It also refuses a target whose parent directory does not exist (NOT_FOUND) and any newly introduced dangling link or unreachable file (UNSUPPORTED), because memctl never creates directory structure or index links. It never writes the memory repository: review the diff and apply through memctl dream --apply or the Web UI.",
+			Description: "Validate the current agent's structured organization and persist a ready local-agent DreamProposal. Prefer operations[]: append_entry, replace_entry and delete_entry name what changes and which sessionIndices prove it, and memctl assembles the authoritative [source: ...; added: ...] suffix, edits the target files without touching other bytes and links a new topic file under MEMORY.md ## Index itself. operations[] cannot be combined with files[] or newMemories[] (INVALID_ARGUMENT). The whole-file channel stays available: every newMemories[] candidate cites integer sessionIndices and its assembled line must appear verbatim in files[], and there memctl never adds index links. Both channels refuse a target whose parent directory does not exist (NOT_FOUND), an expired entry removed or replaced inside its 30-day hidden period (DELETION_DEFERRED) and any newly introduced dangling link or unreachable file (UNSUPPORTED). It never writes the memory repository: review the diff and apply through memctl dream --apply or the Web UI.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -178,7 +178,7 @@ func (s *Server) Tools() []Tool {
 					},
 					"newMemories": map[string]any{
 						"type":        "array",
-						"description": "New memory candidates, at most 30. A candidate is a source binding, not file content.",
+						"description": "Whole-file channel: new memory candidates, at most 30. A candidate is a source binding, not file content. Omit when using operations[].",
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -214,7 +214,7 @@ func (s *Server) Tools() []Tool {
 					},
 					"files": map[string]any{
 						"type":        "array",
-						"description": "The complete target files. This is the only source of proposal content.",
+						"description": "Whole-file channel: the complete target files. Omit when using operations[].",
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -236,13 +236,66 @@ func (s *Server) Tools() []Tool {
 							"additionalProperties": false,
 						},
 					},
+					"operations": map[string]any{
+						"type":        "array",
+						"description": "Structured changes, at most 30, applied by memctl to the prepare baseline. Cannot be combined with files[] or newMemories[]. replace_entry and delete_entry target one baseline entry by targetEntryId (the id from relatedExistingEntries) or by its exact targetRawLine.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"op": map[string]any{
+									"type":        "string",
+									"enum":        []string{"append_entry", "replace_entry", "delete_entry"},
+									"description": "append_entry adds one entry; replace_entry rewrites one entry with new metadata; delete_entry removes one entry.",
+								},
+								"path": map[string]any{
+									"type":        "string",
+									"description": "Repository-relative Markdown file. append_entry may name a new file whose parent directory exists.",
+								},
+								"heading": map[string]any{
+									"type":        "string",
+									"description": "append_entry only: section heading to append under; a missing section is created at the end of the file.",
+								},
+								"fact": map[string]any{
+									"type":        "string",
+									"description": "append_entry and replace_entry: one line, without a leading bullet or any [source:]/[added:] metadata.",
+								},
+								"until": map[string]any{
+									"type":        "string",
+									"description": "Optional YYYY-MM-DD expiry, not earlier than the cited sessions.",
+								},
+								"indexSummary": map[string]any{
+									"type":        "string",
+									"description": "append_entry only: summary written after the MEMORY.md index link when memctl adds one.",
+								},
+								"targetEntryId": map[string]any{
+									"type":        "string",
+									"description": "replace_entry and delete_entry: entry id from relatedExistingEntries.",
+								},
+								"targetRawLine": map[string]any{
+									"type":        "string",
+									"description": "replace_entry and delete_entry: the exact entry line of the baseline file.",
+								},
+								"reason": map[string]any{
+									"type":        "string",
+									"description": "delete_entry: short reason for the removal.",
+								},
+								"sessionIndices": map[string]any{
+									"type":        "array",
+									"description": "Indices into the prepare bundle sessions. Required for append_entry and replace_entry; optional for delete_entry.",
+									"items":       map[string]any{"type": "integer"},
+								},
+							},
+							"required":             []string{"op", "path"},
+							"additionalProperties": false,
+						},
+					},
 					"warnings": map[string]any{
 						"type":        "array",
 						"description": "Human-readable review notes carried onto the proposal.",
 						"items":       map[string]any{"type": "string"},
 					},
 				},
-				"required":             []string{"baseHead", "baseRevision", "newMemories", "files"},
+				"required":             []string{"baseHead", "baseRevision"},
 				"additionalProperties": false,
 			},
 		},
@@ -615,12 +668,13 @@ type dreamPrepareArgs struct {
 // dreamProposeArgs is the memory_dream_propose argument object. The candidate
 // and file shapes are the documented DreamProposeInput members.
 type dreamProposeArgs struct {
-	BundleID     string               `json:"bundleId"`
-	BaseHead     string               `json:"baseHead"`
-	BaseRevision string               `json:"baseRevision"`
-	NewMemories  []dream.NewCandidate `json:"newMemories"`
-	Files        []dream.ProposeFile  `json:"files"`
-	Warnings     []string             `json:"warnings"`
+	BundleID     string                 `json:"bundleId"`
+	BaseHead     string                 `json:"baseHead"`
+	BaseRevision string                 `json:"baseRevision"`
+	NewMemories  []dream.NewCandidate   `json:"newMemories"`
+	Files        []dream.ProposeFile    `json:"files"`
+	Operations   []dream.DreamOperation `json:"operations"`
+	Warnings     []string               `json:"warnings"`
 }
 
 // dreamPrepare returns the bundle the current agent organizes from. The session
@@ -674,6 +728,7 @@ func (s *Server) dreamPropose(ctx context.Context, params json.RawMessage) (Call
 		BaseRevision: args.BaseRevision,
 		NewMemories:  args.NewMemories,
 		Files:        args.Files,
+		Operations:   args.Operations,
 		Warnings:     args.Warnings,
 	})
 	if err != nil {

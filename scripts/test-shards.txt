@@ -155,3 +155,4 @@ TestPrepareSurvivesAFailingDeltaCoversX14 3
 TestT140AddAndMemoryAppend 1
 TestT141SnapshotReadAndProjectDashboardCoversI2b 4
 TestT142TokenizedBM25RelatedFilesAndTranscriptsCoversI3a 1
+TestT143StructuredOperationsDreamLoopCoversI3b 4

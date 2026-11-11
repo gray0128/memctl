@@ -414,20 +414,20 @@ P0 阶段不改变外部命令形态，专门修复 §2 已复现的数据丢失
    - 为 CLI `memctl entries`、HTTP `GET /api/v1/entries` 与 MCP `memory_entries` 增加可选 `--project <name>`（`project`）过滤参数（匹配 `notes/<name>.md`、`notes/<name>-*.md`、`MEMORY.md` `## Index` 的 `[project: <name>]` 关联文件或条目级 `[project: <name>]`）。
    - 新增可选 `--include-transcripts`（`includeTranscripts: true`）参数：当 `q != ""` 时，使用同一套内存分词器与多字段 BM25 评分器扫描本地 `cache/corpus/` 下最近 14 天（`corpus.CorpusStateTTL`）内的 `SessionDigest`（匹配用户提问、助手回复与工具签名，支持按 `--project` 与 `--agent` 过滤），返回最多 `MaxTranscriptHits = 10` 条 `TranscriptHitDTO`（`{agent, sessionId, project, cwdBase, updatedAt, turnIndex, snippet, score}`，`snippet` 上限 `MaxTranscriptSnippetBytes = 240` B 且经 `corpus.Redact` 兜底脱敏），直接补齐原文 Layer 1 的 **Transcript Search** 能力。
 
-#### 4.3.2 冻结远端轨道，升级本地 Dreaming 为「提炼 + 对照 Transcript 纠错 + 结构化组装」完整环路
+#### 4.3.2 冻结远端轨道，升级本地 Dreaming 为「提炼 + 对照 Transcript 纠错 + 结构化组装」（`I-3b` / `T143` 已完成）
 
 1. **收敛为单轨本地 Dreaming 为主**：
-   - 将远端 GitHub Actions 轨道（[`internal/dream/worker.go`](../internal/dream/worker.go)）标记为维护冻结状态（仅保留现有兼容，不在文档中作为首选推荐），集中维护拥有完整本地会话轨迹的 `--prepare` / `--propose` 轨道。
+   - 将远端 GitHub Actions 轨道（[`internal/dream/worker.go`](../internal/dream/worker.go)）在 `memctl dream` 中英双语帮助（[`internal/cli/help_data.go`](../internal/cli/help_data.go)）与契约文档中标记为维护冻结（maintenance-frozen）状态（完整保留 `D01`–`D05` 兼容，不再作为首选推荐），集中维护拥有完整本地会话轨迹与工具输出证据的 `--prepare` / `--propose` 轨道。
 2. **改进 `SessionDigest` 截断策略并保留有界工具结果证据（Bounded Tool Outcome）**：
-   - **头尾保留截断**：修改 [`truncateText`](../internal/corpus/digest.go)（第 149 - 159 行），当单回合助手或用户文本超过 `MaxTurnTextBytes`（1,024 B）时，不再只保留开头，而是改为**保留前 384 B + ` ... [truncated] ... ` + 后 640 B**，确保位于回合末尾的排障根因、验证结论与最终决策被完整保留。
-   - **保留失败或关键验证工具的输出摘要**：在保持单会话总预算 `MaxSessionDigestBytes = 16 KiB` 不变的前提下，扩展 [`Turn`](../internal/corpus/corpus.go) 结构体（当前 `Turn.Tools` 为 `[]string`，见第 45 - 49 行，签名串内含退出状态），新增有界字段 `ToolOutcomes []string`（单条上限 `256 B`，经 `Redact` 脱敏与可疑指令过滤）：当命令退出码非零（执行失败）或属于最后一步验证命令时，截取其标准错误或尾部关键输出行。这为离线 Dreaming 提供了证伪错误旧笔记的客观执行证据（对应原文 Figure 6 - 8 月见山实验）。
-   - **修复 Codex 大会话首行读取**：修改 [`openSessionStream`](../internal/corpus/source.go)（第 85 - 92 行），在截取超过 8 MiB 文件的尾部流之前，始终预先保留文件首行（`firstLine`），确保 [`sniffCodexFile`](../internal/corpus/backfill.go) 能正常解析 `session_meta` 中的项目 `cwd`。
+   - **头尾保留截断**：在 [`internal/corpus/digest.go`](../internal/corpus/digest.go) 新增 `truncateTurnText`（工具签名仍用原 `truncateText`），当单回合助手或用户文本超过 `MaxTurnTextBytes`（`1,024 B`）时，改为**保留前 `384 B` + `" ... [truncated] ... "`（`21 B`）+ 尾部最多 `619 B`**（均在完整 UTF-8 字符边界切分，总长严格 $\le 1,024\text{ B}$），确保位于回合末尾的排障根因、验证结论与最终决策被完整保留。
+   - **保留失败或关键验证工具的输出摘要**：在保持单会话总预算 `MaxSessionDigestBytes = 16 KiB` 不变的前提下，扩展 [`Turn`](../internal/corpus/corpus.go) 结构体新增 `ToolOutcomes []string`（`json:"toolOutcomes,omitempty"`，每回合上限 `MaxToolOutcomesPerTurn = 4`，单条上限 `MaxToolOutcomeBytes = 256`，实现在 [`internal/corpus/outcome.go`](../internal/corpus/outcome.go)）：在 `claude-code`、`codex`、`pi`/`omp`、`dsh`、`delta` 解析器中，当工具调用失败或属于回合内最后一条验证命令（`go test`/`go vet`/`go build`/`gofmt -l`/`make test`/`npm test`/`vitest`/`pytest`/`cargo test` 等）时，提取最多 3 行含错误标记的末尾行或输出尾部，生成 `<工具签名> -> failed|ok: <关键行>`，经 `Clean` + `Redact` 脱敏并在截断前后双向执行可疑指令检查（命中则整条丢弃）；当单会话超出 `16 KiB` 且仅剩纠正回合时，先从最早的回合起依次清空 `toolOutcomes`。
+   - **修复 Codex 大会话首行读取**：修改 [`openSessionStream`](../internal/corpus/source.go)，新增 `readFirstLine`（`MaxFirstLineBytes = 64 KiB`），在截取超过 `8 MiB`（`MaxBackfillFileBytes`）明文日志的尾部流之前预先读取文件首行，只要首行在截尾窗口前结束即拼接到截尾流前（仍标记 `truncated: true`），确保 [`sniffCodexFile`](../internal/corpus/backfill.go) 与补扫能正常解析 `session_meta` 中的项目 `cwd` 与会话 ID。
 3. **在 `DreamPrepareBundle` 中下发「待核验关联旧记忆（Contradiction & Drift Candidates）」**：
-   - `prepare` 阶段根据本批未消费 `SessionDigest` 的项目名 `cwdBase` 与高频词项，自动调用 P2 的分词检索器，从现有记忆库中召回 Top-N（如 20 条）相关联的已有条目，作为 `relatedExistingEntries` 随 `prepare` JSON 一并下发。
-   - 在 `prepare` 指引中明确要求 Agent 执行双向任务：① 从会话轨迹提炼新记忆；② **对照本次会话的排障折返记录与工具输出，检查 `relatedExistingEntries` 是否存在方位/参数错误或状态过时**，若有则生成修正动作。
-4. **在 `DreamProposeInput` 中支持结构化变更动作，废除手抄 `files[]` 摩擦**：
-   - 保留 `files[]` 供全文件重构使用，同时在 `propose` 输入中新增结构化动作列表 `operations[]`：支持 `append_entry`、`replace_entry`（指定原行或 `entryId`、新 `fact` 与 `sessionIndices`）、`delete_entry`（指定目标行与删除理由）。
-   - 由 Go 代码根据 `operations[]` 和 `sessionIndices` 自动拼装权威的 `[source: ...; added: ...]` 行，并在内存中完成对目标 Markdown 文件与 `MEMORY.md` 索引的无损组装与 `patchHash` 计算。这既消除了模型手抄元数据字符串一字之差即报 `INVALID_ARGUMENT` 的无谓重试，又在根源上堵住了手写 `files[]` 夹带伪造来源的漏洞。
+   - 新增 [`internal/dream/related.go`](../internal/dream/related.go)，在 `DreamPrepareBundle` 中新增 `RelatedExistingEntries []RelatedExistingEntry`（`json:"relatedExistingEntries,omitempty"`，上限 `MaxRelatedExistingEntries = 20`，含基线 `id`、`filePath`、`lineNumber`、`heading`、`factText`、`rawLine`、`addedDate`、`untilDate`）：根据本批未消费 `SessionDigest` 的项目名 `cwdBase`（权重 `3.0`，项目关联文件额外加 `+2.0`）与对话/`toolOutcomes` 的前 `24` 个信息量高频词项，调用 `internal/vault/search.go` 的 `ScoreMultiFieldDocs` 从基线未过期业务条目中召回关联旧记忆（排除 `MEMORY.md` `## Index` 导航行）。
+   - 在 `DreamPrepareBundle.Rules` 中新增 `Tasks []string`（`json:"tasks"`），明确要求 Agent 执行双向任务：① 从会话轨迹提炼新记忆（`append_entry`）；② **对照本次会话的排障路径、最终结论与 `toolOutcomes`，核验 `relatedExistingEntries` 是否存在错误事实或过时状态**（用 `replace_entry` 或 `delete_entry` 修正）；③ 优先使用 `operations[]`。
+4. **在 `DreamProposeInput` 中支持结构化变更动作，消除手抄 `files[]` 摩擦**：
+   - 新增 [`internal/dream/operations.go`](../internal/dream/operations.go)，保留 `files[]` + `newMemories[]` 供整文件重构使用，同时在 `DreamProposeInput` 与 MCP `memory_dream_propose` 中新增互斥的结构化动作列表 `operations []DreamOperation`（`json:"operations,omitempty"`，上限 `MaxProposeOperations = 30`）：支持 `append_entry`（必填 `path`、`fact`、`sessionIndices`，可选 `heading`、`until`、`indexSummary`）、`replace_entry`（必填 `path`、`fact`、`sessionIndices` 及 `targetEntryId` 或 `targetRawLine` 之一，可选 `until`）与 `delete_entry`（必填 `path` 及 `targetEntryId` 或 `targetRawLine` 之一，可选 `reason`、`sessionIndices`）。
+   - 由 Go 代码根据 `operations[]` 和 `sessionIndices` 自动拼装权威的 `[source: ...; added: ...]` 行，在内存中无损完成基线文件的行替换、行删除、按小节追加（或新建文件）及 `MEMORY.md` `## Index` 的同事务幂等补链，并统一执行差集守卫、父目录校验、30 天 `DELETION_DEFERRED` 删除窗口、断链/孤立文件校验与 `patchHash` 计算。
 
 ### 4.4 P3：块级条目模型、可选生命周期/验证状态元数据守卫与膨胀诊断
 

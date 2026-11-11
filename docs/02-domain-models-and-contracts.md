@@ -113,9 +113,9 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `syncer.Run` | 已持锁仓库上下文、deadline → `SyncSummary` | 上下文由 app 传入；不嵌套持锁，不反向依赖 app |
 | `app.Resolve` | 冲突 ID、阶段结果 → 状态或下一冲突 | 绑定指定重放阶段 |
 | `app.Revert` | 提交 hash、仓库基线 → `MutationResult` | 验证父提交数，失败保留恢复信息 |
-| `dream.Preview` | 模型提供商（`runner`）、固定基线 → 提案 ID | 触发远端 GitHub Actions 整理并拉取校验结果树；确认前不修改主仓库 |
-| `dream.PrepareLocal` | 项目过滤键、字节预算 → `DreamPrepareBundle` | 本地固定基线并返回记忆全文、静态诊断与未消费 `SessionDigest[]`；不校验远端或工作流前置条件 |
-| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 按 `prepare` 快照校验 `sessionIndices` 并拼装真实 `source`，与 `files[]` 逐字比对、执行 30 天删除闸门与链接校验后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
+| `dream.Preview` | 模型提供商（`runner`）、固定基线 → 提案 ID | 触发远端 GitHub Actions 整理（维护冻结，保留兼容）并拉取校验结果树；确认前不修改主仓库 |
+| `dream.PrepareLocal` | 项目过滤键、字节预算 → `DreamPrepareBundle` | 本地固定基线并返回记忆全文、静态诊断、未消费 `SessionDigest[]`、最多 20 条关联已有条目 `relatedExistingEntries` 与双向任务指引 `rules.tasks`；不校验远端或工作流前置条件 |
+| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 支持结构化 `operations[]`（`append_entry`、`replace_entry`、`delete_entry`，由服务端按 `sessionIndices` 拼装权威 `source`、无损组装目标文件并同事务幂等补齐 `MEMORY.md` 的 `## Index` 链接）或整文件 `files[]` + `newMemories[]`（互斥）；统一执行差集守卫、父目录校验、30 天删除闸门与链接校验后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
 | `dream.Store.List` | 分页上限 → `DreamProposal[]` | 按 `createdAt` 倒序列举已持久化提案；不返回内部应用输入 `planned` 与 `corpusDigests` |
 | `adapters.Plan` / `adapters.Apply` | 探测环境、agent → 安装计划 / 安装结果 | 每配置路径独立锁与基线校验；无法安全合并时给人工补丁，不写文件 |
 | `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案后执行受管事务 |

@@ -227,11 +227,11 @@ func (c Collector) finalizeTurn(turn Turn) (Turn, bool) {
 	if Suspicious(c.SuspiciousMatcher, turn.User) {
 		return Turn{}, false
 	}
-	user := truncateText(cleanAndRedact(turn.User), MaxTurnTextBytes)
+	user := truncateTurnText(cleanAndRedact(turn.User), MaxTurnTextBytes)
 	if Suspicious(c.SuspiciousMatcher, user) {
 		return Turn{}, false
 	}
-	assistant := truncateText(cleanAndRedact(turn.Assistant), MaxTurnTextBytes)
+	assistant := truncateTurnText(cleanAndRedact(turn.Assistant), MaxTurnTextBytes)
 	if Suspicious(c.SuspiciousMatcher, turn.Assistant, assistant) {
 		assistant = ""
 	}
@@ -250,13 +250,18 @@ func (c Collector) finalizeTurn(turn Turn) (Turn, bool) {
 		}
 	}
 	tools = keptTools
+	rawOutcomes := turn.ToolOutcomes
+	if turn.verifyOutcome != "" {
+		rawOutcomes = append(append([]string(nil), rawOutcomes...), turn.verifyOutcome)
+	}
+	outcomes := boundOutcomes(c.SuspiciousMatcher, rawOutcomes)
 	if user == "" && assistant == "" && len(tools) == 0 {
 		return Turn{}, false
 	}
 	if (turn.Assistant != "" || len(turn.Tools) > 0) && assistant == "" && len(tools) == 0 && !hasCorrectionSignal(user) {
 		return Turn{}, false
 	}
-	return Turn{User: user, Tools: tools, Assistant: assistant}, true
+	return Turn{User: user, Tools: tools, ToolOutcomes: outcomes, Assistant: assistant}, true
 }
 
 // addUser folds one user message into the pending turn. Consecutive user

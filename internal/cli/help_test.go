@@ -472,3 +472,25 @@ func TestHelpDoesNotTouchRepository(t *testing.T) {
 		}
 	}
 }
+
+// TestDreamHelpMarksRemoteTrackFrozenCoversT143 checks that the dream page
+// marks the GitHub Actions path as maintenance-frozen, recommends the local
+// prepare/propose path and documents the structured operations channel, in
+// both languages.
+func TestDreamHelpMarksRemoteTrackFrozenCoversT143(t *testing.T) {
+	for lang, wants := range map[string][]string{
+		"en": {"maintenance-frozen", "recommended", "operations", "append_entry", "replace_entry", "delete_entry", "relatedExistingEntries", "toolOutcomes"},
+		"zh": {"维护冻结", "推荐使用本地", "operations", "append_entry", "replace_entry", "delete_entry", "relatedExistingEntries", "toolOutcomes"},
+	} {
+		t.Setenv("MEMCTL_LANG", lang)
+		var stdout, stderr bytes.Buffer
+		if code := Run([]string{"help", "dream"}, strings.NewReader(""), &stdout, &stderr, "v-test"); code != ExitOK {
+			t.Fatalf("%s help dream exit code = %d (stderr=%q)", lang, code, stderr.String())
+		}
+		for _, want := range wants {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%s dream help lacks %q", lang, want)
+			}
+		}
+	}
+}

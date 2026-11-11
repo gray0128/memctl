@@ -175,6 +175,7 @@ func parseDelta(c Collector, r io.Reader) (parseInput, bool) {
 				}
 				if signature := deltaToolSignature(item); signature != "" {
 					pending.Tools = append(pending.Tools, signature)
+					deltaToolOutcome(pending, signature, item)
 				}
 			}
 			// agent_thought, external_edits and compaction are never kept:
@@ -211,6 +212,21 @@ func deltaItemTime(item map[string]json.RawMessage) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMilli(millis)
+}
+
+// deltaToolOutcome keeps a bounded outcome summary of a failed tool_call, or of
+// a completed verification command, from its rawOutput when that is text.
+func deltaToolOutcome(pending *Turn, signature string, item map[string]json.RawMessage) {
+	content, ok := objectField(item, "content")
+	if !ok {
+		return
+	}
+	status := strings.ToLower(stringField(content, "status"))
+	failed := status == "failed" || status == "error"
+	if !failed && status != "completed" {
+		return
+	}
+	recordOutcome(pending, signature, toolResultText(content["rawOutput"]), failed)
 }
 
 // deltaToolSignature renders one tool_call as a locator, never as output. The

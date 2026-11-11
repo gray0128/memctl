@@ -53,10 +53,21 @@ type ProjectRef struct {
 
 // Rules are the documented extraction rules returned with a bundle, so the
 // current agent and the user read the same limits the code enforces.
+// Tasks is the two-way task list of
+// docs/18-agent-memory-review-and-optimization.md section 4.3.2: distil new
+// memories, and check relatedExistingEntries against the sessions' evidence.
 type Rules struct {
-	EntryPointHintLines        int `json:"entryPointHintLines"`
-	DeletionGraceDays          int `json:"deletionGraceDays"`
-	ImplicitPreferenceSessions int `json:"implicitPreferenceMinSessions"`
+	EntryPointHintLines        int      `json:"entryPointHintLines"`
+	DeletionGraceDays          int      `json:"deletionGraceDays"`
+	ImplicitPreferenceSessions int      `json:"implicitPreferenceMinSessions"`
+	Tasks                      []string `json:"tasks"`
+}
+
+// prepareTasks is the documented two-way task list carried in every bundle.
+var prepareTasks = []string{
+	"Distil: extract durable, high-value new memories from the session digests and submit each as an append_entry operation that cites its sessionIndices; memctl assembles the [source: ...; added: ...] metadata.",
+	"Verify: compare the sessions' troubleshooting path, final conclusions and toolOutcomes against relatedExistingEntries; when an entry states a wrong fact or an outdated state, correct it with replace_entry (citing the sessionIndices that prove it) or remove it with delete_entry, targeting it by targetEntryId or targetRawLine.",
+	"Prefer operations[] over files[]: operations[] cannot be combined with files[] or newMemories[] in one proposal, and files[] remains for whole-file restructuring only.",
 }
 
 // BundleFinding is one static diagnosis candidate of the fixed baseline. It is
@@ -106,6 +117,9 @@ type DreamPrepareBundle struct {
 	Findings            []BundleFinding `json:"findings"`
 	Files               []BundleFile    `json:"files"`
 	Sessions            []BundleSession `json:"sessions"`
+	// RelatedExistingEntries are the unexpired baseline entries most related
+	// to Sessions, recalled for the verify task of Rules.Tasks.
+	RelatedExistingEntries []RelatedExistingEntry `json:"relatedExistingEntries,omitempty"`
 }
 
 // PrepareRequest is one local prepare call. Project selects a project by
@@ -146,7 +160,11 @@ type DreamProposeInput struct {
 	BaseRevision string         `json:"baseRevision"`
 	NewMemories  []NewCandidate `json:"newMemories"`
 	Files        []ProposeFile  `json:"files"`
-	Warnings     []string       `json:"warnings"`
+	// Operations is the structured alternative to files[] and newMemories[]:
+	// memctl assembles every target file itself. It cannot be combined with
+	// either of them. See operations.go.
+	Operations []DreamOperation `json:"operations,omitempty"`
+	Warnings   []string         `json:"warnings"`
 }
 
 // ProposeResult is the accepted proposal of one local propose call. It carries
@@ -218,10 +236,12 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 			EntryPointHintLines:        entryPointHintLines,
 			DeletionGraceDays:          deletionGraceDays,
 			ImplicitPreferenceSessions: implicitPreferenceMinSessions,
+			Tasks:                      append([]string(nil), prepareTasks...),
 		},
-		Findings: bundleFindings(base, s.timeNow()),
-		Files:    bundleFiles(base),
-		Sessions: sessions,
+		Findings:               bundleFindings(base, s.timeNow()),
+		Files:                  bundleFiles(base),
+		Sessions:               sessions,
+		RelatedExistingEntries: relatedExistingEntries(base, sessions, s.timeNow()),
 	}
 	if bundle.Files == nil {
 		bundle.Files = []BundleFile{}

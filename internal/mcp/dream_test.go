@@ -263,3 +263,67 @@ func TestDreamToolsRefuseWrongArgumentTypes(t *testing.T) {
 		t.Fatalf("a mistyped baseHead was accepted: %+v", rpcErr)
 	}
 }
+
+// TestDreamProposeForwardsOperationsCoversT143 checks the structured channel of
+// docs/18 section 4.3.2: the schema lists operations[] with its three ops and
+// no longer requires files[] or newMemories[], and every operation member
+// reaches the service unchanged.
+func TestDreamProposeForwardsOperationsCoversT143(t *testing.T) {
+	var schema map[string]any
+	for _, tool := range newTestServer(&fakeService{}).Tools() {
+		if tool.Name == "memory_dream_propose" {
+			schema, _ = tool.InputSchema.(map[string]any)
+		}
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	operations, ok := properties["operations"].(map[string]any)
+	if !ok {
+		t.Fatalf("memory_dream_propose schema has no operations: %+v", schema)
+	}
+	items, _ := operations["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	for _, field := range []string{"op", "path", "heading", "fact", "until", "indexSummary", "targetEntryId", "targetRawLine", "reason", "sessionIndices"} {
+		if _, ok := itemProps[field]; !ok {
+			t.Fatalf("operations items lack %q", field)
+		}
+	}
+	op, _ := itemProps["op"].(map[string]any)
+	if enum, _ := op["enum"].([]string); strings.Join(enum, ",") != "append_entry,replace_entry,delete_entry" {
+		t.Fatalf("op enum = %v", op["enum"])
+	}
+	if required, _ := schema["required"].([]string); strings.Join(required, ",") != "baseHead,baseRevision" {
+		t.Fatalf("required = %v, want only the baseline", required)
+	}
+
+	service := &fakeService{proposeResult: dream.ProposeResult{ProposalID: "dp-1", Status: "ready", Runner: "local-agent"}}
+	params := json.RawMessage(`{
+		"bundleId": "b1",
+		"baseHead": "abc123",
+		"baseRevision": "sha256:def",
+		"operations": [
+			{"op": "append_entry", "path": "notes/release.md", "heading": "Rules", "fact": "release by tag", "until": "2026-12-01", "indexSummary": "release", "sessionIndices": [0]},
+			{"op": "replace_entry", "path": "notes/db.md", "targetEntryId": "sha256:e1", "fact": "statement_timeout", "sessionIndices": [0, 1]},
+			{"op": "delete_entry", "path": "notes/db.md", "targetRawLine": "- old [source: x; added: 2026-01-01]", "reason": "moved"}
+		]
+	}`)
+	result, rpcErr := newTestServer(service).CallTool(context.Background(), "memory_dream_propose", params)
+	if rpcErr != nil || result.IsError {
+		t.Fatalf("unexpected failure: %v %+v", rpcErr, result)
+	}
+	input := service.proposeInputs[0]
+	if input.BundleID != "b1" || len(input.Operations) != 3 || len(input.Files) != 0 || len(input.NewMemories) != 0 {
+		t.Fatalf("input = %+v", input)
+	}
+	want := []dream.DreamOperation{
+		{Op: "append_entry", Path: "notes/release.md", Heading: "Rules", Fact: "release by tag", Until: "2026-12-01", IndexSummary: "release", SessionIndices: []int{0}},
+		{Op: "replace_entry", Path: "notes/db.md", TargetEntryID: "sha256:e1", Fact: "statement_timeout", SessionIndices: []int{0, 1}},
+		{Op: "delete_entry", Path: "notes/db.md", TargetRawLine: "- old [source: x; added: 2026-01-01]", Reason: "moved"},
+	}
+	for index, op := range input.Operations {
+		got, _ := json.Marshal(op)
+		expected, _ := json.Marshal(want[index])
+		if string(got) != string(expected) {
+			t.Fatalf("operations[%d] = %s, want %s", index, got, expected)
+		}
+	}
+}

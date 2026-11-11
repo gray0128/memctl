@@ -47,11 +47,29 @@ func fitTurns(d Digest) ([]Turn, error) {
 		}
 		index := trimIndex(turns)
 		if index < 0 {
+			// Every remaining turn carries a correction. Tool outcome
+			// summaries are supporting evidence, so they go first, oldest
+			// turn first, before the record is reported as unrepresentable.
+			if stripped := stripOldestOutcomes(turns); stripped {
+				continue
+			}
 			return nil, memerr.New(memerr.LimitExceeded,
 				"the session digest cannot fit in %d bytes", MaxSessionDigestBytes)
 		}
 		turns = append(turns[:index], turns[index+1:]...)
 	}
+}
+
+// stripOldestOutcomes drops the tool outcome summaries of the earliest turn
+// that has any. It reports false when no turn carries a summary.
+func stripOldestOutcomes(turns []Turn) bool {
+	for index := range turns {
+		if len(turns[index].ToolOutcomes) > 0 {
+			turns[index].ToolOutcomes = nil
+			return true
+		}
+	}
+	return false
 }
 
 // trimIndex picks the earliest turn without a correction signal. It returns -1
@@ -160,6 +178,43 @@ func truncateText(text string, limit int) string {
 
 // ellipsis marks a text that the collector cut.
 const ellipsis = "…"
+
+// Head-and-tail truncation of one user or assistant text, from
+// docs/18-agent-memory-review-and-optimization.md section 4.3.2. The end of a
+// turn carries the root cause, the verification result and the decision, so a
+// cut keeps both the opening context and the closing conclusion.
+const (
+	// turnHeadBytes is the opening part kept from an oversized turn text.
+	turnHeadBytes = 384
+	// turnTruncatedMarker joins the kept head and tail.
+	turnTruncatedMarker = " ... [truncated] ... "
+)
+
+// truncateTurnText bounds one turn text to limit bytes. An oversized text keeps
+// at most turnHeadBytes from its start, the marker, and as much of its end as
+// still fits, all on UTF-8 rune boundaries, so the result never exceeds limit.
+// A limit too small for a useful head and tail falls back to truncateText.
+func truncateTurnText(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= limit {
+		return text
+	}
+	tailBudget := limit - turnHeadBytes - len(turnTruncatedMarker)
+	if tailBudget < turnHeadBytes/2 {
+		return truncateText(text, limit)
+	}
+	headEnd := turnHeadBytes
+	for headEnd > 0 && !utf8.RuneStart(text[headEnd]) {
+		headEnd--
+	}
+	tailStart := len(text) - tailBudget
+	for tailStart < len(text) && !utf8.RuneStart(text[tailStart]) {
+		tailStart++
+	}
+	head := strings.TrimRight(text[:headEnd], " \t\r\n")
+	tail := strings.TrimLeft(text[tailStart:], " \t\r\n")
+	return head + turnTruncatedMarker + tail
+}
 
 // boundTools applies MaxToolsPerTurn and MaxToolTextBytes.
 func boundTools(tools []string) []string {

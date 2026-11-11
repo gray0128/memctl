@@ -14,6 +14,9 @@ func parseCodex(c Collector, r io.Reader) (parseInput, bool) {
 	out := parseInput{}
 	scanner := newLineScanner(r)
 	var pending *Turn
+	// signatures maps a call_id to its tool signature, so a later
+	// function_call_output outcome names the call it belongs to.
+	signatures := map[string]string{}
 	first := true
 	for scanner.scan() {
 		value, ok := decodeLine(scanner.text())
@@ -71,7 +74,17 @@ func parseCodex(c Collector, r io.Reader) (parseInput, bool) {
 				if pending == nil {
 					continue
 				}
-				pending.Tools = append(pending.Tools, codexToolSignature(payload))
+				signature := codexToolSignature(payload)
+				pending.Tools = append(pending.Tools, signature)
+				if id := stringField(payload, "call_id"); id != "" {
+					signatures[id] = signature
+				}
+			case "function_call_output", "custom_tool_call_output":
+				if pending == nil {
+					continue
+				}
+				text, failed := codexCallOutput(payload)
+				recordOutcome(pending, signatures[stringField(payload, "call_id")], text, failed)
 			}
 		case "event_msg":
 			payload, ok := objectField(value, "payload")

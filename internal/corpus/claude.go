@@ -19,6 +19,9 @@ func parseClaudeCode(c Collector, r io.Reader) (parseInput, bool) {
 	out := parseInput{}
 	scanner := newLineScanner(r)
 	var pending *Turn
+	// signatures maps a tool_use id to its signature, so a later tool_result
+	// outcome names the call it belongs to.
+	signatures := map[string]string{}
 	for scanner.scan() {
 		value, ok := decodeLine(scanner.text())
 		if !ok {
@@ -43,6 +46,7 @@ func parseClaudeCode(c Collector, r io.Reader) (parseInput, bool) {
 				continue
 			}
 			if isToolResultClaude(message) {
+				claudeToolOutcomes(pending, message, signatures)
 				continue
 			}
 			text := claudeText(message)
@@ -68,7 +72,11 @@ func parseClaudeCode(c Collector, r io.Reader) (parseInput, bool) {
 					case "text":
 						pending.Assistant = appendText(pending.Assistant, stringField(block, "text"))
 					case "tool_use":
-						pending.Tools = append(pending.Tools, claudeToolSignature(stringField(block, "name"), block))
+						signature := claudeToolSignature(stringField(block, "name"), block)
+						pending.Tools = append(pending.Tools, signature)
+						if id := stringField(block, "id"); id != "" {
+							signatures[id] = signature
+						}
 					}
 				}
 				continue
@@ -128,6 +136,27 @@ func isToolResultClaude(message map[string]json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+// claudeToolOutcomes records the outcome of every tool_result block of one
+// tool result envelope. Only a failed result (`is_error: true`) or the result
+// of a verification command is kept, as a bounded summary; see recordOutcome.
+func claudeToolOutcomes(pending *Turn, message map[string]json.RawMessage, signatures map[string]string) {
+	if pending == nil {
+		return
+	}
+	blocks, ok := arrayField(message, "content")
+	if !ok {
+		return
+	}
+	for _, raw := range blocks {
+		var block map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &block); err != nil || stringField(block, "type") != "tool_result" {
+			continue
+		}
+		label := signatures[stringField(block, "tool_use_id")]
+		recordOutcome(pending, label, toolResultText(block["content"]), isTrue(block, "is_error"))
+	}
 }
 
 // claudeToolSignature renders one tool_use block as

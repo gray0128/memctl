@@ -92,7 +92,7 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.3`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
-| 整理提案 | `dream --prepare`、`dream --propose`、`dream --list`、`dream --runner`、`dream --show`、`dream --apply`、`dream --init-workflow` | `--prepare`/`--propose`/`--list` 在当前会话内提炼跨会话记忆并生成或列出本地提案；`--runner` 推送 `dream/req` 触发 GitHub Actions 远端整理，拉取并校验结果树生成带固定 Diff 的提案；`--show` 查看提案，`--apply` 按受管事务应用，应用不重新调用模型 |
+| 整理提案 | `dream --prepare`、`dream --propose`、`dream --list`、`dream --runner`、`dream --show`、`dream --apply`、`dream --init-workflow` | 首选 `--prepare`/`--propose`/`--list` 在当前会话内提炼跨会话新记忆、对照会话轨迹与 `toolOutcomes` 核验 `relatedExistingEntries` 并通过结构化 `operations[]`（或 `files[]`）生成或列出本地提案；`--runner` 推送 `dream/req` 触发 GitHub Actions 远端整理（维护冻结，保留兼容）；`--show` 查看提案，`--apply` 按受管事务应用，应用不重新调用模型 |
 
 命令、参数、退出码与输出格式的权威定义见 [CLI 命令](./docs/04-ui-and-cli-specification.md#1-cli-命令)，HTTP 路由与错误码见 [REST 契约](./docs/02-domain-models-and-contracts.md#4-rest-契约)。以下行为细节同样以契约为准：
 

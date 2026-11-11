@@ -9,11 +9,12 @@ depends-on: [memctl-workflows, memctl-memory-lifecycle]
 
 # 11. 基于 GitHub Actions 的 Dreaming 远端整理方案
 
-> 状态：`G-1`–`G-4` 已实现（2026-10-19，`T082`、`T083`、`T086`）。真实 GitHub Actions 与 DeepSeek 端点已完成一次端到端运行（运行 39226384745）；带实际文件变更的提案应用与其余三家提供商尚未在真实环境验证。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`G-1`–`G-4` 已实现（2026-10-19，`T082`、`T083`、`T086`），自阶段 I 的 `I-3b`（2026-11-11，`T143`）起进入**维护冻结（maintenance-frozen）**状态：保留全部既有命令行、HTTP 接口与 `D01`–`D05` 兼容性，不再扩充新特性；由于远端运行器无法访问本机 `SessionDigest` 会话轨迹与工具输出摘要，日常跨会话提炼与对照轨迹纠错首选 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md) 的本地 `--prepare` / `--propose` 交互式整理轨道。真实 GitHub Actions 与 DeepSeek 端点已完成一次端到端运行（运行 39226384745）；带实际文件变更的提案应用与其余三家提供商尚未在真实环境验证。本文档定义基于 GitHub Actions 的 Dreaming 远端整理架构、Git 分支触发与回传协议、代码控制的多步结构化调用流程、内置模型提供商配置与验收矩阵。基础模型、写入事务与生命周期规则引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
-- 删除本地 CLI runner（`claude`、`codex`）及平台沙箱（macOS Seatbelt）执行路径，Dreaming 统一改为依托记忆仓库所在 GitHub 远端的 GitHub Actions 临时虚拟机执行。
+- **定位与维护冻结边界**：本远端轨道仅对已提交至记忆仓库的静态 Markdown 文件执行去重、到期清理与索引整理，无法读取本机 `SessionDigest` 会话轨迹；自 `I-3b`（`T143`）起标记为维护冻结，保留向后兼容，日常提炼与纠错优先使用 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md) 的本地 `--prepare` / `--propose` 轨道。
+- 删除本地 CLI runner（`claude`、`codex`）及平台沙箱（macOS Seatbelt）执行路径，远端 Dreaming 依托记忆仓库所在 GitHub 远端的 GitHub Actions 临时虚拟机执行。
 - 本地 `memctl` 不存储、不复制、不传递任何模型 API Key，也不新增云端服务鉴权凭据；触发整理与取回结果完全复用记忆仓库已授权的 Git 远端传输通道（SSH 或 HTTPS credential helper）。
 - 模型调用由运行在 GitHub Actions 内的 `memctl dream --worker` 以代码控制的有界多步结构化输出完成，不使用不可控的自主 bash Agent 循环：先由本地解析器与 `doctor` 规则提取静态候选，再按批次调用模型输出严格符合 JSON Schema 的文件变更，每步经代码守卫校验后落盘。
 - 内置 4 个模型提供商：`deepseek`、`minimax`、`openai`、`anthropic`。用户在仓库的 GitHub Actions Secrets 中配置对应 API Key，触发时通过 `--runner <provider>`（或 UI 下拉框）指定本次使用的提供商。

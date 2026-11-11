@@ -11,11 +11,15 @@ import (
 // dialogue arrives as `message` records whose `message.role` is user, assistant
 // or toolResult. pi writes the session record first, OMP writes a `title`
 // record before it, so the record is found by type rather than position.
-// Assistant thinking blocks and toolResult content are dropped.
+// Assistant thinking blocks are dropped; toolResult content is kept only as a
+// bounded outcome summary (see recordOutcome).
 func parsePi(c Collector, r io.Reader) (parseInput, bool) {
 	out := parseInput{}
 	scanner := newLineScanner(r)
 	var pending *Turn
+	// signatures maps a tool call id to its signature, so a later toolResult
+	// outcome names the call it belongs to.
+	signatures := map[string]string{}
 	for scanner.scan() {
 		value, ok := decodeLine(scanner.text())
 		if !ok {
@@ -60,11 +64,26 @@ func parsePi(c Collector, r io.Reader) (parseInput, bool) {
 				case "text":
 					pending.Assistant = appendText(pending.Assistant, stringField(block, "text"))
 				case "toolCall", "tool_call":
-					pending.Tools = append(pending.Tools, piToolSignature(stringField(block, "name"), block))
+					signature := piToolSignature(stringField(block, "name"), block)
+					pending.Tools = append(pending.Tools, signature)
+					if id := stringField(block, "id"); id != "" {
+						signatures[id] = signature
+					}
 				}
 				// A thinking block is the model's internal reasoning and is
 				// never kept.
 			}
+		case "toolResult":
+			// Tool output is kept only as a bounded outcome summary of a
+			// failed call or of a verification command.
+			if pending == nil {
+				continue
+			}
+			label := signatures[stringField(message, "toolCallId")]
+			if label == "" {
+				label = stringField(message, "toolName")
+			}
+			recordOutcome(pending, label, toolResultText(message["content"]), isTrue(message, "isError"))
 		}
 	}
 	if pending != nil {

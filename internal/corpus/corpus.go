@@ -32,6 +32,11 @@ const (
 	MaxToolsPerTurn = 5
 	// MaxToolTextBytes bounds one tool signature.
 	MaxToolTextBytes = 160
+	// MaxToolOutcomesPerTurn bounds the tool outcome summaries kept for one
+	// turn. The most recent summaries are kept first.
+	MaxToolOutcomesPerTurn = 4
+	// MaxToolOutcomeBytes bounds one tool outcome summary.
+	MaxToolOutcomeBytes = 256
 	// MaxSessionDigestBytes bounds one serialized digest.
 	MaxSessionDigestBytes = 16 << 10
 	// CorpusStateTTL is how long a digest stays in the cache after its last
@@ -41,11 +46,23 @@ const (
 
 // Turn is one distilled exchange. user and assistant hold redacted text only;
 // tools hold names, first command lines or root-relative paths plus an exit
-// status. Tool output and file content are never retained.
+// status. File content and full tool output are never retained: toolOutcomes
+// keeps at most MaxToolOutcomesPerTurn redacted summaries of a failed tool
+// call or of the turn's last verification command, each at most
+// MaxToolOutcomeBytes, so offline Dreaming can check an old memory against
+// what actually ran. See docs/18-agent-memory-review-and-optimization.md
+// section 4.3.2.
 type Turn struct {
-	User      string   `json:"user,omitempty"`
-	Tools     []string `json:"tools,omitempty"`
-	Assistant string   `json:"assistant,omitempty"`
+	User         string   `json:"user,omitempty"`
+	Tools        []string `json:"tools,omitempty"`
+	ToolOutcomes []string `json:"toolOutcomes,omitempty"`
+	Assistant    string   `json:"assistant,omitempty"`
+
+	// verifyOutcome is the raw summary of the latest successful verification
+	// command seen while the turn is being parsed. Only the last one matters,
+	// so each new one replaces the previous; finalizeTurn folds it into
+	// ToolOutcomes. It is never serialized.
+	verifyOutcome string
 }
 
 // Digest is the SessionDigest of docs/12-session-corpus-dreaming.md section

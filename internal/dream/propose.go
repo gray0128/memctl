@@ -68,13 +68,27 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 		return ProposeResult{}, err
 	}
 
-	accepted, warnings, err := s.acceptCandidates(input, snapshot, base)
-	if err != nil {
-		return ProposeResult{}, err
-	}
-	targets, err := assembleTargets(base, input.Files)
-	if err != nil {
-		return ProposeResult{}, err
+	// Two input channels build the same target tree. operations[] is
+	// assembled entirely by memctl; files[] plus newMemories[] is checked
+	// against the lines memctl assembles. Every guard below applies to both.
+	var accepted, cited []acceptedCandidate
+	var warnings []string
+	var targets map[string]workFile
+	if len(input.Operations) > 0 {
+		targets, accepted, cited, warnings, err = s.assembleOperations(input.Operations, snapshot, base)
+		if err != nil {
+			return ProposeResult{}, err
+		}
+	} else {
+		accepted, warnings, err = s.acceptCandidates(input, snapshot, base)
+		if err != nil {
+			return ProposeResult{}, err
+		}
+		targets, err = assembleTargets(base, input.Files)
+		if err != nil {
+			return ProposeResult{}, err
+		}
+		cited = accepted
 	}
 	if err := s.verifyAssembled(base, accepted, targets); err != nil {
 		return ProposeResult{}, err
@@ -100,7 +114,7 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 	}
 	if len(changes) == 0 {
 		return ProposeResult{}, memerr.New(memerr.InvalidArgument,
-			"the proposal changes no file; submit the assembled entries in files[]")
+			"the proposal changes no file; submit the assembled entries in files[] or as operations[]")
 	}
 	warnings = append(warnings, changeWarnings...)
 	warnings = append(warnings, input.Warnings...)
@@ -134,7 +148,7 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 			CreatedAt:            s.now(),
 		},
 		Planned:       plannedFiles(base, targets, changes),
-		CorpusDigests: s.consumableDigests(snapshot, accepted),
+		CorpusDigests: s.consumableDigests(snapshot, cited),
 	}
 	if err := s.store.Save(value); err != nil {
 		return ProposeResult{}, err
@@ -155,13 +169,16 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 // validateProposeShape enforces the documented per-input limits before any
 // repository access.
 func validateProposeShape(input DreamProposeInput) error {
+	if len(input.Operations) > 0 {
+		return validateOperationsShape(input)
+	}
 	if len(input.NewMemories) > MaxExtractedCandidates {
 		return memerr.New(memerr.LimitExceeded,
 			"the proposal extracts %d candidates; at most %d are accepted per proposal",
 			len(input.NewMemories), MaxExtractedCandidates)
 	}
 	if len(input.Files) == 0 {
-		return memerr.New(memerr.InvalidArgument, "files[] is required: it is the only source of proposal content")
+		return memerr.New(memerr.InvalidArgument, "files[] or operations[] is required: one of them is the source of proposal content")
 	}
 	for _, file := range input.Files {
 		if _, err := vault.ValidateRelPath(file.Path); err != nil {
@@ -191,6 +208,15 @@ func validateSessionIndices(input DreamProposeInput, count int) error {
 			if value < 0 || value >= count {
 				return memerr.New(memerr.InvalidArgument,
 					"newMemories[%d].sessionIndices contains %d, but the prepare bundle has %d session(s) indexed 0..%d",
+					index, value, count, count-1)
+			}
+		}
+	}
+	for index, op := range input.Operations {
+		for _, value := range op.SessionIndices {
+			if value < 0 || value >= count {
+				return memerr.New(memerr.InvalidArgument,
+					"operations[%d].sessionIndices contains %d, but the prepare bundle has %d session(s) indexed 0..%d",
 					index, value, count, count-1)
 			}
 		}

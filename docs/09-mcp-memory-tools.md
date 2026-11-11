@@ -116,8 +116,8 @@ Agent（模型）
 | --- | --- | --- | --- | --- |
 | `memory_read` | 读取记忆文件并返回修订标识与一跳图谱关联邻居（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired`，受管 Markdown 文件存在一跳关联邻居时附带 `relatedFiles` | `readOnlyHint: true`、`destructiveHint: false` |
 | `memory_entries` | 检索已解析条目、一跳图谱关联文件与近期会话轨迹，定位事实所在文件（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `q`、`file`、`project`、`includeTranscripts`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total`，存在关联邻居或轨迹命中时附带 `relatedFiles`、`transcriptHits` | `readOnlyHint: true`、`destructiveHint: false` |
-| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时生成内容哈希 `bundleId` 并把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H、`I-1b`） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB）、`sid?`（可选会话标识，服务器未固定 `--sid` 且环境无会话 ID 时用于刷新当前会话摘要，校验规则与 `memory_write` 一致） | `DreamPrepareBundle`（`bundleId`、`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） | 不声明（会改写 `cache/dream/prepare-<bundleId>.json` 与 `cache/dream/prepare.json` 快照） |
-| `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并对 `files[]` 新增业务条目行做来源差集守卫，再执行父目录、断链与孤立文件的结构守卫后持久化本地提案（阶段 H、`I-1b`） | `bundleId?`、`baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） | 不声明 |
+| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件、最多 12 个未消费 `SessionDigest[]`（含 `toolOutcomes`）与最多 20 条关联已有条目 `relatedExistingEntries`，同时生成内容哈希 `bundleId` 并把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H、`I-1b`、`I-3b`） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB）、`sid?`（可选会话标识，服务器未固定 `--sid` 且环境无会话 ID 时用于刷新当前会话摘要，校验规则与 `memory_write` 一致） | `DreamPrepareBundle`（`bundleId`、`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`、`relatedExistingEntries?`） | 不声明（会改写 `cache/dream/prepare-<bundleId>.json` 与 `cache/dream/prepare.json` 快照） |
+| `memory_dream_propose` | 校验当前 Agent 提交的结构化变更操作 `operations[]`（`append_entry`、`replace_entry`、`delete_entry`，由服务端按 `sessionIndices` 拼装真实 `source`、无损编辑基线文件并同事务幂等补齐 `MEMORY.md` 索引）或整文件 `files[]` + `newMemories[]`（两通道互斥），统一执行差集守卫、父目录、30 天删除窗口、断链与孤立文件守卫后持久化本地提案（阶段 H、`I-1b`、`I-3b`） | `bundleId?`、`baseHead`、`baseRevision`、`operations?`、`newMemories?`、`files?`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） | 不声明 |
 | `memory_write` | 以版本基线整文件受管写入一个文件（用于改写、删除或多段重构） | `path`、`base`、`content`、`sid?` | `transaction`、`commit`、`revision`、`sync` | 不声明 |
 | `memory_append` | 在仓库排他锁内向目标 Markdown 文件小节末尾追加单行记忆（无需预先传入 `fileRevision` 基线），由服务端拼装 `[source; added]`（及可选 `until`），并在 `path != "MEMORY.md"` 时同事务幂等维护 `MEMORY.md` 的 `## Index` 链接（`I-2a`） | `path`、`fact`、`heading?`、`until?`、`indexSummary?`、`sid?` | `transaction`、`commit`、`revision`、`sync`、`indexUpdated`、`entry` | 不声明 |
 
@@ -315,7 +315,7 @@ Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.
 
 ## 7. 实现边界
 
-已实现（`T071`、`T072`、`T102`、`T132`、`T140`、`T142`）：
+已实现（`T071`、`T072`、`T102`、`T132`、`T140`、`T142`、`T143`）：
 
 - `memctl mcp` 子命令、六个工具（`memory_read`、`memory_entries`、`memory_dream_prepare`、`memory_dream_propose`、`memory_write`、`memory_append`）、只读工具注解、协议处理与错误映射。
 - `internal/mcp` 包与对应单元、集成测试；`internal/mcp/probe.go` 提供 `M09` 的能力探测。

@@ -84,14 +84,53 @@ func openSessionStream(path string) (*sessionStream, error) {
 
 	if info.Size() > MaxBackfillFileBytes {
 		// Plain JSONL: keep the tail. The first line of the window is very
-		// likely partial, so the scanner discards it.
+		// likely partial, so the scanner discards it. The file's own first
+		// line is read before the seek and put in front of the tail: Codex
+		// writes its session_meta record (session id and cwd) there, and a
+		// large session would otherwise lose its project key. See
+		// docs/18-agent-memory-review-and-optimization.md section 4.3.2.
+		first := readFirstLine(file, info.Size()-MaxBackfillFileBytes)
 		if _, err := file.Seek(info.Size()-MaxBackfillFileBytes, io.SeekStart); err != nil {
 			file.Close()
 			return nil, err
 		}
-		return &sessionStream{reader: skipPartialLine(file), close: file.Close, truncated: true}, nil
+		var reader io.Reader = skipPartialLine(file)
+		if first != nil {
+			reader = io.MultiReader(bytes.NewReader(first), reader)
+		}
+		return &sessionStream{reader: reader, close: file.Close, truncated: true}, nil
 	}
 	return &sessionStream{reader: file, close: file.Close}, nil
+}
+
+// MaxFirstLineBytes bounds the leading line kept in front of a truncated
+// plain log. A longer first line is not a metadata record worth keeping and
+// is dropped like any other line outside the tail window.
+const MaxFirstLineBytes = 64 << 10
+
+// readFirstLine returns the file's first line with its newline when it is
+// complete within MaxFirstLineBytes and ends before tailStart, the offset where
+// the kept tail window begins. A first line that reaches into the window is
+// already covered by the tail's partial-line skip, so returning it would
+// duplicate it. The caller seeks afterwards, so the read offset is irrelevant.
+func readFirstLine(file *os.File, tailStart int64) []byte {
+	limit := int64(MaxFirstLineBytes)
+	if tailStart < limit {
+		limit = tailStart
+	}
+	if limit <= 0 {
+		return nil
+	}
+	buf := make([]byte, limit)
+	n, err := file.ReadAt(buf, 0)
+	if n <= 0 && err != nil {
+		return nil
+	}
+	index := bytes.IndexByte(buf[:n], '\n')
+	if index < 0 {
+		return nil
+	}
+	return append([]byte(nil), buf[:index+1]...)
 }
 
 // skipPartialLine drops the first line of a tail window. When the window

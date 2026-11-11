@@ -80,8 +80,9 @@ func parseDSH(c Collector, r io.Reader) (parseInput, bool) {
 			}
 			pending.Tools = append(pending.Tools, dshToolSignature(data))
 		case "tool/result":
-			// Tool output is never kept. An error result is still worth a
-			// signature so a debugging turn keeps its shape.
+			// Tool output is never kept in full. An error result is worth a
+			// signature so a debugging turn keeps its shape, plus a bounded
+			// outcome summary as evidence of what failed.
 			data, ok := objectField(value, "data")
 			if !ok {
 				continue
@@ -93,6 +94,7 @@ func parseDSH(c Collector, r io.Reader) (parseInput, bool) {
 			if pending == nil {
 				continue
 			}
+			recordOutcome(pending, lastToolSignature(pending), dshMessageText(message), true)
 			pending.Tools = append(pending.Tools, "tool result: error")
 		}
 	}
