@@ -18,12 +18,11 @@ import (
 // list, mirroring what the CLI wires at startup.
 func testCollector(t *testing.T) Collector {
 	t.Helper()
-	SetSuspiciousMatcher(func(text string) bool { return len(doctor.SuspiciousPhrases(text)) > 0 })
-	t.Cleanup(func() { SetSuspiciousMatcher(nil) })
 	return Collector{
-		Device: "testhost",
-		Cwd:    "/work/fallback",
-		Now:    func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) },
+		Device:            "testhost",
+		Cwd:               "/work/fallback",
+		SuspiciousMatcher: doctor.ContainsSuspiciousInstruction,
+		Now:               func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) },
 	}
 }
 
@@ -577,10 +576,16 @@ func TestResolveProjectRootCoversX11(t *testing.T) {
 			want:   project,
 		},
 		{
-			name:   "ordinary repository subdirectory is unchanged",
+			name:   "ordinary repository subdirectory collapses onto repository top",
 			cwd:    filepath.Join(project, "docs"),
 			output: filepath.Join(project, ".git") + "\n" + project + "\n",
-			want:   filepath.Join(project, "docs"),
+			want:   project,
+		},
+		{
+			name:   "linked git worktree collapses onto main repository root",
+			cwd:    filepath.Join(base, "wt-feature"),
+			output: filepath.Join(project, ".git") + "\n" + filepath.Join(base, "wt-feature") + "\n",
+			want:   project,
 		},
 		{
 			name:   "non-git directory is unchanged",

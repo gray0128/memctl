@@ -1,6 +1,7 @@
 package dream
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -45,9 +46,23 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 	// Session indices are resolved against the prepare snapshot, not against a
 	// freshly derived list: an index is only meaningful for the exact list the
 	// agent saw. A missing snapshot is the documented "prepare first" error.
-	snapshot, err := s.loadPrepare()
+	snapshot, err := s.loadPrepare(input.BundleID)
 	if err != nil {
 		return ProposeResult{}, err
+	}
+	if snapshot.BaseHead != "" && snapshot.BaseHead != head {
+		return ProposeResult{}, memerr.New(memerr.RevisionMismatch,
+			"the prepare bundle baseHead %s does not match current HEAD %s; run `memctl dream --prepare` again",
+			snapshot.BaseHead, head)
+	}
+	if input.BaseHead != "" && snapshot.BaseHead != "" && input.BaseHead != snapshot.BaseHead {
+		return ProposeResult{}, memerr.New(memerr.RevisionMismatch,
+			"input baseHead %s does not match prepare bundle baseHead %s; run `memctl dream --prepare` again",
+			input.BaseHead, snapshot.BaseHead)
+	}
+	if snapshot.BaseRevision != "" && snapshot.BaseRevision != revision {
+		return ProposeResult{}, memerr.New(memerr.RevisionMismatch,
+			"the prepare bundle baseRevision does not match the current repository revision; run `memctl dream --prepare` again")
 	}
 	if err := validateSessionIndices(input, len(snapshot.Sessions)); err != nil {
 		return ProposeResult{}, err
@@ -61,7 +76,7 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 	if err != nil {
 		return ProposeResult{}, err
 	}
-	if err := verifyAssembled(accepted, targets); err != nil {
+	if err := s.verifyAssembled(base, accepted, targets); err != nil {
 		return ProposeResult{}, err
 	}
 	// The remaining lifecycle guards of docs/12 section 2.3 step 3 reuse the
@@ -215,7 +230,7 @@ func (s *Service) acceptCandidates(input DreamProposeInput, snapshot prepareSnap
 				"newMemories[%d].fact must not carry source or added metadata; memctl assembles it from sessionIndices", index)
 		}
 		cleaned := corpus.Clean(fact)
-		if s.SuspiciousMatcher != nil && corpus.Suspicious(s.SuspiciousMatcher, cleaned) {
+		if corpus.Suspicious(s.suspiciousMatcher(), fact, cleaned) {
 			return nil, nil, memerr.New(memerr.InvalidArgument,
 				"newMemories[%d].fact carries a suspicious instruction pattern and is refused", index)
 		}
@@ -481,9 +496,13 @@ func assembleTargets(base *baseline, files []ProposeFile) (map[string]workFile, 
 }
 
 // verifyAssembled enforces that every accepted candidate line already appears
-// verbatim in the target file content the agent submitted. memctl never injects
-// the line itself: the proposal is exactly what the reviewer sees.
-func verifyAssembled(accepted []acceptedCandidate, targets map[string]workFile) error {
+// verbatim in the target file content the agent submitted, and that files[]
+// introduces no undeclared business memory bullets, forged [source: ...]
+// metadata, unredacted credentials, or suspicious instructions relative to the
+// baseline snapshot.
+func (s *Service) verifyAssembled(base *baseline, accepted []acceptedCandidate, targets map[string]workFile) error {
+	acceptedByPath := make(map[string]map[string]bool, len(accepted))
+	acceptedLines := make(map[string]bool, len(accepted))
 	for _, candidate := range accepted {
 		if candidate.path == "" {
 			return memerr.New(memerr.InvalidArgument,
@@ -499,8 +518,132 @@ func verifyAssembled(accepted []acceptedCandidate, targets map[string]workFile) 
 				"files[] %q does not contain the assembled entry line %q verbatim; add it to that file's content",
 				candidate.path, candidate.line)
 		}
+		if acceptedByPath[candidate.path] == nil {
+			acceptedByPath[candidate.path] = make(map[string]bool)
+		}
+		trimmed := strings.TrimRight(candidate.line, " \t\r")
+		acceptedByPath[candidate.path][trimmed] = true
+		acceptedLines[trimmed] = true
+	}
+
+	baselineRawEntries := make(map[string]bool)
+	baselineLinesByFile := make(map[string]map[string]bool, len(base.files))
+	baselineAllLines := make(map[string]bool)
+	baselineFacts := knownFacts(base)
+	baselineSources := make(map[string]bool)
+	for rel, file := range base.files {
+		parsed := vault.ParseFile(rel, file.revision, file.content)
+		lineSet := make(map[string]bool, len(parsed.Lines))
+		for _, line := range parsed.Lines {
+			trimmed := strings.TrimRight(line.Text, " \t\r")
+			lineSet[trimmed] = true
+			baselineAllLines[trimmed] = true
+		}
+		baselineLinesByFile[rel] = lineSet
+		for _, entry := range parsed.Entries {
+			baselineRawEntries[strings.TrimRight(entry.RawLine, " \t\r")] = true
+			for _, meta := range entry.Metadata {
+				if meta.Key == "source" {
+					baselineSources[meta.Value] = true
+				}
+			}
+		}
+	}
+
+	matcher := s.suspiciousMatcher()
+	paths := make([]string, 0, len(targets))
+	for rel := range targets {
+		paths = append(paths, rel)
+	}
+	sort.Strings(paths)
+
+	for _, rel := range paths {
+		target := targets[rel]
+		if baseFile, existed := base.files[rel]; existed && bytes.Equal(baseFile.content, target.content) {
+			continue
+		}
+		parsed := vault.ParseFile(rel, "", target.content)
+		baseLines := baselineLinesByFile[rel]
+		for _, line := range parsed.Lines {
+			trimmed := strings.TrimRight(line.Text, " \t\r")
+			if trimmed == "" || (baseLines != nil && baseLines[trimmed]) || baselineAllLines[trimmed] {
+				continue
+			}
+			cleaned := corpus.Clean(trimmed)
+			if corpus.Suspicious(matcher, trimmed, cleaned) {
+				return memerr.New(memerr.InvalidArgument,
+					"files[] %q introduces a suspicious instruction line %q and is refused", rel, trimmed)
+			}
+			if !acceptedLines[trimmed] && corpus.Redact(cleaned) != cleaned {
+				return memerr.New(memerr.InvalidArgument,
+					"files[] %q introduces an unredacted credential in line %q and is refused", rel, trimmed)
+			}
+		}
+
+		for _, entry := range parsed.Entries {
+			raw := strings.TrimRight(entry.RawLine, " \t\r")
+			if baselineRawEntries[raw] {
+				continue
+			}
+			if acceptedByPath[rel] != nil && acceptedByPath[rel][raw] {
+				continue
+			}
+			if entryCarriesProvenance(entry, raw) {
+				if isBaselineDeduplicatedEntry(entry, baselineFacts, baselineSources) {
+					continue
+				}
+				return memerr.New(memerr.InvalidArgument,
+					"files[] %q contains an undeclared or forged provenance entry %q; declare new memories in newMemories[] with sessionIndices",
+					rel, raw)
+			}
+			if isAllowedIndexOrNavigationEntry(rel, entry) {
+				continue
+			}
+			return memerr.New(memerr.InvalidArgument,
+				"files[] %q contains an undeclared business memory entry %q; declare new memories in newMemories[] with sessionIndices",
+				rel, raw)
+		}
 	}
 	return nil
+}
+
+func entryCarriesProvenance(entry vault.MemoryEntry, raw string) bool {
+	if strings.Contains(raw, "[source:") || strings.Contains(raw, "[added:") {
+		return true
+	}
+	for _, meta := range entry.Metadata {
+		if meta.Key == "source" || meta.Key == "added" {
+			return true
+		}
+	}
+	return false
+}
+
+func isBaselineDeduplicatedEntry(entry vault.MemoryEntry, baselineFacts, baselineSources map[string]bool) bool {
+	key := normalizeFact(entry.FactText)
+	if key == "" || !baselineFacts[key] {
+		return false
+	}
+	sawSource := false
+	for _, meta := range entry.Metadata {
+		if meta.Key == "source" {
+			sawSource = true
+			if !baselineSources[meta.Value] {
+				return false
+			}
+		}
+	}
+	return sawSource
+}
+
+func isAllowedIndexOrNavigationEntry(rel string, entry vault.MemoryEntry) bool {
+	if strings.Contains(entry.FactText, "[[") && strings.Contains(entry.FactText, "]]") {
+		return true
+	}
+	if rel == vault.EntryPointName && strings.EqualFold(entry.Heading, "Index") && strings.HasPrefix(entry.FactText, "filler line ") {
+		return true
+	}
+	return false
 }
 
 // containsLine reports whether text holds line as one complete line.
@@ -532,9 +675,17 @@ func (s *Service) consumableDigests(snapshot prepareSnapshot, accepted []accepte
 		if !ok || !cited[session.SessionID] {
 			continue
 		}
+		file := digest.File
+		if file == "" {
+			file = cache.Path(session.Agent, session.SessionID)
+		}
+		revision := digest.Revision
+		if revision == "" {
+			revision = digestRevision(cache, session.Agent, session.SessionID)
+		}
 		digests = append(digests, CorpusDigest{
-			File:     cache.Path(session.Agent, session.SessionID),
-			Revision: digestRevision(cache, session.Agent, session.SessionID),
+			File:     file,
+			Revision: revision,
 		})
 	}
 	return digests

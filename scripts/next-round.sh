@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 为下一轮开发启动一个新的独立 Agent 会话。
+# 校验下一轮交接提示词与 Git 同步前置条件，或为下一轮开发启动一个新的独立 Agent 会话。
 #
-# 契约：docs/06-development-loop.md 第 6 节「接续的执行机制」。
-# 本脚本校验接续前置条件和交接提示词结构，然后按 orca-cli 完全交接（Full Handoff）规范
-# 调用 orca terminal create + wait (tui-idle) + send 启动新会话并投递交接提示词。
+# 契约：docs/06-development-loop.md 第 6 节「交接与中断」及 6.1 节「接续的执行机制」。
+# 使用 --check-only 时仅校验四要素与 Git 同步状态并输出宿主无关启动示例，不查找也不调用 orca；
+# 未传 --check-only 时保留 Orca 终端创建、等待与提示词投递兼容分支。
 # 本脚本不生成交接提示词，也不能强制旧会话停止开发。
 set -euo pipefail
 
@@ -18,7 +18,7 @@ usage() {
 	cat <<'EOF'
 用法：scripts/next-round.sh (--prompt <text> | --prompt-file <path>) [选项]
 
-在当前 Orca 工作区启动一个全新的 Agent 会话，接续下一轮开发。
+校验下一轮交接提示词四要素与 Git 同步前置条件，或启动全新的 Agent 会话接续下一轮开发。
 
 交接提示词（二选一，必需）：
   --prompt <text>          交接提示词正文
@@ -28,6 +28,7 @@ usage() {
   有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标
 
 选项：
+  --check-only             仅校验交接提示词四要素与 Git 同步状态（配合 --dry-run 时跳过 Git 检查），打印回执与宿主无关启动示例后退出，不查找也不调用 orca
   --agent <id>             Agent 标识，默认 pi
   --worktree <selector>    工作区选择器，默认 active，即当前目录所属的 Orca 工作区
   --model <id>             模型标识，拼入 Agent 启动命令
@@ -36,7 +37,7 @@ usage() {
   --terminal <handle>      重放提示词投递时指定的目标终端句柄（需与 --retry-request 同用）
   --retry-request <id>     用 requestId 在已创建终端上重放同一次提示词投递，不新建终端
   --retry-launch <id>      --retry-request 的兼容别名（需与 --terminal 同用）
-  --dry-run                只打印将执行的命令参数，不启动会话，不检查接续前置条件
+  --dry-run                只打印将执行的命令参数（或配合 --check-only 跳过 Git 状态检查），不启动会话，不检查接续前置条件
   -h, --help               显示本说明
 EOF
 }
@@ -169,9 +170,14 @@ focus=0
 terminal_handle=
 retry_request=
 dry_run=0
+check_only=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--check-only)
+		check_only=1
+		shift
+		;;
 	--prompt)
 		prompt_text="${2:-}"
 		shift 2 || die "参数 --prompt 缺少取值"
@@ -268,6 +274,19 @@ if [ -z "$retry_request" ] && [ "$dry_run" = 0 ]; then
 	upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
 	[ -n "$upstream" ] || die "当前分支没有上游分支：先推送本轮变更"
 	[ "$(git rev-parse HEAD)" = "$(git rev-parse "$upstream")" ] || die "HEAD 与 $upstream 不一致：先推送本轮变更"
+fi
+
+if [ "$check_only" = 1 ]; then
+	prompt_ref="${prompt_file:-/tmp/next-round.md}"
+	if [ "$dry_run" = 1 ]; then
+		git_check_state="skipped(dry-run)"
+	else
+		git_check_state="clean-and-synced"
+	fi
+	printf '接续前置检查通过：mode=check-only, sections=4/4, git=%s\n' "$git_check_state"
+	printf '宿主无关新会话启动示例：agy -i "$(cat %s)"\n' "$(quote_sh_arg "$prompt_ref")"
+	printf '接续前置检查通过回执：mode=check-only, sections=4/4, git=%s。可在支持子智能体隔离的宿主中按轮次串行委派全新独立上下文子智能体，或在新终端执行：agy -i "$(cat %s)"\n' "$git_check_state" "$(quote_sh_arg "$prompt_ref")" >&2
+	exit 0
 fi
 
 # Orca 可执行文件按 orca-cli Skill 的解析顺序确定。

@@ -79,7 +79,7 @@ func parseAntigravity(c Collector, r io.Reader) (parseInput, bool) {
 		}
 	}
 	if pending != nil {
-		if turn, ok := c.finalizeTurn(suspiciousMatcher, *pending); ok {
+		if turn, ok := c.finalizeTurn(*pending); ok {
 			out.turns = append(out.turns, turn)
 		}
 	}
@@ -103,20 +103,30 @@ func antigravityUserText(content string) string {
 // transcript has no session metadata line, so this tool argument is the only
 // project hint the record carries.
 func antigravityCwd(value map[string]json.RawMessage) string {
-	calls, ok := arrayField(value, "tool_calls")
-	if !ok {
-		return ""
+	if calls, ok := arrayField(value, "tool_calls"); ok {
+		for _, raw := range calls {
+			var call map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &call); err != nil {
+				continue
+			}
+			if stringField(call, "name") != "run_command" {
+				continue
+			}
+			if args, ok := objectField(call, "args"); ok {
+				if cwd := antigravityArg(args, "Cwd"); cwd != "" && !IsHostConfigDir(cwd) {
+					return cwd
+				}
+			}
+		}
 	}
-	for _, raw := range calls {
-		var call map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &call); err != nil {
-			continue
-		}
-		if stringField(call, "name") != "run_command" {
-			continue
-		}
-		if args, ok := objectField(call, "args"); ok {
-			if cwd := antigravityArg(args, "Cwd"); cwd != "" {
+	if content := stringField(value, "content"); content != "" {
+		const marker = "Command Working Directory:"
+		if idx := strings.Index(content, marker); idx >= 0 {
+			rest := content[idx+len(marker):]
+			if end := strings.IndexAny(rest, "\r\n<"); end >= 0 {
+				rest = rest[:end]
+			}
+			if cwd := strings.TrimSpace(rest); cwd != "" && !IsHostConfigDir(cwd) {
 				return cwd
 			}
 		}

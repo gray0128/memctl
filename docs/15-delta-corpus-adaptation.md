@@ -97,19 +97,21 @@ git -C "$cwd" rev-parse --path-format=absolute --git-common-dir --show-toplevel
 | --- | --- |
 | `<repo>/.delta/clones/<id>/<repo>.git` | 截断到 `/.delta/clones/` 之前 |
 | `<repo>/.delta/worktrees/<id>/<repo>` | 截断到 `/.delta/worktrees/` 之前 |
-| 两条都不命中（普通仓库、子目录、非 Delta 工作树） | 返回入参 |
+| 普通 `git worktree`（`filepath.Base(common) == ".git"`） | 返回主仓库根目录 `filepath.Dir(common)`（`I-1b` 扩展） |
+| 普通 Git 仓库或子目录 | 返回仓库顶层目录 `top`（`I-1b` 扩展） |
 | 命令失败（非 Git 目录、无 `git` 可执行文件） | 返回入参 |
 | 截断后的候选路径不存在 | 返回入参（防止仓库名里恰好包含 `.delta/worktrees/` 这类字面量） |
 | Git 输出不是两行 | 返回入参（接口形状变了就不能只拿一半去拼） |
 
-实现签名为 `ResolveProjectRoot(ctx, run, cwd) string`：`run` 是 Git 调用，传入 `git.Run` 即用系统 Git，传入桩函数即可单测；Delta 采集器不另建一条 Git 调用路径。
+实现签名为 `ResolveProjectRoot(ctx, run, cwd) string`：`run` 是 Git 调用，传入 `git.Run` 即用系统 Git，传入桩函数即可单测；Delta 采集器不另建一条 Git 调用路径。`ResolveProjectRoot` 与 `CwdKey` 均通过 `evalSymlinksSafe` 解析真实存在的软链接前缀，消除外置卷或目录软链接造成的 `cwdKey` 分叉，同时对单测中不存在的合成路径安全回退 `filepath.Clean`。
 
 单次调用取两个值，实测 0.01–0.02 秒，`X11` 的单元测试断言每个分支只调用一次。
 
 | 样本 | `--git-common-dir` | `--show-toplevel` | 归一化结果 |
 | --- | --- | --- | --- |
 | 原仓库 | `.git` | `…/github/memctl` | `…/github/memctl`（恒等） |
-| 原仓库子目录 `docs` | `../.git` 或绝对 `…/github/memctl/.git` | `…/github/memctl` | `…/github/memctl/docs`（恒等） |
+| 原仓库子目录 `docs` | `../.git` 或绝对 `…/github/memctl/.git` | `…/github/memctl` | `…/github/memctl`（归一化至仓库顶层） |
+| 普通 `git worktree` | `…/github/memctl/.git` | `…/worktrees/memctl-wt` | `…/github/memctl`（归一化至主仓库根） |
 | 线程 `vt74q90bpvrv` | `…/.delta/clones/vt74q90bpvrv/memctl.git` | `…/.delta/worktrees/vt74q90bpvrv/memctl` | `…/github/memctl` |
 | 线程 `eh1c2q2xgcqy` | `…/.delta/clones/eh1c2q2xgcqy/memctl.git` | `…/.delta/worktrees/eh1c2q2xgcqy/memctl` | `…/github/memctl` |
 | 线程 `vdrckw4etm5k`（`task-box`） | `…/.delta/clones/vdrckw4etm5k/task-box.git` | `…/.delta/worktrees/vdrckw4etm5k/task-box` | `…/cnb/task-box` |
@@ -119,12 +121,12 @@ git -C "$cwd" rev-parse --path-format=absolute --git-common-dir --show-toplevel
 
 ### 3.2 调用点
 
-`ResolveProjectRoot` 只作用在**由进程 cwd 推导项目键**的入口，不作用于日志自带的 `cwd`：
+`ResolveProjectRoot` 作用在 `dream --prepare`、实时采集与 Hook payload 工作目录归一化入口：
 
 | 入口 | 现状 | 改动 |
 | --- | --- | --- |
 | `dream --prepare` / `memory_dream_prepare` | `PrepareLocal` 用 `os.Getwd()` 或 `req.Cwd` 直接算 `CwdKey` | 先过 `ResolveProjectRoot` |
-| `sync` / `end` 的实时采集 | 日志 `cwd` 优先，缺失时用进程 cwd | 回退值先过 `ResolveProjectRoot`；日志自带 `cwd` 保持原样 |
+| `sync` / `end` 的实时采集 | 日志 `cwd` 优先，缺失时用进程 cwd | 传入或回退的 `cwd` 先过 `ResolveProjectRoot`；当 Hook payload 携带有效非配置目录 `cwd`（非 `~/.gemini/config` 等宿主配置目录）时，以归一化后的 payload `cwd` 覆盖解析器内部回退值 |
 | `corpus.Backfill` | 用 `req.Cwd` 算 `CwdKey` 并预过滤目录名 | 入参由 `PrepareLocal` 归一化后的值提供，自身不再改 |
 
 副作用边界：日志自带 `cwd` 的宿主（`claude-code`、`codex`、`pi`、`dsh`、`codebuddy`、`workbuddy`、`antigravity`）行为不变，因为它们的日志记的就是项目根；只有「日志没有 `cwd`、退回进程 cwd」这条路径会看到归一化结果。

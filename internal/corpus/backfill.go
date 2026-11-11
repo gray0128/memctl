@@ -48,6 +48,9 @@ type BackfillRequest struct {
 	// WroteMemory reports whether a session already produced a commit with
 	// its trailer. It is optional; a nil callback records false.
 	WroteMemory func(sid string) bool
+	// Named matcher for prompt-injection phrases; injected explicitly by the
+	// caller (normally doctor.ContainsSuspiciousInstruction).
+	SuspiciousMatcher func(string) bool
 	// Now is the injectable clock.
 	Now func() time.Time
 	// Budget overrides BackfillBudget. Zero keeps the documented constant;
@@ -98,7 +101,12 @@ func Backfill(cache *Cache, req BackfillRequest) BackfillResult {
 		return candidates[i].mtime.After(candidates[j].mtime)
 	})
 
-	collector := Collector{Device: req.Device, Cwd: req.Cwd, Now: now}
+	collector := Collector{
+		Device:            req.Device,
+		Cwd:               req.Cwd,
+		SuspiciousMatcher: req.SuspiciousMatcher,
+		Now:               now,
+	}
 	for _, candidate := range candidates {
 		if result.Files >= MaxBackfillFilesPerRun || expired() {
 			result.TimedOut = expired()
@@ -354,30 +362,34 @@ func sniffAntigravityStore(home, cwdKey string, sweep *sweep) []candidate {
 	if sweep.expired() {
 		return nil
 	}
-	root := filepath.Join(home, filepath.FromSlash(".gemini/antigravity/brain"))
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
 	var out []candidate
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	seen := make(map[string]bool)
+	for _, store := range antigravityBrainDirs {
+		root := filepath.Join(home, filepath.FromSlash(store))
+		entries, err := os.ReadDir(root)
+		if err != nil {
 			continue
 		}
-		path := filepath.Join(root, entry.Name(), ".system_generated", "logs", "transcript.jsonl")
-		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.ModTime().Before(sweep.cutoff()) {
-			continue
+		for _, entry := range entries {
+			if !entry.IsDir() || seen[entry.Name()] {
+				continue
+			}
+			path := filepath.Join(root, entry.Name(), ".system_generated", "logs", "transcript.jsonl")
+			info, err := os.Lstat(path)
+			if err != nil || !info.Mode().IsRegular() || info.ModTime().Before(sweep.cutoff()) {
+				continue
+			}
+			if sweep.expired() {
+				return out
+			}
+			cwd, _ := sniffAntigravityFile(path)
+			if cwd == "" || CwdKey(cwd) != cwdKey {
+				sweep.result.SkippedProject++
+				continue
+			}
+			seen[entry.Name()] = true
+			out = append(out, candidate{agent: "antigravity", path: path, sid: entry.Name(), mtime: info.ModTime()})
 		}
-		if sweep.expired() {
-			return out
-		}
-		cwd, _ := sniffAntigravityFile(path)
-		if cwd == "" || CwdKey(cwd) != cwdKey {
-			sweep.result.SkippedProject++
-			continue
-		}
-		out = append(out, candidate{agent: "antigravity", path: path, sid: entry.Name(), mtime: info.ModTime()})
 	}
 	return out
 }

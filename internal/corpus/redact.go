@@ -51,20 +51,89 @@ type credentialRule struct {
 }
 
 var credentialRules = []credentialRule{
-	// Common token prefixes.
+	// Common cloud, platform and model token prefixes.
 	{regexp.MustCompile(`sk-[A-Za-z0-9_-]{16,}`), redacted},
 	{regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}`), redacted},
 	{regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`), redacted},
+	{regexp.MustCompile(`glpat-[A-Za-z0-9_-]{16,}`), redacted},
+	{regexp.MustCompile(`hf_[A-Za-z0-9]{16,}`), redacted},
+	{regexp.MustCompile(`npm_[A-Za-z0-9]{16,}`), redacted},
 	{regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`), redacted},
-	{regexp.MustCompile(`AKIA[0-9A-Z]{16}`), redacted},
+	{regexp.MustCompile(`(?:AKIA|ASIA)[0-9A-Z]{16}`), redacted},
+	{regexp.MustCompile(`AKID[0-9A-Za-z]{16,36}`), redacted},
+	{regexp.MustCompile(`LTAI[0-9A-Za-z]{12,30}`), redacted},
 	{regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`), redacted},
-	// JWT and long bearer strings.
+	// JWT and Authorization / Bearer / Basic headers.
 	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), redacted},
-	{regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}`), "Bearer " + redacted},
-	// Key/value assignments: keep the key, redact the value.
-	{regexp.MustCompile(`(?i)(api[_-]?key|secret|password|passwd|access[_-]?token|refresh[_-]?token|private[_-]?key|authorization)(\s*[:=]\s*)["']?[^\s"',;]+`), "${1}${2}" + redacted},
-	// Credentials embedded in a URL.
-	{regexp.MustCompile(`(https?://)[^/\s:@]+:[^/\s:@]+@`), "${1}" + redacted + "@"},
+	{regexp.MustCompile(`(?i)(["']?\bauthorization["']?\s*[:=]\s*["']?(?:basic|bearer|token|digest)\s+)[A-Za-z0-9._~+/=-]{4,}["']?`), "${1}" + redacted},
+	{regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}`), "Bearer " + redacted},
+	{regexp.MustCompile(`(?i)\bbasic\s+[A-Za-z0-9+/=]{12,}`), "Basic " + redacted},
+	{regexp.MustCompile(`(?i)(["']?\bauthorization["']?\s*[:=]\s*)(?:"[^"\r\n]{6,}"|'[^'\r\n]{6,}'|[A-Za-z0-9._~+/=-]{8,})`), "${1}" + redacted},
+	// Chinese credential labels.
+	{regexp.MustCompile(`(密码|口令|密钥|令牌)(\s*[:=：]\s*)(?:"[^"\r\n]{4,}"|'[^'\r\n]{4,}'|[^\s"',;，；。})\]]{4,})`), "${1}${2}" + redacted},
+	// Credentials embedded in a URL (`scheme://user:pass@host`).
+	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]+:[^/\s:@]+@`), "${1}" + redacted + "@"},
+}
+
+// genericKVPattern matches JSON or plain key/value assignments whose key name
+// carries a credential-like stem (`token`, `secret`, `key`, `password`,
+// `passwd`, `pwd`). Benign words and short/placeholder values are filtered by
+// redactGenericKV.
+var genericKVPattern = regexp.MustCompile(`(?i)(["']?\b[a-z0-9_.-]*(?:token|secret|key|passw(?:or)?d|pwd)[a-z0-9_.-]*\b["']?\s*[:=]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}\]]+)`)
+
+var benignKeyNames = map[string]bool{
+	"monkey": true, "donkey": true, "turkey": true, "hotkey": true, "hot_key": true,
+	"turnkey": true, "keyboard": true, "keypad": true, "keychain": true, "keynote": true,
+	"keystroke": true, "keyword": true, "keywords": true, "keymap": true, "keyframe": true,
+	"keybinding": true, "keybindings": true,
+	"cwdkey": true, "cwd_key": true, "primary_key": true, "primarykey": true,
+	"foreign_key": true, "foreignkey": true, "sort_key": true, "sortkey": true,
+	"partition_key": true, "partitionkey": true, "cache_key": true, "cachekey": true,
+	"public_key": true, "publickey": true, "pubkey": true, "ssh_public_key": true,
+	"host_key": true, "label_key": true, "tag_key": true, "meta_key": true,
+	"config_key": true, "setting_key": true, "index_key": true, "group_key": true,
+	"order_key": true, "filter_key": true, "search_key": true, "lookup_key": true,
+	"state_key": true, "storage_key": true, "query_key": true, "header_key": true,
+	"param_key": true, "field_key": true, "property_key": true, "item_key": true,
+	"node_key": true, "edge_key": true, "page_key": true, "tab_key": true,
+	"shortcut_key": true, "routing_key": true, "routingkey": true, "file_key": true, "filekey": true,
+	"max_tokens": true, "maxtokens": true, "max_output_tokens": true, "maxoutputtokens": true,
+	"max_completion_tokens": true, "input_tokens": true, "inputtokens": true,
+	"output_tokens": true, "outputtokens": true, "total_tokens": true, "totaltokens": true,
+	"prompt_tokens": true, "completion_tokens": true, "cache_read_tokens": true,
+	"cache_creation_tokens": true, "cached_tokens": true, "reasoning_tokens": true,
+	"token_count": true, "tokencount": true, "token_limit": true, "tokenlimit": true,
+}
+
+var benignLiteralValues = map[string]bool{
+	"true": true, "false": true, "null": true, "nil": true, "none": true,
+	"undefined": true, "empty": true, "redacted": true, "[redacted]": true,
+}
+
+func redactGenericKV(text string) string {
+	return genericKVPattern.ReplaceAllStringFunc(text, func(match string) string {
+		sub := genericKVPattern.FindStringSubmatch(match)
+		if len(sub) != 3 {
+			return match
+		}
+		prefix, rawVal := sub[1], sub[2]
+		keyName := strings.ToLower(strings.Trim(strings.TrimRight(prefix, " \t:="), "\"'"))
+		if benignKeyNames[keyName] || strings.HasSuffix(keyName, "_tokens") || strings.HasSuffix(keyName, "tokens") {
+			return match
+		}
+		val := strings.TrimSpace(strings.Trim(rawVal, "\"'"))
+		if val == "" || strings.Contains(val, redacted) || benignLiteralValues[strings.ToLower(val)] {
+			return match
+		}
+		minLen := 6
+		if strings.Contains(keyName, "passw") || strings.Contains(keyName, "pwd") {
+			minLen = 4
+		}
+		if len(val) < minLen {
+			return match
+		}
+		return prefix + redacted
+	})
 }
 
 // Clean removes the documented system and injection blocks and the redundant
@@ -96,7 +165,7 @@ func Redact(text string) string {
 	for _, rule := range credentialRules {
 		text = rule.pattern.ReplaceAllString(text, rule.replacement)
 	}
-	return text
+	return redactGenericKV(text)
 }
 
 // Suspicious reports whether one turn carries a prompt-injection pattern. The
@@ -108,9 +177,36 @@ func Suspicious(matcher func(string) bool, texts ...string) bool {
 		return false
 	}
 	for _, text := range texts {
-		if text != "" && matcher(text) {
+		if text == "" {
+			continue
+		}
+		if matcher(text) {
+			return true
+		}
+		if normalized := normalizeSuspiciousInput(text); normalized != "" && normalized != text && matcher(normalized) {
 			return true
 		}
 	}
 	return false
+}
+
+// normalizeSuspiciousInput folds fullwidth ASCII runes, strips zero-width
+// characters and collapses consecutive whitespace using the standard library.
+func normalizeSuspiciousInput(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch {
+		case r == '\u200B' || r == '\u200C' || r == '\u200D' || r == '\u200E' || r == '\u200F' ||
+			r == '\u2060' || r == '\uFEFF' || r == '\u00AD':
+			continue
+		case r == '\u3000':
+			b.WriteByte(' ')
+		case r >= 0xFF01 && r <= 0xFF5E:
+			b.WriteRune(r - 0xFEE0)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
 }

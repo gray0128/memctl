@@ -13,7 +13,7 @@ import (
 // suspiciousMatcher adapts the doctor prompt-injection detector to the corpus
 // and Dreaming screening callbacks, so the phrase list has one owner.
 func suspiciousMatcher() func(string) bool {
-	return func(text string) bool { return len(doctor.SuspiciousPhrases(text)) > 0 }
+	return doctor.ContainsSuspiciousInstruction
 }
 
 // Dreaming is the explicit, user-triggered memory-organization workflow of

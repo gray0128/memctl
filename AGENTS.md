@@ -16,15 +16,16 @@
 
 支持 MCP 的 Agent 可通过 `codegraph serve --mcp` 与 `zg server --stdio` 接入各自的 MCP 配置，获得原生工具调用。
 
-## 跨会话接续（Orca 宿主的启动入口）
+## 跨会话与轮次接续
 
-本项目当前在 Orca 工作区中开发。本轮验证通过、台账已更新且变更已提交推送后，用 `scripts/next-round.sh` 在当前工作区启动下一轮会话。规则、四要素交接要求与失败处置见 [接续的执行机制](docs/06-development-loop.md#61-接续的执行机制)。
+本轮验证通过、台账已更新且变更已提交推送后，先用 `scripts/next-round.sh --check-only` 校验交接提示词四要素与远端同步状态。规则、四要素交接要求与失败处置见 [接续的执行机制](docs/06-development-loop.md#61-接续的执行机制)。
 
 ```bash
-scripts/next-round.sh --prompt-file /tmp/next-round.md
+scripts/next-round.sh --check-only --prompt-file /tmp/next-round.md
 ```
 
-- 脚本在启动前校验两项前置条件：交接提示词以 Markdown 标题或加粗行给出「有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标」四个小节；工作树干净且 `HEAD` 与上游一致。任一不满足时拒绝启动，退出码 `1`。
-- 需要指定模型或切换标签页时追加 `--model <id>`、`--effort <level>`、`--focus`；只查看将执行的命令时追加 `--dry-run`。
-- 启动成功后，本轮会话立即停止开发，只向用户报告结果。脚本无法强制这一点。
-- 启动失败时保留交接提示词；若终端已创建但提示词投递结果未知，读取输出中的终端句柄与 `requestId`（或 `orchestrationRequestId`），用 `--terminal <handle> --retry-request <id>` 重放同一次提示词投递，不重复创建终端，也不在本轮会话开始第二轮任务。
+- 脚本校验两项前置条件：交接提示词以 Markdown 标题或加粗行给出「有效规则与边界、本轮结果与证据、剩余事项与依赖、下一轮目标」四个小节；工作树干净且 `HEAD` 与上游分支一致（追加 `--dry-run` 时仅校验提示词结构，跳过 Git 状态检查）。任一不满足时返回退出码 `1`，全程不查找也不调用 `orca` 可执行文件。
+- 前置检查通过后，按当前宿主环境选择以下任一宿主无关方式推进下一轮（严禁在同一上下文窗口内直接叠加两轮开发任务，避免并行修改）：
+  1. 在支持子智能体上下文隔离的宿主中，由轻量主会话按轮次串行委派全新独立上下文的子智能体读取 `/tmp/next-round.md` 推进下一轮，本轮子智能体在任务完成后立即销毁；
+  2. 在新终端直接启动独立新会话（如执行 `agy -i "$(cat /tmp/next-round.md)"`），当前会话立即停止开发，只向用户报告本轮结果；
+  3. 若在 Orca 工作区中使用终端自动交接，可不带 `--check-only` 调用 `scripts/next-round.sh --prompt-file /tmp/next-round.md`（支持 `--model <id>`、`--effort <level>`、`--focus` 及失败后用 `--terminal <handle> --retry-request <id>` 重放同一次提示词投递）。

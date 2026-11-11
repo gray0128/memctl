@@ -19,6 +19,14 @@ type Collector struct {
 	// Cwd is the current working directory used for the default project key
 	// when a log carries no directory of its own.
 	Cwd string
+	// OverrideCwd forces Cwd to take precedence over the log's own directory
+	// when the caller received an authoritative working directory from the Hook
+	// payload.
+	OverrideCwd bool
+	// SuspiciousMatcher reports whether a text fragment carries a prompt
+	// injection phrase. Callers inject doctor.ContainsSuspiciousInstruction
+	// explicitly so no package-level mutable state is shared.
+	SuspiciousMatcher func(string) bool
 	// Now is the injectable clock.
 	Now func() time.Time
 }
@@ -39,11 +47,6 @@ type parseInput struct {
 	// message carries this session's trailer.
 	wroteMemory bool
 }
-
-// suspiciousMatcher is the doctor SUSPICIOUS_INSTRUCTION pattern reused so the
-// two surfaces cannot drift apart. It is assigned by the package that owns the
-// pattern list.
-var suspiciousMatcher func(string) bool
 
 // parseFunc reads one host log stream.
 type parseFunc func(c Collector, r io.Reader) (parseInput, bool)
@@ -107,9 +110,15 @@ func (c Collector) digestFrom(agent, fallbackSID string, parsed parseInput) (Dig
 		return Digest{}, false
 	}
 	cwd := parsed.cwd
-	if cwd == "" {
-		cwd = c.Cwd
+	if (c.OverrideCwd && c.Cwd != "") || cwd == "" || IsHostConfigDir(cwd) {
+		if c.Cwd != "" {
+			cwd = c.Cwd
+		}
 	}
+	if IsHostConfigDir(cwd) {
+		return Digest{}, false
+	}
+	cwd = evalSymlinksSafe(cwd)
 	now := c.now()
 	return Digest{
 		SchemaVersion:     SchemaVersion,
@@ -214,14 +223,37 @@ func newestTime(current, candidate time.Time) time.Time {
 
 // finalizeTurn applies cleaning, redaction and dropping to one candidate turn.
 // It returns false when nothing keepable is left or the turn is suspicious.
-func (c Collector) finalizeTurn(suspicious func(string) bool, turn Turn) (Turn, bool) {
-	user := truncateText(cleanAndRedact(turn.User), MaxTurnTextBytes)
-	assistant := truncateText(cleanAndRedact(turn.Assistant), MaxTurnTextBytes)
-	tools := boundTools(turn.Tools)
-	if Suspicious(suspicious, user, assistant) {
+func (c Collector) finalizeTurn(turn Turn) (Turn, bool) {
+	if Suspicious(c.SuspiciousMatcher, turn.User) {
 		return Turn{}, false
 	}
+	user := truncateText(cleanAndRedact(turn.User), MaxTurnTextBytes)
+	if Suspicious(c.SuspiciousMatcher, user) {
+		return Turn{}, false
+	}
+	assistant := truncateText(cleanAndRedact(turn.Assistant), MaxTurnTextBytes)
+	if Suspicious(c.SuspiciousMatcher, turn.Assistant, assistant) {
+		assistant = ""
+	}
+	var cleanTools []string
+	for _, tool := range turn.Tools {
+		if Suspicious(c.SuspiciousMatcher, tool, singleLine(tool)) {
+			continue
+		}
+		cleanTools = append(cleanTools, tool)
+	}
+	tools := boundTools(cleanTools)
+	var keptTools []string
+	for _, tool := range tools {
+		if !Suspicious(c.SuspiciousMatcher, tool) {
+			keptTools = append(keptTools, tool)
+		}
+	}
+	tools = keptTools
 	if user == "" && assistant == "" && len(tools) == 0 {
+		return Turn{}, false
+	}
+	if (turn.Assistant != "" || len(turn.Tools) > 0) && assistant == "" && len(tools) == 0 && !hasCorrectionSignal(user) {
 		return Turn{}, false
 	}
 	return Turn{User: user, Tools: tools, Assistant: assistant}, true
@@ -238,7 +270,7 @@ func (c Collector) addUser(pending **Turn, out *parseInput, text string) {
 		return
 	}
 	if *pending != nil {
-		if turn, ok := c.finalizeTurn(suspiciousMatcher, **pending); ok {
+		if turn, ok := c.finalizeTurn(**pending); ok {
 			out.turns = append(out.turns, turn)
 		}
 	}
@@ -249,10 +281,4 @@ func (c Collector) addUser(pending **Turn, out *parseInput, text string) {
 // guard use, so the two paths cannot diverge.
 func cleanAndRedact(text string) string {
 	return Redact(Clean(text))
-}
-
-// SetSuspiciousMatcher installs the platform's prompt-injection detector. The
-// doctor package owns the phrase list; the CLI wires it once at startup.
-func SetSuspiciousMatcher(matcher func(string) bool) {
-	suspiciousMatcher = matcher
 }

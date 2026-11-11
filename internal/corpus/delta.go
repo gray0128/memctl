@@ -47,6 +47,9 @@ type DeltaRequest struct {
 	Cwd string
 	// Device is the source-tag device segment.
 	Device string
+	// SuspiciousMatcher reports whether a text fragment carries a prompt
+	// injection phrase.
+	SuspiciousMatcher func(string) bool
 	// Now is the injectable clock.
 	Now func() time.Time
 }
@@ -72,7 +75,12 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 	// A bounded reader records whether the digest saw the whole thread, so a
 	// partial read is marked instead of being treated as a complete session.
 	bounded := &cappedReader{reader: stream, limit: MaxDeltaStreamBytes}
-	collector := Collector{Device: req.Device, Cwd: req.Cwd, Now: req.Now}
+	collector := Collector{
+		Device:            req.Device,
+		Cwd:               req.Cwd,
+		SuspiciousMatcher: req.SuspiciousMatcher,
+		Now:               req.Now,
+	}
 	parsed, ok := parseDelta(collector, bounded)
 	if !ok || bounded.hit || !parsed.sawEnd {
 		// A cut-short stream is not saved: caching it would make the next run
@@ -84,6 +92,9 @@ func CollectDelta(ctx context.Context, run DeltaRunner, cache *Cache, req DeltaR
 	digest, ok := collector.digestFrom("delta", req.ThreadID, parsed)
 	if !ok {
 		return Digest{}, false, nil
+	}
+	if existing, found := cache.Load(digest.Agent, digest.SessionID); found {
+		digest = mergeExistingDigest(existing, digest)
 	}
 	if err := cache.Save(digest); err != nil {
 		return digest, false, err
@@ -113,7 +124,7 @@ func parseDelta(c Collector, r io.Reader) (parseInput, bool) {
 		if best != "" {
 			pending.Assistant = best
 		}
-		if turn, ok := c.finalizeTurn(suspiciousMatcher, *pending); ok {
+		if turn, ok := c.finalizeTurn(*pending); ok {
 			out.turns = append(out.turns, turn)
 		}
 		pending, best = nil, ""

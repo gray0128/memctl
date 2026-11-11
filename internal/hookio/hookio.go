@@ -42,6 +42,10 @@ var transcriptKeys = []string{"transcript_path", "transcriptPath"}
 // message for this turn.
 var assistantKeys = []string{"last_assistant_message", "lastAssistantMessage"}
 
+// cwdKeys are the payload keys that carry the host's working directory for this
+// session.
+var cwdKeys = []string{"cwd", "workingDirectory", "working_directory"}
+
 // Input is the session identity subset of a Hook payload.
 type Input struct {
 	// SID is the first non-empty session id found in the payload.
@@ -50,6 +54,8 @@ type Input struct {
 	TranscriptPath string
 	// LastAssistantMessage is the host's final assistant text for this turn.
 	LastAssistantMessage string
+	// Cwd is the host's working directory for this session, when present.
+	Cwd string
 	// Present reports whether non-empty input was consumed.
 	Present bool
 }
@@ -85,6 +91,11 @@ func ReadInput(r io.Reader) (Input, error) {
 		return Input{}, err
 	} else {
 		in.LastAssistantMessage = value
+	}
+	if value, err := firstStringField(fields, cwdKeys); err != nil {
+		return Input{}, err
+	} else {
+		in.Cwd = value
 	}
 	for _, key := range sessionIDKeys {
 		raw, ok := fields[key]

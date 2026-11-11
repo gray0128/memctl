@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gray0128/memctl/internal/corpus"
+	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
@@ -94,6 +95,7 @@ type BundleSession struct {
 // DreamPrepareBundle is the prepare output of
 // docs/12-session-corpus-dreaming.md section 2.3 step 1.
 type DreamPrepareBundle struct {
+	BundleID            string          `json:"bundleId"`
 	Today               string          `json:"today"`
 	BaseHead            string          `json:"baseHead"`
 	BaseRevision        string          `json:"baseRevision"`
@@ -139,6 +141,7 @@ type ProposeFile struct {
 // DreamProposeInput is the structured proposal input of
 // docs/12-session-corpus-dreaming.md section 2.3 step 2.
 type DreamProposeInput struct {
+	BundleID     string         `json:"bundleId,omitempty"`
 	BaseHead     string         `json:"baseHead"`
 	BaseRevision string         `json:"baseRevision"`
 	NewMemories  []NewCandidate `json:"newMemories"`
@@ -189,10 +192,11 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 		refreshCurrentSession(ctx, s, req, cwd)
 		cache := s.corpusCache()
 		corpus.Backfill(cache, corpus.BackfillRequest{
-			Cwd:         cwd,
-			Device:      req.Device,
-			WroteMemory: s.wroteMemory,
-			Now:         s.timeNow,
+			Cwd:               cwd,
+			Device:            req.Device,
+			WroteMemory:       s.wroteMemory,
+			SuspiciousMatcher: s.suspiciousMatcher(),
+			Now:               s.timeNow,
 		})
 		cache.Prune(s.timeNow(), s.proposalExists)
 	}
@@ -201,7 +205,9 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 	if err != nil {
 		return DreamPrepareBundle{}, err
 	}
+	bundleID := computeBundleID(head, revision, sessions, digests)
 	bundle := DreamPrepareBundle{
+		BundleID:            bundleID,
 		Today:               s.timeNow().UTC().Format("2006-01-02"),
 		BaseHead:            head,
 		BaseRevision:        revision,
@@ -227,6 +233,7 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 	// write is not fatal: propose then reports "run prepare again" instead of
 	// silently resolving indices against another bundle.
 	s.savePrepare(prepareSnapshot{
+		BundleID:     bundleID,
 		BaseHead:     head,
 		BaseRevision: revision,
 		Sessions:     sessions,
@@ -287,12 +294,14 @@ func refreshCurrentSession(ctx context.Context, s *Service, req PrepareRequest, 
 // failure of either path yields ok=false and no error: prepare reports the
 // bundle it already has.
 func collectCurrentSession(ctx context.Context, s *Service, req PrepareRequest, cwd string) (corpus.Digest, bool) {
+	matcher := s.suspiciousMatcher()
 	if req.Agent == "delta" {
 		digest, ok, err := corpus.CollectDelta(ctx, s.deltaRunner(), s.corpusCache(), corpus.DeltaRequest{
-			ThreadID: req.SID,
-			Cwd:      cwd,
-			Device:   req.Device,
-			Now:      s.timeNow,
+			ThreadID:          req.SID,
+			Cwd:               cwd,
+			Device:            req.Device,
+			SuspiciousMatcher: matcher,
+			Now:               s.timeNow,
 		})
 		if err != nil || !ok {
 			return corpus.Digest{}, false
@@ -303,14 +312,27 @@ func collectCurrentSession(ctx context.Context, s *Service, req PrepareRequest, 
 	if path == "" {
 		return corpus.Digest{}, false
 	}
-	writer := corpus.Writer{Cache: s.corpusCache(), Now: s.timeNow}
+	writer := corpus.Writer{
+		Cache:             s.corpusCache(),
+		SuspiciousMatcher: matcher,
+		Now:               s.timeNow,
+	}
 	return writer.Collect(corpus.RealTimeRequest{
-		Agent:          req.Agent,
-		SID:            req.SID,
-		TranscriptPath: path,
-		Cwd:            cwd,
-		Device:         req.Device,
+		Agent:             req.Agent,
+		SID:               req.SID,
+		TranscriptPath:    path,
+		Cwd:               cwd,
+		Device:            req.Device,
+		SuspiciousMatcher: matcher,
+		Now:               s.timeNow,
 	})
+}
+
+func (s *Service) suspiciousMatcher() func(string) bool {
+	if s.SuspiciousMatcher != nil {
+		return s.SuspiciousMatcher
+	}
+	return doctor.ContainsSuspiciousInstruction
 }
 
 // selectSessions picks the unconsumed digests of one bundle in the documented
@@ -322,8 +344,14 @@ func (s *Service) selectSessions(req PrepareRequest, cwdKey string) ([]BundleSes
 	all := cache.List()
 	unconsumed := make([]corpus.Digest, 0, len(all))
 	for _, digest := range all {
-		if digest.ConsumedBy != "" || len(digest.Turns) == 0 {
+		if len(digest.Turns) == 0 {
 			continue
+		}
+		if digest.ConsumedBy != "" {
+			if digest.ConsumedTurns <= 0 || len(digest.Turns) <= digest.ConsumedTurns {
+				continue
+			}
+			digest.Turns = append([]corpus.Turn(nil), digest.Turns[digest.ConsumedTurns:]...)
 		}
 		unconsumed = append(unconsumed, digest)
 	}

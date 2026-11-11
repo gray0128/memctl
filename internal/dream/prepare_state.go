@@ -1,27 +1,34 @@
 package dream
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/gray0128/memctl/internal/memerr"
 )
 
-// This file persists the last local prepare bundle. `propose` receives integer
-// session indices, and an index is only meaningful against the exact list the
-// agent saw; re-deriving the list at propose time would shift every index when
-// the selection order differs (another working directory, one more collected
-// session). The snapshot holds session metadata and digest revisions only, no
-// memory content, and lives under the rebuildable cache root next to the digests
-// it points at.
+// This file persists local prepare bundles. `propose` receives integer session
+// indices, and an index is only meaningful against the exact list the agent
+// saw; re-deriving the list at propose time would shift every index when the
+// selection order differs (another working directory, one more collected
+// session). Each prepare writes a content-addressed `prepare-<bundleId>.json`
+// snapshot (retaining the 5 most recent bundles) and also updates
+// `prepare.json` as the backward-compatible fallback when `bundleId` is not
+// supplied.
 
-// prepareSnapshot is the on-disk form of the last prepare bundle. A newer
-// prepare supersedes it: the documented flow is one prepare followed by one
-// propose in the same agent turn.
+const maxRetainedPrepareBundles = 5
+
+// prepareSnapshot is the on-disk form of a prepare bundle.
 type prepareSnapshot struct {
+	BundleID     string          `json:"bundleId,omitempty"`
 	BaseHead     string          `json:"baseHead"`
 	BaseRevision string          `json:"baseRevision"`
 	Sessions     []BundleSession `json:"sessions"`
@@ -29,9 +36,45 @@ type prepareSnapshot struct {
 	CreatedAt    string          `json:"createdAt"`
 }
 
-// preparePath is the snapshot file of one repository.
+func computeBundleID(head, revision string, sessions []BundleSession, digests []CorpusDigest) string {
+	h := sha256.New()
+	_, _ = h.Write([]byte(head + "\x00" + revision + "\x00"))
+	for _, session := range sessions {
+		_, _ = h.Write([]byte(session.Agent + "\x00" + session.SessionID + "\x00" + session.SourceTag + "\x00" + session.Date + "\x00" + session.CwdKey + "\x00"))
+		for _, turn := range session.Turns {
+			_, _ = h.Write([]byte(turn.User + "\x00" + turn.Assistant + "\x00"))
+		}
+	}
+	for _, digest := range digests {
+		_, _ = h.Write([]byte(digest.File + "\x00" + digest.Revision + "\x00"))
+	}
+	sum := h.Sum(nil)
+	return "pb-" + hex.EncodeToString(sum[:8])
+}
+
+func (s *Service) prepareDir() string {
+	return filepath.Join(s.Source.StateDir, "repos", trimRepoPrefix(s.Source.RepoID), "cache", "dream")
+}
+
+// preparePath is the default snapshot file of one repository.
 func (s *Service) preparePath() string {
-	return filepath.Join(s.Source.StateDir, "repos", trimRepoPrefix(s.Source.RepoID), "cache", "dream", "prepare.json")
+	return filepath.Join(s.prepareDir(), "prepare.json")
+}
+
+func (s *Service) prepareBundlePath(bundleID string) string {
+	return filepath.Join(s.prepareDir(), "prepare-"+bundleID+".json")
+}
+
+func isValidBundleID(bundleID string) bool {
+	if bundleID == "" || strings.ContainsAny(bundleID, "/\\") || strings.Contains(bundleID, "..") {
+		return false
+	}
+	for _, r := range bundleID {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // savePrepare records the snapshot a following propose validates against. It is
@@ -48,12 +91,19 @@ func (s *Service) savePrepare(value prepareSnapshot) {
 	if err != nil {
 		return
 	}
-	path := s.preparePath()
-	dir := filepath.Dir(path)
+	dir := s.prepareDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return
 	}
-	tmp, err := os.CreateTemp(dir, ".prepare.json.tmp-*")
+	writePrepareFileAtomically(dir, s.preparePath(), data)
+	if isValidBundleID(value.BundleID) {
+		writePrepareFileAtomically(dir, s.prepareBundlePath(value.BundleID), data)
+		s.prunePrepareBundles(value.BundleID)
+	}
+}
+
+func writePrepareFileAtomically(dir, target string, data []byte) {
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
 		return
 	}
@@ -70,13 +120,86 @@ func (s *Service) savePrepare(value prepareSnapshot) {
 	if err := tmp.Close(); err != nil {
 		return
 	}
-	_ = os.Rename(name, path)
+	_ = os.Rename(name, target)
 }
 
-// loadPrepare reads the last snapshot.
-func (s *Service) loadPrepare() (prepareSnapshot, error) {
-	data, err := os.ReadFile(s.preparePath())
+func (s *Service) prunePrepareBundles(keepBundleID string) {
+	dir := s.prepareDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type bundleEntry struct {
+		name      string
+		createdAt string
+		mtime     time.Time
+		keep      bool
+	}
+	var list []bundleEntry
+	keepName := "prepare-" + keepBundleID + ".json"
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, "prepare-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		var createdAt string
+		if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			var snap struct {
+				CreatedAt string `json:"createdAt"`
+			}
+			if json.Unmarshal(raw, &snap) == nil {
+				createdAt = snap.CreatedAt
+			}
+		}
+		list = append(list, bundleEntry{
+			name:      name,
+			createdAt: createdAt,
+			mtime:     info.ModTime(),
+			keep:      name == keepName,
+		})
+	}
+	if len(list) <= maxRetainedPrepareBundles {
+		return
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].keep != list[j].keep {
+			return list[i].keep
+		}
+		if list[i].createdAt != list[j].createdAt {
+			return list[i].createdAt > list[j].createdAt
+		}
+		if !list[i].mtime.Equal(list[j].mtime) {
+			return list[i].mtime.After(list[j].mtime)
+		}
+		return list[i].name > list[j].name
+	})
+	for _, item := range list[maxRetainedPrepareBundles:] {
+		_ = os.Remove(filepath.Join(dir, item.name))
+	}
+}
+
+// loadPrepare reads the requested snapshot when bundleID is non-empty, or the
+// latest default snapshot otherwise.
+func (s *Service) loadPrepare(bundleID string) (prepareSnapshot, error) {
+	bundleID = strings.TrimSpace(bundleID)
+	path := s.preparePath()
+	if bundleID != "" {
+		if !isValidBundleID(bundleID) {
+			return prepareSnapshot{}, memerr.New(memerr.InvalidArgument,
+				"prepare bundleId %q is invalid; run `memctl dream --prepare` again", bundleID)
+		}
+		path = s.prepareBundlePath(bundleID)
+	}
+	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
+		if bundleID != "" {
+			return prepareSnapshot{}, memerr.New(memerr.InvalidArgument,
+				"prepare bundle %q is not on record; run `memctl dream --prepare` before proposing", bundleID)
+		}
 		return prepareSnapshot{}, memerr.New(memerr.InvalidArgument,
 			"no prepare bundle is on record; run `memctl dream --prepare` before proposing")
 	}
@@ -87,6 +210,10 @@ func (s *Service) loadPrepare() (prepareSnapshot, error) {
 	if err := json.Unmarshal(data, &value); err != nil {
 		return prepareSnapshot{}, memerr.Wrap(memerr.IOFailed, err,
 			"the prepare bundle is unreadable; run `memctl dream --prepare` again")
+	}
+	if bundleID != "" && value.BundleID != "" && value.BundleID != bundleID {
+		return prepareSnapshot{}, memerr.New(memerr.InvalidArgument,
+			"prepare bundle %q does not match stored bundle %q; run `memctl dream --prepare` again", bundleID, value.BundleID)
 	}
 	return value, nil
 }

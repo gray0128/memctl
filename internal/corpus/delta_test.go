@@ -216,9 +216,6 @@ func deltaRunnerOf(stream string, calls *int) DeltaRunner {
 
 // TestCollectDeltaWritesOneDigestCoversX13 covers the happy path end to end.
 func TestCollectDeltaWritesOneDigestCoversX13(t *testing.T) {
-	SetSuspiciousMatcher(func(text string) bool { return false })
-	t.Cleanup(func() { SetSuspiciousMatcher(nil) })
-
 	cache := deltaCache(t)
 	stream := strings.Join([]string{
 		deltaReady("thread-abc"),
@@ -251,9 +248,6 @@ func TestCollectDeltaWritesOneDigestCoversX13(t *testing.T) {
 // and a stream with nothing keepable. None may write a digest or return an
 // error, because prepare must keep working with whatever the cache holds.
 func TestCollectDeltaCoversX14(t *testing.T) {
-	SetSuspiciousMatcher(func(text string) bool { return false })
-	t.Cleanup(func() { SetSuspiciousMatcher(nil) })
-
 	complete := strings.Join([]string{
 		deltaReady("thread-abc"),
 		deltaItem("user_message", 1000, `{"text":"问题"}`),
@@ -319,9 +313,6 @@ func TestCollectDeltaCoversX14(t *testing.T) {
 // behaves like the backfill cap: a stream that hits it is not cached, because a
 // half digest would make the next run skip the thread as already collected.
 func TestCollectDeltaDropsStreamAboveTheByteLimitCoversX14(t *testing.T) {
-	SetSuspiciousMatcher(func(text string) bool { return false })
-	t.Cleanup(func() { SetSuspiciousMatcher(nil) })
-
 	// The bulk sits in a tool output, which the parser discards: the limit has to
 	// stop the read, not the digest budget.
 	bulk := strings.Repeat("y", MaxDeltaStreamBytes)
@@ -358,9 +349,6 @@ func TestCollectDeltaHonoursContextCoversX14(t *testing.T) {
 // TestCollectDeltaPassesTheThreadIDCoversX13 pins the only argument the runner
 // receives: the calling thread, never another one.
 func TestCollectDeltaPassesTheThreadIDCoversX13(t *testing.T) {
-	SetSuspiciousMatcher(func(text string) bool { return false })
-	t.Cleanup(func() { SetSuspiciousMatcher(nil) })
-
 	var got string
 	runner := func(_ context.Context, threadID string) (io.ReadCloser, error) {
 		got = threadID

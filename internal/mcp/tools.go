@@ -153,6 +153,10 @@ func (s *Server) Tools() []Tool {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"bundleId": map[string]any{
+						"type":        "string",
+						"description": "bundleId from memory_dream_prepare. When supplied, binds sessionIndices to that exact prepare snapshot.",
+					},
 					"baseHead": map[string]any{
 						"type":        "string",
 						"description": "baseHead from memory_dream_prepare.",
@@ -473,6 +477,7 @@ type dreamPrepareArgs struct {
 // dreamProposeArgs is the memory_dream_propose argument object. The candidate
 // and file shapes are the documented DreamProposeInput members.
 type dreamProposeArgs struct {
+	BundleID     string               `json:"bundleId"`
 	BaseHead     string               `json:"baseHead"`
 	BaseRevision string               `json:"baseRevision"`
 	NewMemories  []dream.NewCandidate `json:"newMemories"`
@@ -526,6 +531,7 @@ func (s *Server) dreamPropose(ctx context.Context, params json.RawMessage) (Call
 		return textResult("INVALID_ARGUMENT: baseHead and baseRevision are required (from memory_dream_prepare)", true), nil
 	}
 	result, err := s.service.DreamProposeLocal(ctx, dream.DreamProposeInput{
+		BundleID:     args.BundleID,
 		BaseHead:     args.BaseHead,
 		BaseRevision: args.BaseRevision,
 		NewMemories:  args.NewMemories,

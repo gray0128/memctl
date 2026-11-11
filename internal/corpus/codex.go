@@ -94,7 +94,7 @@ func parseCodex(c Collector, r io.Reader) (parseInput, bool) {
 		}
 	}
 	if pending != nil {
-		if turn, ok := c.finalizeTurn(suspiciousMatcher, *pending); ok {
+		if turn, ok := c.finalizeTurn(*pending); ok {
 			out.turns = append(out.turns, turn)
 		}
 	}

@@ -62,8 +62,10 @@ const EntryBloatLineThreshold = 100
 var suspiciousPatterns = []string{
 	"ignore previous instructions",
 	"ignore all previous instructions",
+	"ignore the previous instructions",
 	"disregard previous instructions",
 	"disregard all previous instructions",
+	"disregard the previous instructions",
 	"do not tell the user",
 	"exfiltrate",
 }
@@ -403,7 +405,10 @@ func AutoFixable(code string) bool {
 // text. It is exported so the audit view reports the same clues as doctor
 // without duplicating the pattern list.
 func SuspiciousPhrases(text string) []string {
-	lower := strings.ToLower(text)
+	lower := normalizeSuspiciousText(text)
+	if lower == "" {
+		return nil
+	}
 	var found []string
 	for _, phrase := range suspiciousPatterns {
 		if strings.Contains(lower, phrase) {
@@ -411,6 +416,35 @@ func SuspiciousPhrases(text string) []string {
 		}
 	}
 	return found
+}
+
+// ContainsSuspiciousInstruction reports whether text matches any conservative
+// prompt-injection phrase after fullwidth ASCII folding, zero-width stripping
+// and consecutive whitespace collapsing.
+func ContainsSuspiciousInstruction(text string) bool {
+	return len(SuspiciousPhrases(text)) > 0
+}
+
+func normalizeSuspiciousText(text string) string {
+	if text == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch {
+		case r == '\u200B' || r == '\u200C' || r == '\u200D' || r == '\u200E' || r == '\u200F' ||
+			r == '\u2060' || r == '\uFEFF' || r == '\u00AD':
+			continue
+		case r == '\u3000':
+			b.WriteByte(' ')
+		case r >= 0xFF01 && r <= 0xFF5E:
+			b.WriteRune(r - 0xFEE0)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(strings.ToLower(b.String())), " ")
 }
 
 func suspiciousPhrase(text string) (string, bool) {

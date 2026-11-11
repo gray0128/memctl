@@ -49,8 +49,16 @@ type RealTimeRequest struct {
 	TranscriptPath string
 	// Cwd is the fallback project directory, used when the log carries none.
 	Cwd string
+	// OverrideCwd forces Cwd to take precedence over the log's own directory
+	// when the Hook payload supplied an explicit working directory.
+	OverrideCwd bool
 	// Device is the source-tag device segment.
 	Device string
+	// SuspiciousMatcher reports whether a text fragment carries a prompt
+	// injection phrase.
+	SuspiciousMatcher func(string) bool
+	// Now is the injectable clock.
+	Now func() time.Time
 }
 
 // RealTime distills one session log and writes its digest. It reports ok=false
@@ -70,7 +78,13 @@ func RealTime(ctx context.Context, cache *Cache, req RealTimeRequest) (Digest, b
 	}
 	defer stream.Close()
 
-	collector := Collector{Device: req.Device, Cwd: req.Cwd}
+	collector := Collector{
+		Device:            req.Device,
+		Cwd:               req.Cwd,
+		OverrideCwd:       req.OverrideCwd,
+		SuspiciousMatcher: req.SuspiciousMatcher,
+		Now:               req.Now,
+	}
 	digest, ok := collector.Collect(req.Agent, req.SID, stream.reader)
 	if !ok {
 		return Digest{}, false, nil
@@ -78,10 +92,76 @@ func RealTime(ctx context.Context, cache *Cache, req RealTimeRequest) (Digest, b
 	if stream.Truncated() {
 		digest.Truncated = true
 	}
+	if existing, found := cache.Load(digest.Agent, digest.SessionID); found {
+		digest = mergeExistingDigest(existing, digest)
+	}
 	if err := cache.Save(digest); err != nil {
 		return digest, false, err
 	}
 	return digest, true, nil
+}
+
+// mergeExistingDigest preserves consumption metadata across real-time refreshes.
+// When an already-consumed session is re-collected without new turns, its
+// ConsumedBy, ConsumedRevision and UpdatedAt remain untouched; when new turns
+// are appended after consumption, ConsumedBy and ConsumedRevision are retained
+// alongside the consumed-turn watermark so only the unconsumed suffix is exposed
+// to subsequent dream --prepare runs.
+func mergeExistingDigest(existing, next Digest) Digest {
+	next.WroteMemoryInSess = next.WroteMemoryInSess || existing.WroteMemoryInSess
+	if existing.ConsumedBy == "" {
+		return next
+	}
+	consumedTurns := existing.ConsumedTurns
+	if consumedTurns <= 0 || consumedTurns > len(existing.Turns) {
+		consumedTurns = len(existing.Turns)
+	}
+	next.ConsumedBy = existing.ConsumedBy
+	next.ConsumedRevision = existing.ConsumedRevision
+	next.ConsumedTurns = consumedPrefixLen(existing.Turns[:consumedTurns], next.Turns)
+	if turnsEqual(existing.Turns, next.Turns) {
+		next.UpdatedAt = existing.UpdatedAt
+		next.Date = existing.Date
+	}
+	return next
+}
+
+func consumedPrefixLen(consumed, current []Turn) int {
+	if len(consumed) == 0 || len(current) == 0 {
+		return 0
+	}
+	// Find the longest suffix of consumed that matches a prefix of current so
+	// sliding window truncation at MaxTurnsPerSession still aligns the watermark.
+	for start := 0; start < len(consumed); start++ {
+		suffix := consumed[start:]
+		if len(suffix) <= len(current) && turnsEqual(suffix, current[:len(suffix)]) {
+			return len(suffix)
+		}
+	}
+	if len(consumed) <= len(current) {
+		return len(consumed)
+	}
+	return len(current)
+}
+
+func turnsEqual(left, right []Turn) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].User != right[i].User || left[i].Assistant != right[i].Assistant {
+			return false
+		}
+		if len(left[i].Tools) != len(right[i].Tools) {
+			return false
+		}
+		for j := range left[i].Tools {
+			if left[i].Tools[j] != right[i].Tools[j] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // ResolveTranscript turns a hook-provided transcript path into an absolute
@@ -100,8 +180,9 @@ func ResolveTranscript(path, cwd string) string {
 // Cache writes the digest cache for one repository and never fails the caller.
 // It is the single entry point the CLI and the plugins' spawn path share.
 type Writer struct {
-	Cache *Cache
-	Now   func() time.Time
+	Cache             *Cache
+	SuspiciousMatcher func(string) bool
+	Now               func() time.Time
 }
 
 // Collect runs one real-time collection under the documented budget. It never
@@ -109,6 +190,12 @@ type Writer struct {
 func (w Writer) Collect(req RealTimeRequest) (Digest, bool) {
 	if w.Cache == nil {
 		return Digest{}, false
+	}
+	if req.SuspiciousMatcher == nil {
+		req.SuspiciousMatcher = w.SuspiciousMatcher
+	}
+	if req.Now == nil {
+		req.Now = w.Now
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), LiveBudget)
 	defer cancel()

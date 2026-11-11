@@ -48,8 +48,7 @@ func LocateSession(agent, sid, cwd, home string) string {
 		}
 		return highestDSHVersion(filepath.Join(root, sid))
 	case "antigravity":
-		return regularFile(filepath.Join(home, filepath.FromSlash(".gemini/antigravity/brain"), sid,
-			".system_generated", "logs", "transcript.jsonl"))
+		return locateAntigravity(home, sid)
 	case "codex":
 		return locateCodex(home, sid)
 	case "codebuddy":
@@ -61,6 +60,35 @@ func LocateSession(agent, sid, cwd, home string) string {
 	default:
 		return ""
 	}
+}
+
+// antigravityBrainDirs lists the brain directories used by Antigravity IDE and
+// Antigravity CLI under the user's home directory.
+var antigravityBrainDirs = []string{
+	".gemini/antigravity/brain",
+	".gemini/antigravity-cli/brain",
+}
+
+// locateAntigravity searches both Antigravity IDE and Antigravity CLI brain
+// directories and returns the newest matching transcript when present.
+func locateAntigravity(home, sid string) string {
+	var best string
+	var bestTime time.Time
+	for _, store := range antigravityBrainDirs {
+		path := regularFile(filepath.Join(home, filepath.FromSlash(store), sid,
+			".system_generated", "logs", "transcript.jsonl"))
+		if path == "" {
+			continue
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if best == "" || info.ModTime().After(bestTime) {
+			best, bestTime = path, info.ModTime()
+		}
+	}
+	return best
 }
 
 // regularFile reports a regular, non-symlink file at path.

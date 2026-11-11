@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gray0128/memctl/internal/app"
@@ -23,6 +25,10 @@ import (
 // It runs on `sync` and `end`, with the transcript path coming from the hook
 // payload's `transcript_path` or the explicit `--transcript` flag.
 func collectCorpus(cfg config.Config, agent, sid, transcript, cwd string) {
+	collectCorpusWithOverride(cfg, agent, sid, transcript, cwd, false)
+}
+
+func collectCorpusWithOverride(cfg config.Config, agent, sid, transcript, cwd string, overrideCwd bool) {
 	if !corpus.Enabled(os.Getenv) || transcript == "" {
 		return
 	}
@@ -30,24 +36,35 @@ func collectCorpus(cfg config.Config, agent, sid, transcript, cwd string) {
 	if path == "" {
 		return
 	}
-	if dir, err := os.Getwd(); err == nil && cwd == "" {
-		cwd = corpus.ResolveProjectRoot(context.Background(), git.Run, dir)
+	if cwd == "" {
+		if dir, err := os.Getwd(); err == nil && !corpus.IsHostConfigDir(dir) {
+			cwd = dir
+		}
 	}
-	corpus.SetSuspiciousMatcher(func(text string) bool {
-		return len(doctor.SuspiciousPhrases(text)) > 0
-	})
+	if cwd != "" {
+		cwd = corpus.ResolveProjectRoot(context.Background(), git.Run, cwd)
+		if corpus.IsHostConfigDir(cwd) {
+			cwd = ""
+			overrideCwd = false
+		}
+	}
 	cache := corpus.OpenCache(cfg.StateDir, config.RepoID(cfg.RepoPath))
 	// The TTL cleanup runs on every collection so an abandoned cache cannot
 	// grow without bound. A consumed digest is kept while its proposal record
 	// still exists; the proposal store is the authority for that.
 	cache.Prune(time.Now(), corpusProposalExists(cfg))
-	writer := corpus.Writer{Cache: cache}
+	writer := corpus.Writer{
+		Cache:             cache,
+		SuspiciousMatcher: doctor.ContainsSuspiciousInstruction,
+	}
 	digest, ok := writer.Collect(corpus.RealTimeRequest{
-		Agent:          agent,
-		SID:            sid,
-		TranscriptPath: path,
-		Cwd:            cwd,
-		Device:         hookio.ResolveDevice(os.Getenv),
+		Agent:             agent,
+		SID:               sid,
+		TranscriptPath:    path,
+		Cwd:               cwd,
+		OverrideCwd:       overrideCwd,
+		Device:            hookio.ResolveDevice(os.Getenv),
+		SuspiciousMatcher: doctor.ContainsSuspiciousInstruction,
 	})
 	if !ok || digest.WroteMemoryInSess {
 		return
@@ -81,10 +98,25 @@ func collectCorpusFromPayload(cfg config.Config, agent, sid, explicit string, pa
 		transcript = payload.TranscriptPath
 	}
 	cwd := ""
-	if dir, err := os.Getwd(); err == nil {
-		cwd = dir
+	overrideCwd := false
+	if isValidHookCwd(payload.Cwd) {
+		cwd = corpus.ResolveProjectRoot(context.Background(), git.Run, strings.TrimSpace(payload.Cwd))
+		overrideCwd = !corpus.IsHostConfigDir(cwd)
+	} else if dir, err := os.Getwd(); err == nil && !corpus.IsHostConfigDir(dir) {
+		cwd = corpus.ResolveProjectRoot(context.Background(), git.Run, dir)
 	}
-	collectCorpus(cfg, agent, sid, transcript, cwd)
+	collectCorpusWithOverride(cfg, agent, sid, transcript, cwd, overrideCwd)
+}
+
+func isValidHookCwd(dir string) bool {
+	dir = strings.TrimSpace(dir)
+	if dir == "" || !filepath.IsAbs(dir) || corpus.IsHostConfigDir(dir) {
+		return false
+	}
+	if info, err := os.Stat(dir); err == nil {
+		return info.IsDir()
+	}
+	return true
 }
 
 // corpusProposalExists reports whether a proposal record still exists, so a

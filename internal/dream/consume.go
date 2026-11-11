@@ -48,9 +48,11 @@ func (s *Service) ConsumeCorpusDigests(proposalID string) (ConsumeResult, error)
 			continue
 		}
 		name = current.Agent + "/" + current.SessionID
-		// A digest consumed by an earlier apply keeps the first record: a second
-		// apply must never rewrite consumedRevision with newer content.
-		if current.ConsumedBy != "" {
+		// A digest already consumed by this proposal or with no unconsumed
+		// incremental turns keeps the first record: a repeat apply must never
+		// rewrite consumedRevision with newer content.
+		hasIncremental := current.ConsumedTurns > 0 && len(current.Turns) > current.ConsumedTurns
+		if current.ConsumedBy != "" && (current.ConsumedBy == proposalID || !hasIncremental) {
 			result.Consumed = append(result.Consumed, name)
 			continue
 		}
@@ -63,6 +65,7 @@ func (s *Service) ConsumeCorpusDigests(proposalID string) (ConsumeResult, error)
 		}
 		current.ConsumedBy = proposalID
 		current.ConsumedRevision = revision
+		current.ConsumedTurns = len(current.Turns)
 		if err := cache.Save(current); err != nil {
 			return result, memerr.Wrap(memerr.IOFailed, err,
 				"cannot mark the session digest %s as consumed", name)

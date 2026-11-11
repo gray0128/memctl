@@ -10,7 +10,7 @@ references: [memctl-mcp]
 
 # 12. 跨会话新记忆提炼：本地当前 Agent 交互式整理方案
 
-> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`）；`H-2a` 本地会话蒸馏器已实现并验收（2026-10-20，`T100`）；`H-2b` 存量多会话补扫与 `antigravity` 接入已实现并验收（2026-10-20，`T101`）；`H-3` 本地 `prepare`/`propose`、项目筛选与两个 MCP 工具已实现并验收（2026-10-20，`T102`）；`H-4` 的配套 Skill、中英与 JSON 帮助、UI「整理」视图的本地提案列表与宿主会话内端到端验收已完成（2026-10-20，`T103`）；`H-2c` 的 CodeBuddy 与 WorkBuddy 会话格式接入已完成（2026-10-21，`T115`）。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
+> 状态：`H-1` 方案与契约已修订（2026-10-20，`T098`、`T099`）；`H-2a` 本地会话蒸馏器已实现并验收（2026-10-20，`T100`）；`H-2b` 存量多会话补扫与 `antigravity` 接入已实现并验收（2026-10-20，`T101`）；`H-3` 本地 `prepare`/`propose`、项目筛选与两个 MCP 工具已实现并验收（2026-10-20，`T102`）；`H-4` 的配套 Skill、中英与 JSON 帮助、UI「整理」视图的本地提案列表与宿主会话内端到端验收已完成（2026-10-20，`T103`）；`H-2c` 的 CodeBuddy 与 WorkBuddy 会话格式接入已完成（2026-10-21，`T115`）；阶段 I 的 `I-1b`（2026-11-11，`T139`）已补齐 `antigravity-cli/brain` 会话扫描与定位、通用 Git 顶层/worktree/软链接项目根归一化、可疑指令过滤器显式注入、已消费会话增量回合水位 `consumedTurns`、`files[]` 新增行差集守卫、`prepare-<bundleId>.json` 快照隔离与凭据脱敏规则扩展。本文档定义在本地当前 Agent 会话内由用户显式发起的跨会话新记忆提炼与交互式整理架构：本地确定性会话蒸馏与脱敏缓存、`dream --prepare`/`--propose`（及对应 MCP 工具）两阶段本地协议、Go 代码级来源绑定守卫与验收矩阵。已实现的 GitHub Actions 远端整理（[11. GitHub Actions Dreaming](./11-github-actions-dreaming.md)）保持原样不变，不参与会话日志传输与提炼。基础模型、写入事务、MCP 通道与生命周期规则分别引用 [02](./02-domain-models-and-contracts.md)、[03](./03-workflows-and-dataflows.md)、[09](./09-mcp-memory-tools.md) 与 [10](./10-memory-lifecycle.md)。
 
 ## 1. 结论
 
@@ -70,7 +70,7 @@ flowchart TB
 | `pi` | `memctl-pi` 通过 `ctx.sessionManager.getSessionFile()` 取得会话文件路径并传 `--transcript <path>`；宿主未提供该方法时不传路径 | `$HOME/.pi/agent/sessions/**/*.jsonl`（首行 `type: "session"` 的 `id` 与 `cwd`） | JSONL：提取用户消息、助手文本回复与 `bash`/`edit` 工具调用签名 | 已核对 |
 | `omp` | `memctl-pi` 通过 `ctx.sessionManager.getSessionFile()` 取得 OMP 转录路径并传 `--transcript <path>`；宿主未提供该方法时不传路径 | `$HOME/.omp/agent/sessions/**/*.jsonl`（目录与文件名规则与 pi 相同；转录在 `type: "session"` 记录前可能有一行 `type: "title"`） | 与 `pi` 共用解析器：按记录类型查找 `session` 元数据，提取用户消息、助手文本与工具调用签名 | 已核对（OMP 18.17.0 真机转录与 `sync --transcript` 蒸馏） |
 | `dsh` | `memctl-dsh` 在会话根下定位 `session-<sid>/` 目录并取最高版本记录传给 `--transcript <path>`；会话根依次取 `DSH_SESSIONS_DIR`、`$DSH_HOME/sessions`、`~/.dsh/sessions`，都不可用时插件不传路径 | `$HOME/.dsh/sessions/<cwd 转义目录>/session-<sid>/session.v4.jsonl.zstd`（同目录可能有 `session.v3.jsonl.zstd` 与未分片的 `session.jsonl.zstd`，取版本号最高者） | JSONL（zstd 压缩）：首行 `type: "session"` 的 `id` 与 `cwd`；对话从 `user/message`（`data.content[].text`）、`assistant/message`（`data.message.content[]` 中 `type: "text"`）、`tool/call`（`data.name` 与 `data.arguments`）与 `tool/result`（`data.message.isError`）提取；`type: "reasoning"` 内容块丢弃 | 已核对，**zstd 压缩** |
-| `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位（未接宿主 Hook 样例） | `$HOME/.gemini/antigravity/brain/<sid>/.system_generated/logs/transcript.jsonl`（目录名为 `sid`） | JSONL：`type="USER_INPUT"` 且 `source="USER_EXPLICIT"` 的记录取 `<USER_REQUEST>` 正文（剥离同记录内的 `<ADDITIONAL_METADATA>`、`<USER_SETTINGS_CHANGE>`）；`type="PLANNER_RESPONSE"` 取 `content` 文本与 `tool_calls[].args` 的命令/路径签名，丢弃同层 `thinking`；其余记录类型（`CONVERSATION_HISTORY`、`CHECKPOINT`、`RUN_COMMAND` 等）是工具输出或系统块，不进入摘要。会话没有元数据行，工作目录只出现在 `run_command` 的 `args.Cwd` | 已核对（本机 169 份 transcript 的事件类型与字段层级） |
+| `antigravity` | Hook stdin `"transcript_path"`，缺失时按 `sid` 定位（Hook payload 携带有效非配置目录 `cwd` 时经 `ResolveProjectRoot` 归一化后优先覆盖） | `$HOME/.gemini/antigravity/brain/<sid>/.system_generated/logs/transcript.jsonl` 与 `$HOME/.gemini/antigravity-cli/brain/<sid>/.system_generated/logs/transcript.jsonl`（目录名为 `sid`，`LocateSession` 与 `Backfill` 同时扫描两处） | JSONL：`type="USER_INPUT"` 且 `source="USER_EXPLICIT"` 的记录取 `<USER_REQUEST>` 正文（剥离同记录内的 `<ADDITIONAL_METADATA>`、`<USER_SETTINGS_CHANGE>`）；`type="PLANNER_RESPONSE"` 取 `content` 文本与 `tool_calls[].args` 的命令/路径签名，丢弃同层 `thinking`；其余记录类型（`CONVERSATION_HISTORY`、`CHECKPOINT`、`RUN_COMMAND` 等）是工具输出或系统块，不进入摘要。工作目录从 `run_command` 的 `args.Cwd` 或 `<user_information>` 的 `Command Working Directory:` 提取，并忽略 `~/.gemini/config` 等宿主配置目录 | 已核对（IDE 与 CLI transcript 事件类型与字段层级） |
 | `codebuddy` | Hook stdin 的 `"transcript_path"`（headless 会话已验证 `SessionStart`/`Stop` 采集） | `$HOME/.codebuddy/projects/*/*.jsonl`（项目目录名是 `cwd` 的路径转义，只把分隔符替换为 `-`；文件名即 `sid`） | JSONL：每行带 `sessionId`、`cwd` 与毫秒时间戳；`type="message"` 的 `input_text`/`output_text` 取对话，`function_call` 取工具名与 `arguments` 中的命令或路径；`reasoning`、`function_call_result.output` 与宿主回显（`providerData.skipRun`、`<local-command-*>`、`<command-name>`、`<command-args>`、`<task-notification>`）丢弃；`type="summary"` 标记上下文已压缩 | 已核对（本机 CodeBuddy 日志与真实 Hook 会话） |
 | `workbuddy` | Hook stdin 的 `"transcript_path"`（headless sidecar 已验证 `SessionStart`/`Stop` 采集） | `$HOME/.workbuddy/projects/*/*.jsonl`（目录转义与 `codebuddy` 相同） | 与 `codebuddy` 共用格式；新会话首行可能是 `type="session-meta"`，只提供 `sessionId`、不含 `cwd`，不作为对话内容 | 已核对（本机 WorkBuddy 日志与 sidecar 会话） |
 | `opencode` | `--transcript <path>` 或按 `sid` 读取 | 无 `.jsonl` 会话日志；状态在 `$HOME/.local/share/opencode/opencode.db`（SQLite） | 不解析：读取 SQLite 会引入新依赖与写入风险，本阶段只接受显式 `--transcript` | 未支持，静默跳过 |
@@ -145,10 +145,10 @@ flowchart TB
 | `MaxCorpusSessions` / `MaxCorpusBytes` | 单次 `prepare` 最多 `12` 个会话、累计 `96 KiB`；先到者截断。被截断的会话计入 `remainingUnconsumed` |
 | `CorpusStateTTL` | `14` 天，从 `updatedAt` 起算；每次采集与 `dream --prepare` 启动时自动清理过期文件 |
 | `cwdBase` | 仅保留工作目录的 basename（如 `memctl`），不记录宿主机完整绝对路径结构 |
-| `cwdKey` | `sha256(规范化绝对 cwd)` 的十六进制；用于过滤与去重，不还原为路径 |
+| `cwdKey` | `sha256(经 ResolveProjectRoot 与软链接解析归一化后的绝对 cwd)` 的十六进制；同一仓库的子目录、普通 `git worktree`、Delta worktree 与软链接路径计算得到同一 `cwdKey`，用于过滤与去重，不还原为路径 |
 | `truncated` | 该摘要来自被大小上限截断的日志尾部，提醒当前 Agent 不宜据此断言会话早期内容 |
 | `wroteMemoryInSession` | 若该会话已产生包含 `Session: <sid>` trailer 的提交，记为 `true`，供当前 Agent 降低重复提取权重 |
-| `consumedBy` / `consumedRevision` | 消费该摘要的提案 ID 与消费时摘要内容哈希；两者只在 `ApplyDream` 成功后同时写入 |
+| `consumedBy` / `consumedRevision` / `consumedTurns` | 消费该摘要的提案 ID、消费时摘要内容哈希与已消费回合水位；`ApplyDream` 成功后写入 `consumedBy` 与 `consumedRevision`。若已消费会话在实时采集或 `CollectDelta` 重刷时未产生新回合，幂等保留消费元数据；若追加了新回合，保留 `consumedBy`/`consumedRevision` 并记录 `consumedTurns`，仅将未消费增量回合暴露给后续 `prepare` |
 
 `--project` 的过滤键是 `cwdKey` 而非 `cwdBase`：同一 basename 的两个克隆必须被区分。`cwdBase` 只用于展示与「当前项目优先」的默认排序提示。
 
@@ -158,12 +158,12 @@ flowchart TB
 
 1. **系统与注入块剥离**：剔除 `<system-reminder ...>...</system-reminder>`（含带 `data-role` 等属性的形式）、`<MEMCTL_INSTRUCTIONS>...</MEMCTL_INSTRUCTIONS>`、`[agent-memory] ...` 注入横幅、代码块中的大段文件内容，以及模型内部 `thinking` / `reasoning` 字段。
 2. **凭据与密钥正则脱敏**：将匹配以下模式的子串替换为 `[REDACTED]`：
-   - 常见 API Key 与令牌前缀：`sk-[A-Za-z0-9_-]{16,}`、`gh[pousr]_[A-Za-z0-9]{20,}`、`github_pat_[A-Za-z0-9_]{20,}`、`xox[baprs]-[A-Za-z0-9-]{10,}`、`AKIA[0-9A-Z]{16}`、`AIza[0-9A-Za-z_-]{35}`；
-   - JWT 与长 Bearer 串：`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`、`(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}`；
-   - 键值赋值中的敏感值：`(?i)(api[_-]?key|secret|password|passwd|access[_-]?token|refresh[_-]?token|private[_-]?key|authorization)\s*[:=]\s*["']?[^\s"',;]+`；
+   - 常见 API Key 与令牌前缀：`sk-[A-Za-z0-9_-]{16,}`、`gh[pousr]_[A-Za-z0-9]{20,}`、`github_pat_[A-Za-z0-9_]{20,}`、`glpat-[A-Za-z0-9_-]{20,}`、`hf_[A-Za-z0-9]{20,}`、`npm_[A-Za-z0-9]{20,}`、`xox[baprs]-[A-Za-z0-9-]{10,}`、`AKIA[0-9A-Z]{16}`、`AKID[0-9A-Za-z]{16,}`、`LTAI[0-9A-Za-z]{12,}`、`AIza[0-9A-Za-z_-]{35}`；
+   - JWT 与 Bearer / Basic 认证串：`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`、`(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}`、`(?i)authorization\s*[:=]\s*["']?basic\s+[A-Za-z0-9+/=_-]{8,}`；
+   - 键值赋值中的敏感值：覆盖 JSON 双引号键名（如 `"api_key": "..."`）、通用 `\w*(token|secret|key|passw(or)?d|pwd)\w*` 复合键名、中文键名（如 `密码`、`密钥`）及带空格的引号包裹口令；
    - PEM 私钥块：`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----`；
-   - URL 内嵌凭据：`https?://[^/\s:@]+:[^/\s:@]+@`。
-3. **可疑指令回合过滤**：复用 `doctor` 的 `SUSPICIOUS_INSTRUCTION` 检测模式（如要求忽略系统规则、外发数据或修改安全配置）；命中可疑模式的单个回合直接丢弃，不进入 `turns`。
+   - URL 内嵌凭据：`[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:[^/\s:@]+@`。
+3. **可疑指令过滤**：所有采集入口（`sync`/`end`、`prepare`、`Backfill`、`LocateSession` 刷新、`CollectDelta` 与 MCP `memory_dream_prepare`）均通过配置结构体的 `SuspiciousMatcher` 字段显式注入 `doctor.ContainsSuspiciousInstruction`；匹配前执行零宽字符剥离、全角 ASCII 折叠与连续空白折叠，匹配范围覆盖 `user`、`assistant` 文本与 `tools` 命令签名，命中可疑模式时丢弃对应回合或工具签名。
 
 脱敏是确定性的模式匹配，不能保证穷尽所有凭据形态。`prepare` 因此在返回摘要的同时返回 `redactionNotice`，提示当前 Agent 与用户：摘要中仍可能存在未被模式覆盖的敏感文本。
 
@@ -200,11 +200,12 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
      - 未显式指定 `project` 时，默认以当前工作目录的 `cwdKey` 作为优先项目：先排与当前 `cwdKey` 匹配的会话（按 `updatedAt` 倒序），有剩余配额时再排其他项目的未消费会话（按 `updatedAt` 倒序）。
    - 单次最多取 `MaxCorpusSessions = 12` 个会话（累计上限 `MaxCorpusBytes = 96 KiB`，默认值可由 `--max-bytes` 在本机上限内调整），按顺序赋予整数下标 `sessionIndex: 0..N-1`；超出本次配额的其余未消费会话计入返回字段 `remainingUnconsumed`，供用户在当前提案 `apply` 后继续发起下一批整理。
    - 字节预算只用于分批，不能产生空批次：单份摘要不超过 `MaxSessionDigestBytes = 16 KiB`，低于 `MaxCorpusBytes`，因此预算耗尽只影响后续会话，第一份摘要总会进入本批。
-   - `prepare` 把本次会话列表与每份摘要的内容哈希写入 `$STATE/repos/<repoId>/cache/dream/prepare.json`。`propose` 按该快照解析下标，不从当前目录重新推导列表：下标只有在与 Agent 看到的那份列表一一对应时才有意义，重新推导会在选择顺序变化时把引用指到别的会话上。快照只含会话元数据与摘要修订，不含记忆全文，位于可重建缓存下，新一次 `prepare` 覆盖旧快照。
+   - `prepare` 为本次返回内容计算哈希标识 `bundleId`（`pb-<16hex>`），把本次会话列表与每份摘要的内容哈希写入 `$STATE/repos/<repoId>/cache/dream/prepare-<bundleId>.json`（清理时保留最近 5 份 `prepare-*.json`），同时更新 `cache/dream/prepare.json` 作为未传 `bundleId` 时的向后兼容默认快照。`propose` 按该快照解析下标（传入 `bundleId` 时精确加载对应快照并校验 `bundleId`、`baseHead` 与 `baseRevision`），不从当前目录重新推导列表：下标只有在与 Agent 看到的那份列表一一对应时才有意义，重新推导会在选择顺序变化时把引用指到别的会话上。快照只含会话元数据与摘要修订，不含记忆全文，位于可重建缓存下。
 4. **返回 `DreamPrepareBundle`**：
 
 ```json
 {
+  "bundleId": "pb-9f8e7d6c5b4a3210",
   "today": "2026-10-20",
   "baseHead": "e4b8...",
   "baseRevision": "sha256:...",
@@ -270,15 +271,16 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
 3. **单一写入通道（`files[]` 为唯一权威）**：
    提案的最终文件内容只由 `files[]` 给出，`newMemories[]` 是**来源绑定声明**，不参与文件拼装。Go 侧按下列规则处理后做一致性校验：
 
-   - 每条 `newMemories[].fact` 拼装出的条目行（`- <fact> [source: ...; added: ...]`，含可选的 `; until: ...`）必须**逐字出现在** `files[]` 中 `targetPath` 的目标内容里（目标文件不存在时，视为该文件必须由 `files[]` 创建）。未出现即返回 `INVALID_ARGUMENT`，提示补齐 `files[]`。
+   - 每条 `newMemories[].fact` 拼装出的条目行（`- <fact> [source: ...; added: ...]`，含可选的 `; until: ...`）必须**逐字出现在** `files[]` 中 `targetPath` 的目标内容里（目标文件不存在时，视为该文件必须由 `files[]` 创建）。未出现即返回 `INVALID_ARGUMENT`，提示补齐 `files[]`。同时，`verifyAssembled` 对 `files[]` 相对基线快照新增的业务记忆 bullet 行执行差集守卫（放行 `MEMORY.md` 的 `[[...]]` 导航索引行、基线已有条目在同文件保留或跨文件迁移、以及已通过校验的 `newMemories[]` 组装行）：若 `files[]` 中夹带未在 `newMemories[]` 申报的新增业务事实行、伪造 `[source: ...]` 行、未脱敏凭据或可疑指令，立即返回 `INVALID_ARGUMENT`。
    - Go 不向 `files[]` 注入条目、不自动创建文件、不自动补 `[[targetPath]]` 索引链接。索引是否齐全由 §2.3 步骤 3 的断链与孤立文件校验判定：新出现的断链或不可达文件使 `propose` 返回 `UNSUPPORTED`，消息列出链接问题与 `ORPHAN_FILE <path>`，由当前 Agent 修正后重试。
    - 跨主题互链由当前 Agent 在 `files[]` 中自行给出：同一事实已在某个主题文件定义时，另一个主题文件只写 `[[path]]` 而不复制条目正文。Go 侧只校验链接可解析与整体可达，不替 Agent 生成这类链接，也不把主题文件之间的链接判为孤立标记；可达性仍是 [02 §1.2](./02-domain-models-and-contracts.md#12-格式保真) 定义的从 `MEMORY.md` 出发的传递闭包。
    - 由此保证 `patchHash` 只取决于 `files[]`：同一份 `files[]` 无论 `newMemories[]` 顺序如何，产出的提案内容与哈希完全一致。
 4. **结构化输入（`DreamProposeInput`）**：
-   Agent 在 `files[]` 中的新条目行必须严格照抄 Go 会拼出的形式：`- <fact> [source: <sourceTag>; added: <date>]`，其中 `sourceTag` 只能取 `prepare` 返回的 `sessions[].sourceTag`，`date` 只能取所引用会话中最新 `date`（`time_limited` 另加 `; until: <YYYY-MM-DD>`）。Agent 不得编造 `agent://`、`https://` 或其他来源，也不得省略 `added`；`newMemories[].fact` 不带前导 `- `。Go 按同样规则重新拼装后逐字比对，不一致即拒绝。
+   Agent 在 `files[]` 中的新条目行必须严格照抄 Go 会拼出的形式：`- <fact> [source: <sourceTag>; added: <date>]`，其中 `sourceTag` 只能取 `prepare` 返回的 `sessions[].sourceTag`，`date` 只能取所引用会话中最新 `date`（`time_limited` 另加 `; until: <YYYY-MM-DD>`）。Agent 不得编造 `agent://`、`https://` 或其他来源，也不得省略 `added`；`newMemories[].fact` 不带前导 `- `。Go 按同样规则重新拼装后逐字比对，不一致即拒绝。可选传入 `bundleId` 绑定本次 `prepare` 快照。
 
 ```json
 {
+  "bundleId": "pb-9f8e7d6c5b4a3210",
   "baseHead": "e4b8...",
   "baseRevision": "sha256:...",
   "newMemories": [
@@ -323,7 +325,7 @@ Skill 只描述流程与判定规则，不复述参数表：检索与阅读时�
    - **事件型条目的保护不在 Go 侧校验**：解析器没有条目类型字段，`worker` 的 Step Guard 同样只校验路径、格式与链接。本方案沿用这一现状，把「事件型只增不改」作为当前 Agent 的提炼规则（§2.3 步骤 2）与 `warnings` 提示，而不是宣称已有确定性守卫。若要把它升级为硬约束，需先为 `MemoryEntry` 引入可判定的类型元数据并单独立任务。
    - `MEMORY.md` 行数不设新的硬限。沿用既有提示阈值 `EntryBloatLines = 100`：`prepare` 把它作为 `ENTRY_BLOAT` 放进 `findings`，`propose` 在结果树超过阈值时向提案 `warnings` 追加一行提示，两者都不阻断生成。
 4. **生成本地提案**：
-   - 校验全部通过后，计算从 `baseHead` 到目标文件树的有序 `changes`、`diff` 与 `patchHash`，在 `$STATE/repos/<repoId>/proposals/<proposalId>.json` 持久化 `status: "ready"`、`runner: "local-agent"`、`sessionsScanned: len(sessions)`、`newMemoriesExtracted: len(acceptedNewMemories)` 的 `DreamProposal`。提案内部另存本次涉及的 `corpusDigests`：每项为 `{file, revision}`，`revision` 是准备阶段该摘要文件的内容哈希。只记录被 `newMemories[].sessionIndices` 实际引用的摘要：批次携带最多 12 份摘要供 Agent 选择，把未被引用的会话标为已消费会让它在下一批里永久消失。
+   - 校验全部通过后，计算从 `baseHead` 到目标文件树的有序 `changes`、`diff` 与 `patchHash`，在 `$STATE/repos/<repoId>/proposals/<proposalId>.json` 持久化 `status: "ready"`、`runner: "local-agent"`、`sessionsScanned: len(sessions)`、`newMemoriesExtracted: len(acceptedNewMemories)` 的 `DreamProposal`。提案内部另存本次涉及的 `corpusDigests`：每项为 `{file, revision}`，`revision` 直接取 `prepare` 快照时刻记录的 `snapshot.Digests[i].Revision`（不在 `propose` 阶段重算磁盘当前哈希，防止 `prepare` 与 `propose` 之间追加的新回合被 `apply` 误标为已消费）。只记录被 `newMemories[].sessionIndices` 实际引用的摘要：批次携带最多 12 份摘要供 Agent 选择，把未被引用的会话标为已消费会让它在下一批里永久消失。
    - 向调用方返回 `{proposalId, status: "ready", patchHash, sessionsScanned, newMemoriesExtracted, changes, diff, warnings}`。
 
 #### 步骤 4：显式确认与消费标记（`ApplyDream`）

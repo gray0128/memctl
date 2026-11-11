@@ -63,6 +63,7 @@ type Digest struct {
 	WroteMemoryInSess bool   `json:"wroteMemoryInSession"`
 	ConsumedBy        string `json:"consumedBy"`
 	ConsumedRevision  string `json:"consumedRevision"`
+	ConsumedTurns     int    `json:"consumedTurns,omitempty"`
 	Turns             []Turn `json:"turns"`
 }
 
@@ -72,8 +73,58 @@ func CwdKey(cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(cwd))
+	normalized := evalSymlinksSafe(cwd)
+	sum := sha256.Sum256([]byte(normalized))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// evalSymlinksSafe resolves symbolic links on path when it or an ancestor
+// directory exists on disk, and falls back to filepath.Clean for synthetic test
+// paths whose components do not exist.
+func evalSymlinksSafe(path string) string {
+	if path == "" {
+		return ""
+	}
+	clean := filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+		return filepath.Clean(resolved)
+	}
+	var tail []string
+	curr := clean
+	for {
+		parent := filepath.Dir(curr)
+		if parent == curr {
+			return clean
+		}
+		tail = append(tail, filepath.Base(curr))
+		curr = parent
+		if resolved, err := filepath.EvalSymlinks(curr); err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return filepath.Clean(resolved)
+		}
+	}
+}
+
+// IsHostConfigDir reports whether path is an agent host configuration or brain
+// directory (such as ~/.gemini/config) that must never be recorded as a project
+// working directory.
+func IsHostConfigDir(path string) bool {
+	if path == "" {
+		return false
+	}
+	slash := strings.TrimRight(filepath.ToSlash(filepath.Clean(path)), "/")
+	for _, suffix := range []string{
+		"/.gemini/config",
+		"/.gemini/antigravity",
+		"/.gemini/antigravity-cli",
+	} {
+		if strings.HasSuffix(slash, suffix) || strings.Contains(slash, suffix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // CwdBase returns the display-only basename of a working directory.
@@ -109,32 +160,49 @@ const (
 // repository, or neither marker matches, cwd is returned unchanged: a project key
 // must never silently become empty or point at a different project.
 func ResolveProjectRoot(ctx context.Context, run func(context.Context, string, ...string) (string, error), cwd string) string {
-	if cwd == "" || run == nil {
-		return cwd
+	if cwd == "" {
+		return ""
+	}
+	normalizedCwd := evalSymlinksSafe(cwd)
+	if run == nil {
+		return normalizedCwd
 	}
 	// --path-format=absolute is required: inside a subdirectory of an ordinary
 	// repository --git-common-dir prints a relative "../.git", which matches
 	// neither marker and would leave the checkout un-normalised.
 	out, err := run(ctx, cwd, "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel")
 	if err != nil {
-		return cwd
+		return normalizedCwd
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 2 {
 		// An unexpected shape means the Git contract changed; the caller's own
 		// directory is the safe answer, not a partial marker match.
-		return cwd
+		return normalizedCwd
 	}
 	common, top := strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1])
 	for _, candidate := range []string{common, top} {
 		if root, ok := cutAtMarker(candidate, deltaCloneMarker); ok {
-			return root
+			return evalSymlinksSafe(root)
 		}
 		if root, ok := cutAtMarker(candidate, deltaWorktreeMarker); ok {
-			return root
+			return evalSymlinksSafe(root)
 		}
 	}
-	return cwd
+	if strings.Contains(common, deltaCloneMarker) || strings.Contains(common, deltaWorktreeMarker) ||
+		strings.Contains(top, deltaCloneMarker) || strings.Contains(top, deltaWorktreeMarker) {
+		return normalizedCwd
+	}
+	// When --git-common-dir points at the main repository's .git directory (both
+	// in an ordinary checkout and in a linked `git worktree`), its parent is the
+	// canonical project root shared by the main working tree and all worktrees.
+	if filepath.IsAbs(common) && filepath.Base(common) == ".git" {
+		return evalSymlinksSafe(filepath.Dir(common))
+	}
+	if filepath.IsAbs(top) && top != "" {
+		return evalSymlinksSafe(top)
+	}
+	return normalizedCwd
 }
 
 // cutAtMarker returns the part of path before marker when that part is an
