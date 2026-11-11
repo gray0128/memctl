@@ -19,7 +19,7 @@
 | [P1-4](#p1-4发送到外部模型缺少可追溯的确认语义) | P1 | 文档、`web/src` | `03` 要求首次选择 runner 时确认外部发送，`04` 无对应 flag，实现与 UI 均无说明 | [Dreaming 提案](../03-workflows-and-dataflows.md#6-dreaming-提案)、[CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令) |
 | [P2-1](#p2-1跨进程查询生成中提案会破坏活跃运行) | P2 | `internal/dream` | 其他进程查询 `generating` 记录会标 failed 并删除活跃运行的工作目录 | [DreamProposal](../02-domain-models-and-contracts.md#23-审计诊断整理与接入) |
 | [P2-2](#p2-2真实模式变化进入-ready-提案但-apply-必然拒绝) | P2 | `internal/dream` | 执行位变化生成 `ready` 提案，应用时 `UNSUPPORTED`，整份提案无法应用 | [Dreaming 提案](../03-workflows-and-dataflows.md#6-dreaming-提案)、`D03` |
-| [P2-3](#p2-3external_changes-被当作基线过期) | P2 | `internal/app` | 工作树脏被等同基线移动，合法提案被打成终态 `stale` | `D02` |
+| [P2-3](#p2-3外部变更错误被当作基线过期) | P2 | `internal/app` | 工作树脏被等同基线移动，合法提案被打成终态 `stale` | `D02` |
 | [P2-4](#p2-4提交已发生时的-post-commit-失败被误标-ready) | P2 | `internal/app` | hook 改动提交路径集后返回错误，提案回到 `ready` 而 HEAD 已有提交 | `W07`、`D04` |
 | [P2-5](#p2-5中断-reconcile-分支跳过-post-commit-记账与后台同步) | P2 | `internal/app` | 恢复出的提交不触发后台同步、不更新同步摘要 | [同步步骤](../03-workflows-and-dataflows.md#42-git-同步步骤) |
 | [P2-6](#p2-6缺少-memorymd-的普通-git-仓库仍会被导出) | P2 | `internal/dream` | 指向普通 Git 工作树时导出全部文本并发送模型，而不是 `NO_REPO` | [仓库身份](../01-architecture-and-modules.md#31-仓库身份) |
@@ -108,7 +108,7 @@
 - **影响**：用户审阅并确认的提案必然失败，同一提案中的其他有效变更也无法应用。
 - **本轮处置**：已修复。生成阶段把计划模式归一化为受管写入可复现的值（更新保留基线模式，新建为 `100644`），并以 warning 说明被忽略的模式变化；`TestModeChangeIsNormalizedWithWarning` 覆盖。
 
-### P2-3：`EXTERNAL_CHANGES` 被当作基线过期
+### P2-3：外部变更错误被当作基线过期
 
 - **位置**：`internal/app/dreamapply.go`（`dreamBaselineError`）。
 - **关联契约**：`D02` 只在基线移动时标记 `PROPOSAL_STALE`。

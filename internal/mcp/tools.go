@@ -139,6 +139,10 @@ func (s *Server) Tools() []Tool {
 						"type":        "integer",
 						"description": "Total digest budget in bytes, at most 98304. Defaults to 98304.",
 					},
+					"sid": map[string]any{
+						"type":        "string",
+						"description": "Session id of the calling agent session, copied from the source tag the host injected. Used to refresh that session's digest before the sweep only when the server started without --sid; a stdio MCP server cannot observe the session otherwise.",
+					},
 				},
 				"additionalProperties": false,
 			},
@@ -463,6 +467,7 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 type dreamPrepareArgs struct {
 	Project  string `json:"project"`
 	MaxBytes int    `json:"maxBytes"`
+	SID      string `json:"sid"`
 }
 
 // dreamProposeArgs is the memory_dream_propose argument object. The candidate
@@ -488,11 +493,17 @@ func (s *Server) dreamPrepare(ctx context.Context, params json.RawMessage) (Call
 	if args.MaxBytes < 0 {
 		return textResult("INVALID_ARGUMENT: maxBytes must be positive", true), nil
 	}
+	// The session resolves exactly like memory_write: a server-fixed --sid
+	// wins, and only a server without one accepts the id the model supplies.
+	sessionID, err := s.sessionFor(args.SID)
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
 	bundle, err := s.service.DreamPrepareLocal(ctx, dream.PrepareRequest{
 		Project:  args.Project,
 		Device:   s.session.Device,
 		Agent:    s.session.Agent,
-		SID:      s.session.SessionID,
+		SID:      sessionID,
 		MaxBytes: args.MaxBytes,
 	})
 	if err != nil {

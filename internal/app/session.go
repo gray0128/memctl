@@ -279,14 +279,17 @@ func valueOrUnknown(value string) string {
 // repository lock is held elsewhere. The hook path must keep the local content
 // available in that case (docs/03-workflows-and-dataflows.md section 3), and
 // the busy sync state in the banner marks the content as the last readable
-// snapshot rather than a verified current revision.
+// snapshot rather than a verified current revision. The read goes through the
+// same hide projection as the locked path, so a busy lock never leaks an
+// expired entry.
 func (a *App) readEntryWithoutLock() (vault.FileRead, error) {
 	root, err := vault.OpenRoot(a.cfg.RepoPath)
 	if err != nil {
 		return vault.FileRead{}, err
 	}
 	defer root.Close()
-	return root.ReadFile(vault.EntryPointName)
+	file, err := root.ReadFile(vault.EntryPointName)
+	return a.projectRead(vault.EntryPointName, file, err)
 }
 
 // readUserInstructions returns the optional $STATE/INSTRUCTIONS.md, bounded and

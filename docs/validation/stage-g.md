@@ -71,7 +71,7 @@
 - 附带修复（运维侧，非产品缺陷）：直接 `cp` 覆盖正在运行的 `memctl`（`memctl ui` 进程持有该 inode）会触发 macOS SIGKILL，表现为二进制文件校验和正确但一执行就退出；改用「写临时文件 + `mv` 原子替换」后正常。`internal/update` 已采用 `os.Rename`，不受影响；手工升级应按同样方式替换。
 - 未验证与遗留：带实际文件变更的提案被 `apply` 提交仍未在真实环境验证。诊断仓库 `gray0128/memctl-dream-diag2` 已创建并配好工作流，但没有对应 Secret；删除两个诊断仓库需要 `delete_repo` scope。
 
-## T089：新增条目检索通道（`entries` 与 `memory_entries`）
+## T089：新增条目检索通道（CLI 与 MCP）
 
 - 目标与范围：补齐「Agent 按内容查询记忆」的缺口。此前只有 hook 注入（给出 `MEMORY.md` 全文）与按路径读取（`memctl read` / `memory_read`），子串检索能力只存在于 Web UI 使用的 `GET /api/v1/entries`，CLI 与 MCP 都没有入口；沙箱宿主的 bash 又读不到 `~/memory`，Agent 因此无法自行定位事实。
 - 契约：[CLI 与 UI](../04-ui-and-cli-specification.md#1-cli-命令) 的命令表、[MCP 记忆工具](../09-mcp-memory-tools.md#44-工具集) 的工具表与 `M13`。

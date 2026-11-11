@@ -15,8 +15,8 @@
 | [P1-2](#p1-2持锁会话未将锁文件描述符传递给多数-git-子进程) | P1 | `internal/app`、`internal/git` | `Apply`、`Capture`、`Recover`、`Resolve` 等路径未向 `git.*` 传入带锁描述符的 `session.ctx` | [平台与进程生命周期](../01-architecture-and-modules.md#6-平台与进程生命周期)、`L01` |
 | [P1-3](#p1-3前台-git-子进程未经过统一环境白名单过滤) | P1 | `internal/git`、`internal/syncer` | 前台 Git 调用仅剔除 9 个重定向变量，未复用 `syncer.SyncEnv` 单一环境白名单 | [凭据与信任边界](../01-architecture-and-modules.md#34-凭据与信任边界)、[凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理) |
 | [P2-1](#p2-1readfile-未检查仓库锁待恢复事务与未合并-git-状态) | P2 | `internal/app` | `App.ReadFile` 直接读取工作区文件，未做锁探测、待恢复事务拦截与 Git 中间态门禁 | [写入不变量](../01-architecture-and-modules.md#23-写入不变量)、[中断与恢复](../03-workflows-and-dataflows.md#21-中断与恢复) |
-| [P2-2](#p2-2syncer-错误分类覆盖-no_upstream同步后残留旧计数且-hasupstream-分支恒假) | P2 | `internal/syncer`、`internal/app` | `Classify` 将 `*memerr.Error`（如 `NO_UPSTREAM`）覆盖为 `GIT_FAILED`，同步成功后未清零 `Ahead`/`Behind`，且 `!res.HasUpstream` 恒为 `false` | [凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[同步与恢复对象](../02-domain-models-and-contracts.md#22-同步与恢复) |
-| [P2-3](#p2-3本地提交固定返回-local_only-且-sync---capture-漏解析身份与后台同步) | P2 | `internal/app`、`internal/cli` | `Apply`/`Capture` 固定返回 `local_only` 且不将 `sync.json` 置为 `pending`；`sync --capture` 未解析 Agent/SID 且未触发后台同步 | [受管写入事务](../03-workflows-and-dataflows.md#2-受管写入事务)、[Git 同步步骤](../03-workflows-and-dataflows.md#42-git-同步步骤) |
+| [P2-2](#p2-2syncer-错误分类覆盖无上游错误同步后残留旧计数且-hasupstream-分支恒假) | P2 | `internal/syncer`、`internal/app` | `Classify` 将 `*memerr.Error`（如 `NO_UPSTREAM`）覆盖为 `GIT_FAILED`，同步成功后未清零 `Ahead`/`Behind`，且 `!res.HasUpstream` 恒为 `false` | [凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理)、[同步与恢复对象](../02-domain-models-and-contracts.md#22-同步与恢复) |
+| [P2-3](#p2-3本地提交固定返回仅本地状态且-capture-漏解析身份与后台同步) | P2 | `internal/app`、`internal/cli` | `Apply`/`Capture` 固定返回 `local_only` 且不将 `sync.json` 置为 `pending`；`sync --capture` 未解析 Agent/SID 且未触发后台同步 | [受管写入事务](../03-workflows-and-dataflows.md#2-受管写入事务)、[Git 同步步骤](../03-workflows-and-dataflows.md#42-git-同步步骤) |
 | [P2-4](#p2-4doctor-存在-4-处状态与内容诊断缺口) | P2 | `internal/doctor` | `checkGitState` 用 `switch` 掩盖多重异常、未检查孤立 `operation.json`、推荐元数据判断写为 `&&`、可疑短语扫描忽略非列表行 | [审计、诊断、整理与接入](../02-domain-models-and-contracts.md#23-审计诊断整理与接入)、[同步可观测性](../03-workflows-and-dataflows.md#8-同步可观测性) |
 | [P2-5](#p2-5resolve---apply-缺少基线必填校验且回写丢失文件模式与文本边界检查) | P2 | `internal/app`、`internal/cli` | `ResolveApply` 允许空 `baseRevision` 与空 `--conflict`，回写固定使用 `0644` 并跳过大小与 UTF-8 校验 | [格式保真](../02-domain-models-and-contracts.md#12-格式保真)、[REST 与解决契约](../02-domain-models-and-contracts.md#42-路由) |
 | [P2-6](#p2-6wrap-未向被包装子进程转发宿主信号) | P2 | `internal/cli` | `runWrap` 未注册 `signal.Notify` 将包装器收到的 `SIGINT`/`SIGTERM`/`SIGHUP` 转发给子进程 | [CLI 命令](../04-ui-and-cli-specification.md#1-cli-命令)、`H05` |
@@ -69,7 +69,7 @@
 - **影响后果**：在多文件写入落盘中途、崩溃待恢复（`recovery_required`）或 `resolving` 阶段工作区文件含冲突标记时，`memctl read` 会静默返回不一致的中间内容或 `<<<<<<<` 冲突标记，并生成对应的 `fileRevision`。
 - **修复建议**：在 `ReadFile` 中执行非阻塞或有界锁检查（锁忙返回 `BUSY`），并在存在待恢复事务、未决冲突或活跃 Git 中间态时拒绝读取。
 
-### P2-2：`syncer` 错误分类覆盖 `NO_UPSTREAM`、同步后残留旧计数且 `HasUpstream` 分支恒假
+### P2-2：`syncer` 错误分类覆盖无上游错误、同步后残留旧计数且 `HasUpstream` 分支恒假
 
 - **位置**：[`internal/syncer/syncer.go`](../../internal/syncer/syncer.go)（`Run` 第 94–157 行、`establishUpstream` 第 163–191 行、`Classify` 第 319–323 行）、[`internal/app/remote.go`](../../internal/app/remote.go)（`remoteFailure` 第 211–214 行）
 - **关联契约**：[凭据环境继承与失败处理](../03-workflows-and-dataflows.md#43-凭据环境继承与失败处理) 与 [同步与恢复对象](../02-domain-models-and-contracts.md#22-同步与恢复)。
@@ -79,7 +79,7 @@
   3. `syncer.Run` 在第 101 行无条件设置 `res.HasUpstream = true`，使第 147 行 `git.Push(..., !res.HasUpstream)` 的 `setUpstream` 参数恒为 `false`；且当 `establishUpstream` 已向空远端完成首次 `push -u`（第 169 行）后，`Run` 仍会重复执行一次 `Fetch` 和 `Push`。
 - **修复建议**：在 `Classify` 中优先保留已有 `*memerr.Error` 的错误码；在 `establishUpstream` 完成首次推送时直接返回同步成功结果；在快进或推送成功后将 `Ahead` 与 `Behind` 置零。
 
-### P2-3：本地提交固定返回 `local_only` 且 `sync --capture` 漏解析身份与后台同步
+### P2-3：本地提交固定返回仅本地状态且 `capture` 漏解析身份与后台同步
 
 - **位置**：[`internal/app/mutation.go`](../../internal/app/mutation.go)（`Apply` 第 217–228 行、`Capture` 第 314–321 行）、[`internal/cli/cli.go`](../../internal/cli/cli.go)（`runSync` 第 376–405 行）
 - **关联契约**：[受管写入事务](../03-workflows-and-dataflows.md#2-受管写入事务)、[Git 同步步骤](../03-workflows-and-dataflows.md#42-git-同步步骤)（「`Synced --> Pending: 新本地提交`」）与 [错误与部分成功](../02-domain-models-and-contracts.md#43-错误与部分成功)。

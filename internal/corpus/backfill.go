@@ -196,10 +196,10 @@ func discoverCandidates(req BackfillRequest, cwdKey string, sweep *sweep) []cand
 	out = append(out, discoverFlat(home, filepath.FromSlash(".claude/projects"), claudeDir(req.Cwd), "claude-code", claudeSessionID, sweep)...)
 	out = append(out, discoverFlat(home, filepath.FromSlash(".codebuddy/projects"), codeBuddyDir(req.Cwd), "codebuddy", claudeSessionID, sweep)...)
 	out = append(out, discoverFlat(home, filepath.FromSlash(".workbuddy/projects"), codeBuddyDir(req.Cwd), "workbuddy", claudeSessionID, sweep)...)
-	out = append(out, discoverFlat(home, filepath.FromSlash(".pi/agent/sessions"), piDir(req.Cwd), "pi", piSessionID, sweep)...)
+	out = append(out, discoverFlat(home, piSessionStore("pi"), piDir(req.Cwd), "pi", piSessionID, sweep)...)
 	// OMP shares pi's session directory naming and transcript format, so the
 	// same projection finds its store. See docs/17-omp-integration.md.
-	out = append(out, discoverFlat(home, filepath.FromSlash(".omp/agent/sessions"), piDir(req.Cwd), "omp", piSessionID, sweep)...)
+	out = append(out, discoverFlat(home, piSessionStore("omp"), piDir(req.Cwd), "omp", piSessionID, sweep)...)
 	out = append(out, discoverDSH(home, req.Cwd, sweep)...)
 	// Hosts whose store is not organised by project: the log decides, and a
 	// log of another project is closed after its metadata records.
@@ -472,6 +472,16 @@ func claudeSessionID(name string) string {
 // only replaces separators and wraps the result in `--`.
 func piDir(cwd string) string {
 	return "--" + strings.Trim(strings.ReplaceAll(cwd, "/", "-"), "-") + "--"
+}
+
+// piSessionStore returns the store root, relative to the home directory, of a
+// host with pi's session layout. pi and OMP differ only in this root, so the
+// sweep and LocateSession share it instead of repeating the path.
+func piSessionStore(agent string) string {
+	if agent == "omp" {
+		return filepath.FromSlash(".omp/agent/sessions")
+	}
+	return filepath.FromSlash(".pi/agent/sessions")
 }
 
 // piSessionID reads the session id from a pi transcript name, which is

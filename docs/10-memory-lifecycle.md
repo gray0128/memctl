@@ -83,8 +83,8 @@ parent: memctl-contracts
 - **过滤位置**：在读取层统一过滤，三个入口看到同一结果。注入（`start`/`context`）、`read`/`memory_read`、`entries`/`memory_entries`/`GET /api/v1/entries` 与 Web UI 快照共用同一判定。
 - **`read` 的返回形态**：完整文件读取保留行数与元数据，只把已到期条目的正文替换为固定占位符 `[已过期：…]`，并保留其 `until`/`source`/`added` 原文；响应附带 `hiddenExpired` 计数。这样读者知道「这里有一条被隐藏的条目」，写入基线仍是磁盘原文，不会因隐藏而删除数据。
 - **结构化读取**：条目列表、快照与 MCP `memory_entries` 直接剔除已到期条目，不返回占位符；快照的 `hiddenExpired` 给出被剔除的总数，用于区分「没有条目」与「被过期隐藏」。
-- **写入不变**：隐藏只作用于读取结果。写事务、基线校验、Git 提交与 `doctor` 都按磁盘原文工作；被隐藏的条目在下次写入时按原样保留。
-- **删除入口**：隐藏期满 30 天后，删除仍须经 UI 单条删除或 Dreaming 提案（固定 Diff 确认），不在读取或注入路径上自动删除。两条路径共用同一闸门：单条删除由 `App.DeleteEntry` 校验，提案应用由 `ApplyDream` 在落盘前逐文件比对原文，命中隐藏期内的到期条目即返回 `DELETION_DEFERRED`，提案保持 `ready`。
+- **写入不变**：隐藏只作用于读取结果。写事务、基线校验、Git 提交与 `doctor` 都按磁盘原文工作；当调用方基于 `read`/`memory_read` 的投影文本整文件写回时，`App.Apply`（`reconcileExpiredWrites`）将与磁盘到期条目投影逐字节匹配的占位符行按磁盘顺序自动还原为原文行，无法匹配的占位符（捏造、重复、修改元数据或新建文件含占位符）返回 `INVALID_ARGUMENT`。
+- **删除入口**：隐藏期满 30 天后，删除仍须经 UI 单条删除、整文件受管写入或 Dreaming 提案（固定 Diff 确认），不在读取或注入路径上自动删除。各写入路径共用同一 `expiredRemovals` 闸门：单条删除由 `App.DeleteEntry` 校验，整文件写入（`write`/`memory_write`/`PUT /api/v1/files`）与提案应用（`ApplyDream`）在保存前逐文件比对原文，凡删去或改写隐藏期内的到期条目（含整文件删除）即返回 `DELETION_DEFERRED`（`ApplyDream` 触发时提案保持 `ready`）。
 
 ## 4. 当前实现边界
 

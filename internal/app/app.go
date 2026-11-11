@@ -331,11 +331,19 @@ func (a *App) result(repoPath, state, head string) InitResult {
 }
 
 // bootstrapFirstCommit creates the entry file and the first commit of a new
-// repository.
+// repository. It also creates the empty `notes/` directory the instructions
+// name for topic files, so the first `notes/<topic>.md` write needs no manual
+// mkdir; memctl never creates directories while holding the repository lock.
+// Git does not track an empty directory, so the first commit still holds only
+// the entry file.
 func bootstrapFirstCommit(ctx context.Context, repoPath string, source git.Source) (string, error) {
 	memoryPath := filepath.Join(repoPath, vault.EntryPointName)
 	if err := os.WriteFile(memoryPath, []byte(initialMemoryContent), 0o644); err != nil {
 		return "", memerr.Wrap(memerr.IOFailed, err, "cannot create %s", memoryPath)
+	}
+	notesPath := filepath.Join(repoPath, "notes")
+	if err := os.MkdirAll(notesPath, 0o755); err != nil {
+		return "", memerr.Wrap(memerr.IOFailed, err, "cannot create %s", notesPath)
 	}
 	return finishFirstCommit(ctx, repoPath, source)
 }

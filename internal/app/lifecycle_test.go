@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/git"
+	"github.com/gray0128/memctl/internal/lock"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -134,23 +136,59 @@ func TestInjectionHidesExpiredEntries(t *testing.T) {
 	}
 }
 
-// TestWriteAfterHideKeepsExpiredEntry covers the baseline contract: a write
-// based on the projected revision round-trips the hidden entry, so hiding never
-// deletes data.
+// TestBusyInjectionHidesExpiredEntries covers the lock-busy fallback of the
+// session body: while another process holds the repository lock, start and
+// context still inject the last readable MEMORY.md, and that read goes
+// through the same hide projection as the locked path.
+func TestBusyInjectionHidesExpiredEntries(t *testing.T) {
+	service, ctx := newLifecycleService(t)
+	writeFile(t, service, ctx, "MEMORY.md", "# Memory\n\n- keep me\n- drop me [until: 2026-10-18]\n")
+	gitDir, err := git.GitDir(ctx, service.cfg.RepoPath)
+	if err != nil {
+		t.Fatalf("git dir: %v", err)
+	}
+	held, ok, err := lock.TryAcquire(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("TryAcquire: ok=%v err=%v", ok, err)
+	}
+	defer held.Release()
+
+	outcome, err := service.PrepareSession(ctx, SessionOptions{SessionID: "s-busy"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if !strings.Contains(outcome.Body, "sync=busy") {
+		t.Fatalf("banner does not report the busy lock:\n%s", outcome.Body)
+	}
+	if strings.Contains(outcome.Body, "drop me") {
+		t.Fatalf("busy injection leaked the expired fact:\n%s", outcome.Body)
+	}
+	if !strings.Contains(outcome.Body, "keep me") || !strings.Contains(outcome.Body, vault.ExpiredFactPlaceholder) {
+		t.Fatalf("busy injection lost the projected entry file:\n%s", outcome.Body)
+	}
+}
+
+// TestWriteAfterHideKeepsExpiredEntry covers the baseline contract: a caller
+// writes back the projected read it received, placeholders included, and the
+// hidden facts stay on disk byte for byte, so hiding never deletes data. Two
+// entries with the same projection are restored in their on-disk order.
 func TestWriteAfterHideKeepsExpiredEntry(t *testing.T) {
 	service, ctx := newLifecycleService(t)
-	writeFile(t, service, ctx, "MEMORY.md", "# Memory\n\n- expired [until: 2026-10-01]\n")
+	original := "# Memory\n\n" +
+		"- expired [until: 2026-10-01]\n" +
+		"- active [until: 2026-12-31]\n" +
+		"- twin one [until: 2026-10-02]\n" +
+		"- twin two [until: 2026-10-02]\n"
+	writeFile(t, service, ctx, "MEMORY.md", original)
 	file, err := service.ReadFile(ctx, "MEMORY.md")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	// The caller edits another line only. The placeholder is not part of the
-	// file, so the write content has to come from the raw read.
-	raw, err := service.readRaw(ctx, "MEMORY.md")
-	if err != nil {
-		t.Fatalf("raw read: %v", err)
+	if file.HiddenExpired != 3 || strings.Contains(file.RawContent, "expired [") {
+		t.Fatalf("projection did not hide the expired entries: %+v", file)
 	}
-	updated := strings.Replace(raw.RawContent, "# Memory\n", "# Memory\n\n- new fact\n", 1)
+	// The caller only adds a line to the projected content it was given.
+	updated := strings.Replace(file.RawContent, "# Memory\n", "# Memory\n\n- new fact\n", 1)
 	if _, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
 		Path:             "MEMORY.md",
 		ExpectedRevision: file.FileRevision,
@@ -163,13 +201,84 @@ func TestWriteAfterHideKeepsExpiredEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("raw read after write: %v", err)
 	}
-	if !strings.Contains(onDisk.RawContent, "expired [until: 2026-10-01]") {
-		t.Fatalf("write dropped the hidden entry:\n%s", onDisk.RawContent)
+	want := strings.Replace(original, "# Memory\n", "# Memory\n\n- new fact\n", 1)
+	if onDisk.RawContent != want {
+		t.Fatalf("write did not restore the hidden entries:\n%s\nwant:\n%s", onDisk.RawContent, want)
+	}
+	if strings.Contains(onDisk.RawContent, vault.ExpiredFactPlaceholder) {
+		t.Fatalf("placeholder reached the file:\n%s", onDisk.RawContent)
 	}
 }
 
-// readRaw reads one file without the hide projection, which is what a caller
-// that intends to rewrite the file must use.
+// TestWriteRefusesUnmatchedPlaceholder covers the forgery side of the restore:
+// a placeholder that is not the projection of a hidden entry on disk, whether
+// fabricated, duplicated or with edited metadata, is refused with
+// INVALID_ARGUMENT and the file stays unchanged.
+func TestWriteRefusesUnmatchedPlaceholder(t *testing.T) {
+	service, ctx := newLifecycleService(t)
+	original := "# Memory\n\n- expired [until: 2026-10-01]\n"
+	writeFile(t, service, ctx, "MEMORY.md", original)
+	file, err := service.ReadFile(ctx, "MEMORY.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	placeholderLine := "- " + vault.ExpiredFactPlaceholder + " [until: 2026-10-01]\n"
+	cases := map[string]string{
+		"fabricated": file.RawContent + "- " + vault.ExpiredFactPlaceholder + " [until: 2026-09-01]\n",
+		"duplicated": file.RawContent + placeholderLine,
+		"edited":     strings.Replace(file.RawContent, "[until: 2026-10-01]", "[until: 2027-10-01]", 1),
+	}
+	for name, content := range cases {
+		_, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+			Path: "MEMORY.md", ExpectedRevision: file.FileRevision, Action: ActionPut, RawContent: content,
+		}}})
+		requireContractCode(t, err, memerr.InvalidArgument)
+		if onDisk, _ := service.readRaw(ctx, "MEMORY.md"); onDisk.RawContent != original {
+			t.Fatalf("%s: the refused write changed the file:\n%s", name, onDisk.RawContent)
+		}
+	}
+	// A new file has no hidden entry, so any placeholder in it is forged.
+	_, err = service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+		Path: "forged.md", ExpectedRevision: vault.AbsentRevision, Action: ActionPut, RawContent: "# Forged\n\n" + placeholderLine,
+	}}})
+	requireContractCode(t, err, memerr.InvalidArgument)
+}
+
+// TestWholeFileWriteRespectsHiddenPeriod covers the delete gate on the shared
+// Apply kernel behind CLI write, MCP memory_write and PUT /api/v1/files: a
+// whole-file write or file delete that drops an expired entry inside its
+// hidden period is refused with DELETION_DEFERRED, and the same write passes
+// once the period is over.
+func TestWholeFileWriteRespectsHiddenPeriod(t *testing.T) {
+	service, ctx := newLifecycleService(t)
+	writeFile(t, service, ctx, "topic.md", "# Topic\n\n- expired [until: 2026-10-01]\n- plain\n")
+	file, err := service.ReadFile(ctx, "topic.md")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// The clock is 2026-10-19; until 2026-10-01 becomes deletable on 2026-11-01.
+	dropped := "# Topic\n\n- plain\n"
+	_, err = service.PutFile(ctx, "topic.md", file.FileRevision, dropped, "", "", "")
+	requireContractCode(t, err, memerr.DeletionDeferred)
+	_, err = service.Apply(ctx, MutationRequest{Changes: []FileChange{{
+		Path: "topic.md", ExpectedRevision: file.FileRevision, Action: ActionDelete,
+	}}})
+	requireContractCode(t, err, memerr.DeletionDeferred)
+	if onDisk, _ := service.readRaw(ctx, "topic.md"); !strings.Contains(onDisk.RawContent, "- expired [until: 2026-10-01]") {
+		t.Fatalf("a refused write changed the file:\n%s", onDisk.RawContent)
+	}
+
+	service.SetClock(fixedClock(t, time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)))
+	if _, err := service.PutFile(ctx, "topic.md", file.FileRevision, dropped, "", "", ""); err != nil {
+		t.Fatalf("write after the hidden period: %v", err)
+	}
+	if onDisk, _ := service.readRaw(ctx, "topic.md"); onDisk.RawContent != dropped {
+		t.Fatalf("the expired entry was not removed:\n%s", onDisk.RawContent)
+	}
+}
+
+// readRaw reads one file without the hide projection, so a test can inspect
+// the bytes on disk.
 func (a *App) readRaw(ctx context.Context, relPath string) (vault.FileRead, error) {
 	session, err := a.beginRead(ctx)
 	if err != nil {

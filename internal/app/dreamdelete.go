@@ -31,22 +31,9 @@ func dreamDeferredEntries(root *vault.Root, plan dream.ApplyPlan, now time.Time)
 			// create expects; neither can remove an entry.
 			continue
 		}
-		before := vault.ParseFile(previous.RelPath, previous.FileRevision, []byte(previous.RawContent))
-		kept := map[string]bool{}
-		if change.Action != dream.ChangeDelete {
-			after := vault.ParseFile(change.Path, "", []byte(change.Content))
-			for _, entry := range after.Entries {
-				kept[entry.RawLine] = true
-			}
-		}
-		for _, entry := range before.Entries {
-			if kept[entry.RawLine] || entry.UntilDate == "" {
-				continue
-			}
-			if vault.EntryExpired(entry.UntilDate, now) && !vault.DeletionDue(entry.UntilDate, now) {
-				deferred = append(deferred, change.Path+": "+vault.DeletionBlockedReason(entry.UntilDate, now))
-			}
-		}
+		// The same rule guards every whole-file write; see expiredRemovals.
+		deferred = append(deferred, expiredRemovals(change.Path, []byte(previous.RawContent),
+			change.Content, change.Action == dream.ChangeDelete, now)...)
 	}
 	return deferred, nil
 }

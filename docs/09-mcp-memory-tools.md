@@ -91,9 +91,9 @@ Agent（模型）
 ### 4.2 会话身份
 
 - `--agent` 与 `--sid` 由宿主配置固定传入，或在配置中由宿主注入环境变量后由 `memctl mcp` 读取。
-- 宿主无法按会话固定 `--sid` 时，`memory_write` 接受可选的 `sid` 参数，取值为本次注入的 `source` 标签最后一段。DSH profile 只写 `args: ["mcp","--agent","dsh"]`，MCP 传输没有会话通道，stdio 子进程又不继承 `DSH_*` 环境变量，因此这是该宿主唯一可用的来源。
-- 启动时配置了 `--sid` 就忽略调用值：宿主为该进程固定的会话身份不能被单次工具调用覆盖。未配置时调用值写入提交的 `Session:` trailer。
-- 调用值超过 200 字节或含控制字符返回 `INVALID_ARGUMENT`，不静默改写，也不产生提交。
+- 宿主无法按会话固定 `--sid` 时，`memory_write` 与 `memory_dream_prepare` 接受可选的 `sid` 参数，取值为本次注入的 `source` 标签最后一段（用于写入提交的 `Session:` trailer 或在整理准备阶段刷新当前会话摘要）。DSH profile 只写 `args: ["mcp","--agent","dsh"]`，MCP 传输没有会话通道，stdio 子进程又不继承 `DSH_*` 环境变量，因此这是该宿主唯一可用的来源。
+- 启动时配置了 `--sid` 就忽略调用值：宿主为该进程固定的会话身份不能被单次工具调用覆盖。未配置时调用值写入提交的 `Session:` trailer 或用于定位当前会话日志。
+- 调用值超过 200 字节或含控制字符返回 `INVALID_ARGUMENT`，不静默改写，也不产生提交或快照。
 - 未提供任何会话标识时，工具仍可工作，提交只记录 `Agent` 与 `Device`，且不参与跨进程去重。不伪造来源。
 - `source` 标签沿用 [CLI 与 Hook 契约](./04-ui-and-cli-specification.md) 的 `tag` 规则；上下文注入中已提供该标签，工具不需要重复输出。
 
@@ -117,7 +117,7 @@ Agent（模型）
 | `memory_read` | 读取记忆文件并返回修订标识 | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` | `readOnlyHint: true`、`destructiveHint: false` |
 | `memory_entries` | 检索已解析条目，定位事实所在文件 | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` | `readOnlyHint: true`、`destructiveHint: false` |
 | `memory_write` | 以版本基线受管写入一个文件 | `path`、`base`、`content`、`sid?` | `transaction`、`commit`、`revision`、`sync` | 不声明 |
-| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） | 不声明（会改写 `cache/dream/prepare.json` 快照） |
+| `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB）、`sid?`（可选会话标识，服务器未固定 `--sid` 且环境无会话 ID 时用于刷新当前会话摘要，校验规则与 `memory_write` 一致） | `DreamPrepareBundle`（`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） | 不声明（会改写 `cache/dream/prepare.json` 快照） |
 | `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并与 `files[]` 逐字比对，再执行父目录、断链与孤立文件的结构守卫后持久化本地提案（阶段 H） | `baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） | 不声明 |
 
 不提供 `memory_dream_apply`：MCP 场景下无法区分「用户已审阅」与「Agent 自行决定应用」，应用提案只保留 CLI `dream --apply` 与 Web UI「整理」视图两个用户入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#32-禁止项)）。
@@ -191,7 +191,7 @@ Agent（模型）
 | WorkBuddy | `~/.workbuddy/mcp.json` | 无 CLI，手工添加 stdio 条目：`command` 为 `<memctl>`、`args` 为 `["mcp","--agent","workbuddy"]` | 用户级文件名是 `mcp.json`；`.mcp.json` 只被插件与专家包读取。改完需重启应用或在自定义连接器入口点「信任」 |
 | Delta | — | 不适用（本地 stdio） | Delta 只接受远端 HTTPS MCP server，本地 stdio 无法注册；Delta 不对 Agent 施加沙箱，写入改用 CLI，见 [13. Delta 宿主接入](./13-delta-integration.md#1-结论) |
 
-把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；宿主无法按会话注入时省略该参数，改由 `memory_write` 的 `sid` 参数携带，两者都没有时提交只记录 `Agent` 与 `Device`。
+把 `<memctl>` 替换为实际二进制路径，默认 `~/.agent-memory/bin/memctl`。需要会话级工具归属时由宿主注入 `--sid`；宿主无法按会话注入时省略该参数，改由 `memory_write` 或 `memory_dream_prepare` 的 `sid` 参数携带，两者都没有时提交只记录 `Agent` 与 `Device`。
 
 有 `mcp add` 子命令的 8 个宿主已在 2026-10-18 执行上表命令，均被接受并在各自状态命令中显示已连接：`claude mcp list` 返回 `Connected`，`pi mcp list` 返回 `connected, 2 tools`（当时只有 `memory_read`、`memory_write`；`memory_entries` 是 `T089` 新增的第三个工具），`opencode mcp list` 返回 `✓ memctl connected`，`agy mcp list` 列出 `memctl`，Codex、Grok 与 Command Code 的 `mcp list` 显示 `enabled`。其中 6 个使用隔离 `HOME`；Antigravity 的凭据在系统钥匙串，改用真实登录态并在真实配置中临时加入指向探针仓库的条目。DSH 没有等价子命令，只能按上表手工编辑。CodeBuddy 于 2026-10-21 在隔离 `HOME` 下补测：`codebuddy mcp add --scope user` 写入 `~/.codebuddy/.mcp.json`，`codebuddy mcp list` 对真实二进制返回 `✓ Connected`。WorkBuddy 没有 CLI。应用自己的代码把用户级 MCP 文件定义为 `<configDir>/mcp.json`（`UserMcpFile` 使用常量 `mcp.json`，`migrateMcpJsonPaths` 读同一路径）；`.mcp.json` 只在插件与专家包场景（`readPluginMcpConfig`、`readExpertMcpServers`）被读取，写到那里不会加载。2026-10-21 在真实应用目录写入 `~/.workbuddy/mcp.json` 后，用管道跑 `initialize` 与 `tools/list` 得到 `serverInfo memctl v0.11.0` 与五个工具；运行中的应用不热加载，需要在自定义连接器入口点「信任」或重启。
 
@@ -262,7 +262,7 @@ MCP 与生命周期插件互补，不互相替代：
 | M11 | 标准错误与诊断输出 | 不包含记忆正文、完整参数或凭据 |
 | M12 | 宿主关闭连接 | 进程退出，不遗留子进程与锁 |
 | M13 | `memory_entries` 按 `q`/`file`/`agent`/`device`/`from`/`to`/`limit`/`offset` 检索 | 参数原样下发到条目查询；返回 `{revision, items, total}` 与 `GET /api/v1/entries` 一致；负 `limit` 在调用前被拒绝；契约失败以 `isError` 携带错误码而非协议错误 |
-| M14 | 无 `--sid` 时传 `sid`；已配置 `--sid` 时传不同值；传入含控制字符或超长值 | 前两者分别把调用值写入 `Session:` trailer 与保留配置值；非法值返回 `INVALID_ARGUMENT`，不产生提交 |
+| M14 | 无 `--sid` 时向 `memory_write` 或 `memory_dream_prepare` 传 `sid`；已配置 `--sid` 时传不同值；传入含控制字符或超长值 | 前两者分别使用调用值（写入 `Session:` trailer 或刷新当前会话摘要）与保留配置值；非法值返回 `INVALID_ARGUMENT`，不产生提交或快照 |
 | M15 | `tools/list` 的注解取值 | `memory_read` 与 `memory_entries` 返回 `annotations: {readOnlyHint: true, destructiveHint: false}`；`memory_write`、`memory_dream_prepare`、`memory_dream_propose` 的响应 JSON 里没有 `annotations` 键（不是 `null`）；两个读工具是唯一的注解持有者 |
 
 ### 6.2 真实验证边界

@@ -615,6 +615,7 @@ func TestLocateSessionFindsKnownSessionCoversD07(t *testing.T) {
 	agyPath := writeAntigravitySession(t, home, cwd, "agy-session", "以后审查报告统一用中文")
 	codebuddyPath := writeCodeBuddySession(t, home, cwd, "codebuddy-session", "发布只推标签")
 	workbuddyPath := writeWorkBuddySession(t, home, cwd, "workbuddy-session", "以后都用 pnpm")
+	ompPath := writeOmpSession(t, home, cwd, "omp-session", "OMP 和 pi 共用同一份扩展")
 
 	cases := []struct {
 		agent string
@@ -623,6 +624,8 @@ func TestLocateSessionFindsKnownSessionCoversD07(t *testing.T) {
 	}{
 		{"claude-code", "claude-session", claudePath},
 		{"pi", "pi-session", piPath},
+		{"omp", "omp-session", ompPath},
+		{"omp", "pi-session", ""},
 		{"dsh", "dsh-session", dshPath},
 		{"codex", "codex-session", codexPath},
 		{"antigravity", "agy-session", agyPath},

@@ -317,6 +317,11 @@ func (r *Root) RequireParentDir(rel string) error {
 	}
 	info, err := r.lstatNoSymlinks(parent)
 	if err != nil {
+		if contractErr, ok := memerr.As(err); ok && contractErr.Code == memerr.NotFound {
+			// Name the missing directory, not a file: memctl does not create
+			// directories while holding the repository lock.
+			return memerr.Wrap(memerr.NotFound, err, "parent directory %q does not exist", parent)
+		}
 		return err
 	}
 	if !info.IsDir() {

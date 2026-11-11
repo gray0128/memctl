@@ -133,6 +133,11 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	if err != nil {
 		return MutationResult{}, err
 	}
+	// A whole-file write may carry the placeholders of a projected read and
+	// must not bypass the hidden period of expired entries.
+	if err := a.reconcileExpiredWrites(plans); err != nil {
+		return MutationResult{}, err
+	}
 	operation := req.Operation
 	if operation == "" {
 		operation = "write"

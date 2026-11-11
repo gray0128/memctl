@@ -158,6 +158,14 @@ func TestA2InitIsIdempotent(t *testing.T) {
 	if remotes := gitOutput(t, env, repo, "remote"); remotes != "" {
 		t.Fatalf("local init must not configure a remote, got %q", remotes)
 	}
+	// init creates the empty notes/ directory for topic files, while the first
+	// commit still tracks only the entry file.
+	if info, err := os.Stat(filepath.Join(repo, "notes")); err != nil || !info.IsDir() {
+		t.Fatalf("init did not create notes/: info=%v err=%v", info, err)
+	}
+	if tracked := gitOutput(t, env, repo, "ls-files"); tracked != "MEMORY.md" {
+		t.Fatalf("first commit tracks %q, want only MEMORY.md", tracked)
+	}
 
 	second := runMemctl(t, bin, home, env, "init")
 	if second.code != 0 {
@@ -448,7 +456,8 @@ func TestA2ReadCoversF04(t *testing.T) {
 		t.Fatalf("chmod back: %v", err)
 	}
 
-	if err := os.Mkdir(filepath.Join(repo, "notes"), 0o755); err != nil {
+	// init already creates notes/; MkdirAll keeps the fixture independent of it.
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "diagram.png"), []byte{0x89, 'P', 'N', 'G', 0x00, 0x01}, 0o644); err != nil {

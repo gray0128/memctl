@@ -167,7 +167,8 @@ func TestApplyCreatesAndDeletesFiles(t *testing.T) {
 	service, repo := newTestService(t)
 	ctx := context.Background()
 
-	if err := os.Mkdir(filepath.Join(repo, "notes"), 0o755); err != nil {
+	// init already creates notes/; MkdirAll keeps the fixture independent of it.
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	created, err := service.Apply(ctx, MutationRequest{Changes: []FileChange{{

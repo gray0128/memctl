@@ -51,19 +51,19 @@ type Turn struct {
 // Digest is the SessionDigest of docs/12-session-corpus-dreaming.md section
 // 2.2.3. It is written once per session and updated atomically.
 type Digest struct {
-	SchemaVersion      int    `json:"schemaVersion"`
-	Agent              string `json:"agent"`
-	SessionID          string `json:"sessionId"`
-	SourceTag          string `json:"sourceTag"`
-	Date               string `json:"date"`
-	UpdatedAt          string `json:"updatedAt"`
-	CwdBase            string `json:"cwdBase"`
-	CwdKey             string `json:"cwdKey"`
-	Truncated          bool   `json:"truncated"`
-	WroteMemoryInSess  bool   `json:"wroteMemoryInSession"`
-	ConsumedBy         string `json:"consumedBy"`
-	ConsumedRevision   string `json:"consumedRevision"`
-	Turns              []Turn `json:"turns"`
+	SchemaVersion     int    `json:"schemaVersion"`
+	Agent             string `json:"agent"`
+	SessionID         string `json:"sessionId"`
+	SourceTag         string `json:"sourceTag"`
+	Date              string `json:"date"`
+	UpdatedAt         string `json:"updatedAt"`
+	CwdBase           string `json:"cwdBase"`
+	CwdKey            string `json:"cwdKey"`
+	Truncated         bool   `json:"truncated"`
+	WroteMemoryInSess bool   `json:"wroteMemoryInSession"`
+	ConsumedBy        string `json:"consumedBy"`
+	ConsumedRevision  string `json:"consumedRevision"`
+	Turns             []Turn `json:"turns"`
 }
 
 // CwdKey returns the documented project key: sha256 of the canonical absolute

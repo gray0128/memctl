@@ -198,7 +198,8 @@ func TestA3WriteBoundaries(t *testing.T) {
 	}
 
 	// A new file under an existing directory is accepted.
-	if err := os.Mkdir(filepath.Join(repo, "notes"), 0o755); err != nil {
+	// init already creates notes/; MkdirAll keeps the fixture independent of it.
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	create := runMemctlStdin(t, bin, home, env, "created\n",

@@ -22,7 +22,8 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 | E：DSH 专用插件 | `memctl-dsh` Host 插件、内嵌 tarball/目录、原生与旧插件探测、发布产物 | 插件单元测试、包清单、隔离 profile 安装与适配状态测试通过；真实会话注入未验证时如实记录 |
 | F：pi 专用插件 | `memctl-pi` 扩展、本地包目录、原生与旧路径探测、npm/本地分发 | 插件单元测试、包清单、隔离 pi 安装与适配状态矩阵通过；真实会话注入未验证时如实记录 |
 | G：GitHub Actions Dreaming | 远端分支触发、多步结构化整理 worker、4 家内置模型提供商、`--init-workflow` | `.github` 路径保护、`dream/req` 与 `dream/res` 分支协议、Step Guard 校验、幂等初始化与真实 GitHub Actions 验收通过 |
-| H：跨会话新记忆提炼 | 本地会话确定性蒸馏与脱敏缓存、本地当前 Agent 交互式整理（`dream --prepare`/`--propose` 与 MCP 工具）、来源绑定守卫 | 正则脱敏与可疑指令过滤、`sessionIndices` 来源绑定校验、30 天删除闸门、本地提案生成与消费闭环验收通过 |
+| H：跨会话新记忆提炼 | 本地会话确定性蒸馏与脱敏缓存、本地当前 Agent 交互式整理（`dream --prepare`/`--propose` 与 MCP 工具）、来源绑定守卫 | 正则脱敏与可疑指令过滤、`sessionIndices` 来源绑定校验、30 天删除闸门、本地提案生成与消费流程验收通过 |
+| I：记忆架构止血与读侧/原语演进 | P0 读写生命周期与蒸馏守卫止血、P1 最小安全写原语与无锁快照读及预算化项目注入、P2 分词 BM25 检索与单轨本地 Dreaming 纠错、P3 块级条目模型与膨胀诊断 | P0–P3 各步单元与集成回归测试、跨包宿主注册表一致性检查与 `gofmt` 闸门全部通过；具体步骤见阶段 I 实施顺序 |
 
 这些阶段是实现与开放顺序，不删除原定功能。每个平台、宿主及插件版本独立记录验证结果；某一组合失败不以关闭保护机制换取「支持」。以下小节定义全项目的完整实施顺序、前置依赖、交付边界与验收映射；实际执行进度、任务拆分与验证证据统一在 [STATUS.md](./STATUS.md) 维护。`A-1` 等是阶段步骤，`F01` 等是验收场景，两者不混用。
 
@@ -116,6 +117,20 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 | H-3：本地交互式 `prepare`/`propose`、项目筛选与 MCP 工具（`T102`，已完成） | H-2a、H-2b | `internal/dream` 实现本地基线固定路径（不依赖远端就绪检查）、`PrepareLocal`（补扫触发、`cwdKey` 优先排序、`--project` 过滤与 `remainingUnconsumed` 计数）、`ProposeLocal`（Provenance Guard、`files[]` 逐字比对、30 天删除闸门与链接校验）、`ApplyDream` 的幂等消费写回与 `Store.List`；CLI 新增 `dream --prepare`、`dream --propose --stdin`、`dream --list`；`internal/mcp` 新增 `memory_dream_prepare`、`memory_dream_propose`；`internal/server` 新增 `GET /api/v1/dream` | D07、D08 单元测试、MCP 协议测试与 CLI 集成测试 |
 | H-4：配套 Skill、CLI 帮助、UI 展示与端到端验收（`T103`，已完成） | H-3（已完成） | 更新 `skills/memctl/SKILL.md` 纳入本地交互式 Dreaming 指引；更新中英与 JSON 帮助；UI「整理」视图通过 `GET /api/v1/dream` 列出提案并展示 `local-agent` 的 `sessionsScanned`/`newMemoriesExtracted`；完成宿主会话内端到端验收 | D06、D07、D08、R06、前端单测与真实宿主会话回归 |
 
+### 阶段 I 的实施顺序
+
+阶段 I 由 [18. 实现审查与记忆架构优化方案](./18-agent-memory-review-and-optimization.md) 定义，在保持「Markdown + Git 为唯一事实来源、纯 Go 单文件二进制、零外部数据库与常驻进程」的前提下，按 P0–P3 顺序拆分为 7 个可单轮独立验收的步骤。
+
+| 步骤 | 前置依赖 | 本轮交付边界 | 对应验收 |
+| --- | --- | --- | --- |
+| I-1a：P0 读写生命周期止血、宿主一致性与工程闸门（`T138`，已完成） | H-4、`T137` | `App.Apply` 新增 `reconcileExpiredWrites` 拦截或自动还原到期占位符并统一执行 30 天隐藏期删除闸门（`DELETION_DEFERRED`）；锁忙（`BUSY`）时会话注入回退路径补齐 `projectRead` 到期隐藏投影；`LocateSession` 与中文帮助补齐 `omp`、会话环境变量说明补齐 `PI_SESSION_ID` 与 `DELTA_CURRENT_THREAD_ID`；MCP `memory_dream_prepare` 补齐可选 `sid` 参数；新增 `corpus` 包内 `parsers`、`LocateSession` 与 `Backfill` 宿主覆盖一致性测试（`TestEveryParsedHostIsLocatedAndSwept`）；`init` 默认创建空 `notes/` 目录（不建 `.gitkeep`）并修正 `RequireParentDir` 报错文案为 `parent directory "<dir>" does not exist`；修复 `internal/corpus/corpus.go` 的 `gofmt` 漂移并加入 `gofmt_test.go` 闸门 | F04、W01、G01、H06、M02、M14、D07、R06、V-OMP-04 及新增回归测试 |
+| I-1b：P0 会话蒸馏、来源差集守卫与项目根归一化 | I-1a | `ResolveProjectRoot` 通用 Git 顶层目录、`git worktree` 与软链接归一化，Hook 回退路径 `cwd` 归一化；补齐 `~/.gemini/antigravity-cli/brain` 会话扫描与定位；新增跨包 `adapters.Registry()` 与 `corpus`、`mcp/status.go` 宿主注册表一致性测试；移除包级 `suspiciousMatcher` 改为显式配置注入，覆盖 `prepare`、`Backfill` 与 MCP 路径并扩展至工具签名；`corpus.RealTime` 保留已消费状态与增量回合，`consumableDigests` 改用 `prepare` 快照哈希；`propose` 对 `files[]` 新增行做来源差集守卫、脱敏与可疑指令检查；`prepare-<bundleId>.json` 快照隔离；扩展 `redact.go` 正则覆盖 9 类绕过形态 | D06、D07、D08、X10–X12 及脱敏与差集回归测试 |
+| I-2a：P1 面向 Agent 的最小安全写原语与同事务索引维护 | I-1b | 新增 CLI `memctl add` 与 MCP `memory_append`：服务端拼装 `[source; added]`、提交说明记录 `Session-Origin` trailer、仓库锁内同事务幂等维护 `MEMORY.md` 的 `## Index` 索引、修复已存在文件的 `heading` 小节末尾插入语义 | W01、W02、M02、M05、M14、R06 及多会话并发追加索引测试 |
+| I-2b：P1 分支引用提交树无锁快照读与预算化项目仪表盘注入 | I-1b、I-2a | 锁忙（`BUSY`）时只读面（`ReadFile`、`ListEntries`、`buildSessionBody`）回退读取当前分支引用 `refs/heads/<branch>` 的 Git 提交树快照并执行到期隐藏投影；引入 `200` 行 / `25 KiB` 顶层注入预算、裁剪内嵌 `INSTRUCTIONS.md`、基于归一化项目根自动预加载当前项目关联主题摘要并折叠无关项目索引 | F04、H03、H06、M03、M07、R01 及锁忙并发只读测试 |
+| I-3a：P2 纯 Go 内存分词 BM25 与一跳图谱关联检索 | I-2b | 实现 ASCII 词元与 CJK 二元组内存分词器；`ListEntries` 扩展为跨路径、小节标题、正文与子行的多字段权重 BM25 加时间新鲜度排序；返回结构新增 `relatedFiles` 一跳出入链导航提示；新增 `--project` 过滤与 `--include-transcripts` 近期会话轨迹检索 | F02、M13、R06 及多词乱序、中文分词与图谱一跳检索测试 |
+| I-3b：P2 冻结远端轨道与单轨本地 Dreaming 纠错及结构化组装 | I-1b、I-3a | 将远端 GitHub Actions Dreaming 标记为维护冻结；`SessionDigest` 改为头尾保留截断（前 `384 B` + 后 `640 B`）、`Turn` 新增有界失败/验证输出摘要 `ToolOutcomes`、超 `8 MiB` 的 Codex 会话预先保留首行 `session_meta`；`prepare` 自动召回 `relatedExistingEntries` 支撑对照会话轨迹证伪纠错；`propose` 支持结构化 `operations[]`（`append_entry`、`replace_entry`、`delete_entry`）由 Go 无损组装目标文件与索引 | D06、D07、D08 及对照轨迹纠错与结构化操作组装测试 |
+| I-4：P3 块级条目模型、稳定 `EntryID`、可选元数据守卫与膨胀诊断 | I-3a、I-3b | `vault` 解析器将顶层条目后的连续缩进子列表与代码围栏归属为 `DetailLines`；元数据支持 `\;` 分号转义；`EntryID` 改为基于 `FilePath + NormalizedFactText + AddedDate` 的稳定内容哈希；识别可选 `kind: event`（代码级防静默删改守卫）与 `status: hypothesis`（`doctor` 与 `prepare` 生成 `UNCONFIRMED_HYPOTHESIS` 提醒）；`doctor` 新增单主题膨胀 `TOPIC_BLOAT` 与跨文件近似重复 `NEAR_DUPLICATE` 静态检查 | F01、W01、D07、R04 及块级条目检索与事件防篡改测试 |
+
 ### 阶段步骤的子任务切分
 
 `STATUS.md` 按阶段顺序滚动登记近期实施任务，不在热台账中一次性预拆全部远期任务。单一子系统且单轮可独立完成验证的步骤（`A-1`、`A-3`、`A-4`、`A-6`、`B-1`、`B-2`、`D-1`）按 1 个任务登记；同时跨越「核心实现与宿主/性能实测」「后端领域/API 与前端视图」或「功能实现与发布工程」的步骤（`A-2`、`A-5`、`B-3`、`C-1`、`C-2`、`C-3`、`D-2`），在进入该步骤时按下表拆分为 2 个边界不重叠的子任务依次推进。
@@ -154,7 +169,7 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 | F02 | Markdown、SQL、脚本、二进制资产、同名链接歧义 | 根相对链接符合规范；二进制不进入文本编辑器；歧义不猜测 |
 | F03 | 与入口断开的文件环、仅间接引用文件 | 环内文件标为孤立；可达文件不误报 |
 | F04 | `read` / `read --json` 读取存在、不存在、非文本及超限文件 | 原文或结构化结果符合契约；修订可用于后续写入；不支持输入明确失败，无网络访问 |
-| W01 | 两个客户端读同一基线，分别提交不同文本 | 第一个成功，第二个得到版本冲突；第一个内容不丢失 |
+| W01 | 两个客户端读同一基线，分别提交不同文本；或读取含到期隐藏条目的文件后通过整文件写回 | 第一个成功，第二个得到版本冲突，第一个内容不丢失；未改动的到期占位符自动还原为磁盘原文，伪造占位符返回 `INVALID_ARGUMENT`，整文件写删除未满 30 天隐藏期的到期条目返回 `DELETION_DEFERRED` |
 | W02 | Agent CLI 与 UI 同时改同一文件 | 使用相同锁与版本协议；不发生无提示覆盖 |
 | W03 | 外部 staged/unstaged/untracked 内容存在时触发 Hook、UI 写入 | 自动路径不提交；显式串行 capture 才接收差异 |
 | W04 | 文件移动、引用更新到第 N 个文件时强杀 | 识别未完成事务；恢复后全部前镜像一致，或明确停在可诊断恢复态 |
@@ -182,7 +197,7 @@ references: [memctl-contracts, memctl-workflows, memctl-cli-ui]
 | H03 | 首轮锁忙或断网，下一轮 context --once | 同步可以重试，已成功注入正文不重复输出 |
 | H04 | start/context JSON 与纯文本、pull/sync 空输出 | 字段、事件名和 stdout 符合契约，无 Git 输出混入 JSON |
 | H05 | wrap 子程序失败、被信号中断、同步也失败 | 透传子程序状态，同步结果不掩盖原结果 |
-| H06 | 无 remote、缺少稳定 SID、入口超长时执行 start/context | 本地上下文可用；无 SID 不跨会话去重或伪造来源；超长按宿主限额明确提示，不静默截断 |
+| H06 | 无 remote、缺少稳定 SID、入口超长或锁忙回退时执行 start/context | 本地上下文可用；锁忙回退路径同样隐藏已过 `until` 日期的条目；无 SID 不跨会话去重或伪造来源；超长按宿主限额明确提示，不静默截断 |
 | H07 | 原生 dsh 插件事件映射 | `agent/created` 注入、`turn/end` 同步、`agent/disposed` 收尾各一次 |
 | H08 | 上下文注入 | 首个请求前存在 `[agent-memory]` 快照，不伪造 inbox 用户消息 |
 | H09 | 并发与失败 | 多轮快速结束只保留一个有界同步；断网/锁忙不阻塞会话 |

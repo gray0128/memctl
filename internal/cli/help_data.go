@@ -750,8 +750,8 @@ var helpCommandData = []helpCommand{
 		Usage:   []string{"memctl tag [--agent NAME] [--sid ID]"},
 		Summary: loc("Print the canonical session source URI.", "输出当前会话的规范来源 URI。"),
 		Description: loc(
-			"Prints `agent://<device>/<agent>/<sid>` for the current session. The agent comes from --agent or AGENT_MEMORY_AGENT; the device comes from AGENT_MEMORY_DEVICE or the hostname; the session id must come from --sid, AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID or DELTA_CURRENT_THREAD_ID. The command never reads stdin and never guesses a session from shared state.",
-			"输出当前会话的 `agent://<device>/<agent>/<sid>`。Agent 取自 `--agent` 或 `AGENT_MEMORY_AGENT`，设备取自 `AGENT_MEMORY_DEVICE` 或主机名，会话 ID 必须来自 `--sid`、`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 或 `DELTA_CURRENT_THREAD_ID`。命令不读取 stdin，也不从共享状态推测会话。",
+			"Prints `agent://<device>/<agent>/<sid>` for the current session. The agent comes from --agent or AGENT_MEMORY_AGENT; the device comes from AGENT_MEMORY_DEVICE or the hostname; the session id must come from --sid, AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, PI_SESSION_ID or DELTA_CURRENT_THREAD_ID. The command never reads stdin and never guesses a session from shared state.",
+			"输出当前会话的 `agent://<device>/<agent>/<sid>`。Agent 取自 `--agent` 或 `AGENT_MEMORY_AGENT`，设备取自 `AGENT_MEMORY_DEVICE` 或主机名，会话 ID 必须来自 `--sid`、`AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`PI_SESSION_ID` 或 `DELTA_CURRENT_THREAD_ID`。命令不读取 stdin，也不从共享状态推测会话。",
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name; falls back to AGENT_MEMORY_AGENT.", "Agent 名称；回退到 `AGENT_MEMORY_AGENT`。")},
@@ -767,7 +767,7 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl tag --agent claude-code --sid \"$AGENT_MEMORY_SID\""},
-			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID or PI_SESSION_ID is set.", "仅在设置了 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID` 或 `PI_SESSION_ID` 时可用。")},
+			{Command: "memctl tag", Note: loc("Works only when AGENT_MEMORY_SID, DSH_HOOK_SESSION_ID, DSH_SESSION_ID, PI_SESSION_ID or DELTA_CURRENT_THREAD_ID is set.", "仅在设置了 `AGENT_MEMORY_SID`、`DSH_HOOK_SESSION_ID`、`DSH_SESSION_ID`、`PI_SESSION_ID` 或 `DELTA_CURRENT_THREAD_ID` 时可用。")},
 		},
 		Notes: []localizedText{
 			loc("`wrap` exports AGENT_MEMORY_SID to its child, so a wrapped program can call tag without --sid.", "`wrap` 会向子进程导出 `AGENT_MEMORY_SID`，因此被包装程序可以不带 `--sid` 调用 `tag`。"),
@@ -1002,7 +1002,7 @@ var helpCommandData = []helpCommand{
 		Arguments: []helpItem{
 			{Name: "[agent...]", Description: loc(
 				"One or more adapter names: claude-code, codebuddy, codex, grok, antigravity, commandcode, workbuddy, opencode, pi, dsh, omp, delta.",
-				"一个或多个适配器名称：claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh、delta。",
+				"一个或多个适配器名称：claude-code、codebuddy、codex、grok、antigravity、commandcode、workbuddy、opencode、pi、dsh、omp、delta。",
 			)},
 		},
 		Flags: []helpItem{

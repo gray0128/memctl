@@ -28,7 +28,7 @@
 | [P2-8](#p2-8sse-失效刷新静默丢弃未提交草稿) | P2 | `web/src` | 每次失效通知重新拉取列表，条目 id 随修订变化，正在编辑的草稿无提示消失；冲突选择与拆分路径同样被重置 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui)、[SSE 与缓存](../02-domain-models-and-contracts.md#5-sse-与缓存)、`W02` |
 | [P2-9](#p2-9冲突视图在无冲突分支吞掉-notice-与过期提示) | P2 | `web/src` | `resolve`/`abort`/`CONFLICT_STALE` 后进入「无冲突」早退分支，`notice` 与 `remoteState` 永不显示，`stale` 也不刷新快照 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui)、`C02`、`C04` |
 | [P2-10](#p2-10拆分默认目标已存在时语义变为追加且界面无提示) | P2 | `web/src` | 建议路径由 fact slug 生成，命中既有文件时 `PATCH` 实际追加，界面仍称「拆分新文件」 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui) |
-| [P3-1](#p3-1isancestor-对无共同祖先历史返回-git_failed-而非-not_found) | P3 | `internal/git` | 用 merge-base 结果比较，无共同祖先时 Git 非零退出被映射为 `GIT_FAILED`/500 | [Revert](../03-workflows-and-dataflows.md#53-revert)、`C05` |
+| [P3-1](#p3-1isancestor-对无共同祖先历史返回-git-失败而非未找到) | P3 | `internal/git` | 用 merge-base 结果比较，无共同祖先时 Git 非零退出被映射为 `GIT_FAILED`/500 | [Revert](../03-workflows-and-dataflows.md#53-revert)、`C05` |
 | [P3-2](#p3-2请求体只解析第一个-json-值尾部字节被忽略) | P3 | `internal/server` | 两处 body 解码都不校验尾部，第二个 JSON 值或超限尾字节被静默忽略 | [REST 契约](../02-domain-models-and-contracts.md#41-公共规则)、`P03` |
 | [P3-3](#p3-3http-层重复实现应用层-428-判定) | P3 | `internal/server` | 前置条件判定在 HTTP 与应用层各有一份，同一错误两处维护 | [模块职责](../01-architecture-and-modules.md#4-模块职责)、`A04` |
 | [P3-4](#p3-4doctorfix-的-baserevision-可选与契约必填不一致) | P3 | `internal/app`、`internal/cli` | 契约 §4.2 写 `baseRevision` 必填，实现与 CLI 均可省略，修复提交未绑定客户端看到的基线 | [REST 契约](../02-domain-models-and-contracts.md#42-路由)、`A04` |
@@ -36,7 +36,7 @@
 | [P3-6](#p3-6toml-已有键检测只覆盖裸键) | P3 | `internal/adapters` | 引号键 `"hooks"` 或子表 `[features.hooks]` 不被识别，可能插入第二个 `hooks` 定义 | [Agent 配置安装](../03-workflows-and-dataflows.md#7-agent-配置安装)、`I02` |
 | [P3-7](#p3-7替换受管条目丢失条目内部的用户注释) | P3 | `internal/adapters` | 受管 YAML/JSON 条目整段替换，条目内部注释随原文被丢弃 | [Agent 配置安装](../03-workflows-and-dataflows.md#7-agent-配置安装)、`I02` |
 | [P3-8](#p3-8只读模式下-adapter-预览按钮仍可点击) | P3 | `web/src` | 预览走 POST，只读模式下必然 403，按钮却只按 `busy` 禁用 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui)、`A03` |
-| [P3-9](#p3-9fileeditor-把-no_repo-的-404-误判为可新建文件) | P3 | `web/src` | 仅按 `status === 404` 分支，未初始化仓库被引导为「保存将新建该文件」 | [错误与部分成功](../02-domain-models-and-contracts.md#43-错误与部分成功) |
+| [P3-9](#p3-9fileeditor-把无仓库的-404-误判为可新建文件) | P3 | `web/src` | 仅按 `status === 404` 分支，未初始化仓库被引导为「保存将新建该文件」 | [错误与部分成功](../02-domain-models-and-contracts.md#43-错误与部分成功) |
 | [P3-10](#p3-10诊断修复成功后不刷新报告) | P3 | `web/src` | `doctor:fix` 返回的修复后 `report` 被忽略，列表与基线继续停留在修复前 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui)、`R04` |
 | [P3-11](#p3-11来源链接缺少协议白名单与-agent-复制能力) | P3 | `web/src` | 未实现「仅安全协议导航、`agent://` 复制」，仅输出纯文本 | [Web UI](../04-ui-and-cli-specification.md#4-web-ui) |
 | [P3-12](#p3-12确认按钮缺少自身只读守卫且组件层无测试) | P3 | `web/src` | 删除/拆分确认按钮只靠父按钮间接保证只读；`vite` 测试只含 `.test.js`，全部组件交互无自动化覆盖 | [HTTP 安全](../04-ui-and-cli-specification.md#5-http-安全)、[开发循环](../06-development-loop.md#5-验证如何落地) |
@@ -180,7 +180,7 @@
 
 ## 3. 低优先级问题（P3）
 
-### P3-1：`IsAncestor` 对无共同祖先历史返回 `GIT_FAILED` 而非 `NOT_FOUND`
+### P3-1：`IsAncestor` 对无共同祖先历史返回 Git 失败而非未找到
 
 - **位置**：[`internal/git/revert.go`](../../internal/git/revert.go)（`IsAncestor`）、[`internal/git/exec.go`](../../internal/git/exec.go)。
 - **触发与机制**：`IsAncestor` 用 `MergeBase` 的输出比较；无共同祖先时 `git merge-base` 非零退出且无输出，被映射为 `GIT_FAILED`。现有用例使用 `checkout -b`（与 HEAD 同源），未覆盖真正独立历史。
@@ -244,7 +244,7 @@
 - **修复建议**：按钮同时按 `api.readOnly` 禁用。
 - **本轮处置**：已修复（见第 6 节）。
 
-### P3-9：`FileEditor` 把 `NO_REPO` 的 404 误判为可新建文件
+### P3-9：`FileEditor` 把无仓库的 404 误判为可新建文件
 
 - **位置**：[`web/src/components/FileEditor.jsx`](../../web/src/components/FileEditor.jsx)。
 - **触发与机制**：仅按 `error.status === 404` 分支，而 `NOT_FOUND` 与 `NO_REPO` 都映射为 404；库路径不存在或无入口时被引导为「保存将新建该文件」。

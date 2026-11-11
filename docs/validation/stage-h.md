@@ -365,3 +365,13 @@
 - 验证时间与环境：2026-11-06，darwin/arm64，Node v26.11.1 / npm 11.20.0。
 - 验证命令与结果：`bash -n scripts/publish-npm.sh` 通过；对真实 registry 执行 `scripts/publish-npm.sh --dry-run`，输出 `memctl-pi@0.6.0 is already published; skipping` 与 `memctl-dsh@0.5.3 is already published; skipping`；用假 `npm`（`view` 返回 1、记录 `publish` 参数）模拟未上架分支，脚本在两个包目录分别执行 `publish --access public --dry-run`；`ruby -ryaml` 解析 workflow，确认作业为 `verify/build/publish/npm-publish`，`npm-publish` 为 `contents: read` + `id-token: write`、`needs: [verify, build]`；文档链接与锚点检查 0 问题。
 - 未验证与遗留：npm 端尚未给两个包配置 Trusted Publisher，真实标签发布尚未走通 OIDC；下一次插件版本递增并推送 `v*` 标签时需观察 `npm-publish` 作业与 `npm view` 结果。trusted publishing 要求 npm CLI ≥ 11.5.1、Node ≥ 22.14.0，流水线 Node 26.10.0 满足。本机 `~/.npmrc` 的交互 token 不用于 CI。
+
+
+## T137：配置并验证本机 OMP 的 MCP 通道
+
+- 目标与范围：为本机 OMP 配置 `memctl` 的 MCP 工具通道并验证。只写用户级 `~/.omp/agent/mcp.json`，不修改插件、仓库或记忆内容；MCP 写入工具未调用。
+- 配置：`~/.omp/agent/mcp.json`（此前不存在）新增 `mcpServers.memctl`：`command` 为 `/Users/libo/.agent-memory/bin/memctl`，`args` 为 `["mcp","--agent","omp"]`。OMP `18.17.0` 默认开启项目级 MCP 配置（`mcp.enableProjectConfig=true`），项目级等价路径为 `.omp/mcp.json`。
+- 对应契约：[17 §2.5 MCP 支持机制](../17-omp-integration.md#25-mcp-支持机制)、[09. MCP 记忆工具](../09-mcp-memory-tools.md)、[17 §6 验证记录](../17-omp-integration.md#6-实现状态与验证记录t134)。
+- 验证时间与环境：2026-11-06，darwin/arm64，OMP `18.17.0`，`memctl v0.16.0`。
+- 验证命令与结果：`python3 -m json.tool` 校验配置；直接向 `memctl mcp --agent omp` 发送 initialize 与 `tools/list`，返回 `memory_read`、`memory_entries`、`memory_write`、`memory_dream_prepare`、`memory_dream_propose`，其中两个只读工具带 `readOnlyHint: true`；新启动的 `omp -p` 会话能让模型列出五个 `memory_*` 工具，并成功调用 `memory_read` 读取真实 `MEMORY.md` 首行（`# Memory`）。
+- 未验证与遗留：`memory_write`、`memory_dream_*` 未在 OMP 内调用；当前已运行的 OMP 会话需重启才会加载新配置；OMP 的 MCP 工具授权与写入审批行为未单独复验。

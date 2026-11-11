@@ -28,6 +28,7 @@
 | [15. Delta 会话蒸馏适配](./15-delta-corpus-adaptation.md) | Delta 采集的读取路径（`thread watch`）、项目归属、回合与限额、采集器契约、失败处置与验收 |
 | [16. MCP 工具注解与宿主审批](./16-mcp-tool-annotations.md) | `tools/list` 的注解契约、宿主审批判定顺序与只读工具免审方案 |
 | [17. OMP 宿主接入](./17-omp-integration.md) | OMP（Oh My Pi）接入调研、复用 `memctl-pi` 的宿主识别与适配器契约、验证矩阵与实现记录 |
+| [18. 实现审查与记忆架构优化方案](./18-agent-memory-review-and-optimization.md) | `v0.16.0` 代码实现审查、Anthropic 记忆组件对照与 P0–P3 分阶段演进方案 |
 | [开发状态](./STATUS.md) | 当前事实、任务总表与最近一轮完成记录 |
 
 同一规则只在表中对应文档定义，其他文档通过链接引用。流程变更需同步调整契约和验收项。

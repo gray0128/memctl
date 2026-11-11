@@ -83,6 +83,63 @@ func TestDreamPrepareForwardsSessionIdentity(t *testing.T) {
 	}
 }
 
+// TestDreamPrepareSessionArgument covers the optional sid of
+// memory_dream_prepare: it resolves exactly like memory_write, so a server
+// started without --sid refreshes the session the caller names, a configured
+// session always wins, and an invalid value never reaches the service.
+func TestDreamPrepareSessionArgument(t *testing.T) {
+	var schema map[string]any
+	for _, tool := range newTestServer(&fakeService{}).Tools() {
+		if tool.Name == "memory_dream_prepare" {
+			schema, _ = tool.InputSchema.(map[string]any)
+		}
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	if _, ok := properties["sid"]; !ok {
+		t.Fatalf("memory_dream_prepare schema has no sid property: %+v", schema)
+	}
+	if required, ok := schema["required"].([]string); ok && len(required) > 0 {
+		t.Fatalf("memory_dream_prepare must keep every argument optional: %v", required)
+	}
+
+	t.Run("call supplies the session", func(t *testing.T) {
+		service := &fakeService{}
+		server := NewServer(service, Session{Agent: "dsh", Device: "device-1"})
+		result, rpcErr := server.CallTool(context.Background(), "memory_dream_prepare",
+			json.RawMessage(`{"sid":" session-4c79 "}`))
+		if rpcErr != nil || result.IsError {
+			t.Fatalf("unexpected failure: %v %+v", rpcErr, result)
+		}
+		if service.prepareReqs[0].SID != "session-4c79" {
+			t.Fatalf("session = %q, want the trimmed call value", service.prepareReqs[0].SID)
+		}
+	})
+
+	t.Run("configured session wins", func(t *testing.T) {
+		service := &fakeService{}
+		if _, rpcErr := newTestServer(service).CallTool(context.Background(), "memory_dream_prepare",
+			json.RawMessage(`{"sid":"other"}`)); rpcErr != nil {
+			t.Fatalf("unexpected protocol error: %v", rpcErr)
+		}
+		if service.prepareReqs[0].SID != "session-1" {
+			t.Fatalf("session = %q, want the configured session", service.prepareReqs[0].SID)
+		}
+	})
+
+	t.Run("invalid session", func(t *testing.T) {
+		service := &fakeService{}
+		server := NewServer(service, Session{Agent: "dsh", Device: "device-1"})
+		args, _ := json.Marshal(map[string]string{"sid": "session-1\nAgent: evil"})
+		result, rpcErr := server.CallTool(context.Background(), "memory_dream_prepare", args)
+		if rpcErr != nil {
+			t.Fatalf("unexpected protocol error: %v", rpcErr)
+		}
+		if !result.IsError || !strings.HasPrefix(result.Content[0].Text, "INVALID_ARGUMENT: ") || len(service.prepareReqs) != 0 {
+			t.Fatalf("an invalid sid must be refused before the service: %+v", result)
+		}
+	})
+}
+
 // TestDreamPrepareReportsContractErrors checks the documented error mapping: a
 // contract failure is an isError result the model can read, not a protocol
 // error.

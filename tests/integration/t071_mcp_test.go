@@ -242,12 +242,13 @@ func TestM05MCPWriteCommits(t *testing.T) {
 	home, _, env := a5LocalRepo(t, bin, root, "home")
 
 	// A path whose parent directory does not exist is refused instead of
-	// silently creating directories, matching the CLI contract.
+	// silently creating directories, matching the CLI contract. init creates
+	// only notes/, so topics/ is such a parent, and the error names it.
 	responses, _ := runMCPSession(t, bin, home, env,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_write","arguments":{"path":"notes/mcp-topic.md","base":"absent","content":"# MCP topic\n"}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_write","arguments":{"path":"topics/mcp-topic.md","base":"absent","content":"# MCP topic\n"}}}`,
 	)
 	result := decodeCallResult(t, responses[0])
-	if !result.IsError || !strings.HasPrefix(result.Content[0].Text, "NOT_FOUND: ") {
+	if !result.IsError || !strings.HasPrefix(result.Content[0].Text, "NOT_FOUND: ") || !strings.Contains(result.Content[0].Text, `parent directory "topics" does not exist`) {
 		t.Fatalf("want NOT_FOUND for a missing parent, got %q", result.Content[0].Text)
 	}
 

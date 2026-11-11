@@ -33,8 +33,9 @@ func LocateSession(agent, sid, cwd, home string) string {
 	switch agent {
 	case "claude-code":
 		return regularFile(filepath.Join(home, filepath.FromSlash(".claude/projects"), claudeDir(cwd), sid+".jsonl"))
-	case "pi":
-		return newestUnder(filepath.Join(home, filepath.FromSlash(".pi/agent/sessions"), piDir(cwd)), func(name string) bool {
+	case "pi", "omp":
+		// OMP shares pi's store layout under its own root; see piSessionStore.
+		return newestUnder(filepath.Join(home, piSessionStore(agent), piDir(cwd)), func(name string) bool {
 			return strings.HasSuffix(name, ".jsonl") && piSessionID(name) == sid
 		})
 	case "dsh":

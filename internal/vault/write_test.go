@@ -2,8 +2,11 @@ package vault
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
+
+	"github.com/gray0128/memctl/internal/memerr"
 )
 
 // TestWriteAtomicSetsModeDespiteUmask covers the file-mode preservation
@@ -117,5 +120,36 @@ func TestRevisionWithLengthDistinguishesTruncatedAssets(t *testing.T) {
 	}
 	if short == revisionWithLength("100755", 9000, prefix) {
 		t.Fatalf("mode is not part of the digest: %q", short)
+	}
+}
+
+// TestRequireParentDirNamesMissingDirectory covers the NOT_FOUND message of a
+// write whose parent directory is missing: it names the directory, even when
+// an ancestor is the first missing segment, so the caller knows to create a
+// directory rather than look for a file.
+func TestRequireParentDirNamesMissingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	root, err := OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	defer root.Close()
+
+	for _, rel := range []string{"notes/topic.md", "notes/deep/topic.md"} {
+		err := root.RequireParentDir(rel)
+		contractErr, ok := memerr.As(err)
+		if !ok || contractErr.Code != memerr.NotFound {
+			t.Fatalf("RequireParentDir(%q) = %v, want NOT_FOUND", rel, err)
+		}
+		want := `parent directory "` + path.Dir(rel) + `" does not exist`
+		if contractErr.Message != want {
+			t.Fatalf("RequireParentDir(%q) message = %q, want %q", rel, contractErr.Message, want)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.RequireParentDir("notes/topic.md"); err != nil {
+		t.Fatalf("existing parent: %v", err)
 	}
 }
