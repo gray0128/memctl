@@ -437,13 +437,13 @@ var helpCommandData = []helpCommand{
 		},
 		Flags: []helpItem{
 			{Name: "--json", Description: loc(
-				"Return {filePath, fileRevision, rawContent} instead of raw text.",
-				"返回 {filePath, fileRevision, rawContent}，而不是原文。",
+				"Return {filePath, fileRevision, rawContent, relatedFiles?} instead of raw text.",
+				"返回 {filePath, fileRevision, rawContent, relatedFiles?}，而不是原文。",
 			)},
 		},
 		Output: []localizedText{
 			loc("Text: raw file content on stdout.", "文本：stdout 输出文件原文。"),
-			loc("JSON: {filePath, fileRevision, rawContent}.", "JSON：{filePath, fileRevision, rawContent}。"),
+			loc("JSON: {filePath, fileRevision, rawContent, hiddenExpired?, relatedFiles?}.", "JSON：{filePath, fileRevision, rawContent, hiddenExpired?, relatedFiles?}。"),
 		},
 		ExitCodes: []helpExit{
 			{Code: 0, Meaning: loc("File read successfully.", "文件读取成功。")},
@@ -464,27 +464,29 @@ var helpCommandData = []helpCommand{
 		Name: "entries",
 		Usage: []string{
 			"memctl entries",
-			"memctl entries --q TEXT [--file PATH] [--limit N] [--json]",
+			"memctl entries --q TEXT [--file PATH] [--project NAME] [--include-transcripts] [--limit N] [--json]",
 		},
-		Summary: loc("List or filter memory entries.", "列出或筛选记忆条目。"),
+		Summary: loc("List or search memory entries with BM25 ranking and graph hints.", "列出或按多字段 BM25 与图谱提示检索记忆条目。"),
 		Description: loc(
-			"Reads parsed memory entries across the repository without loading whole files. `--q` matches the entry fact text case-insensitively as a substring; `--file`, `--agent`, `--device`, `--from` and `--to` narrow the result. This is a lookup over stored facts, not a semantic search index. It is the same query behind GET /api/v1/entries and the `memory_entries` MCP tool. Read-only: it never writes the repository.",
-			"在不整份读取文件的情况下检索仓库中已解析的记忆条目。`--q` 按大小写不敏感的子串匹配条目正文；`--file`、`--agent`、`--device`、`--from` 与 `--to` 收窄结果。这是对已存储事实的查找，不是语义检索索引。它与 `GET /api/v1/entries` 和 `memory_entries` MCP 工具共用同一实现。只读，不写仓库。",
+			"Reads and searches parsed memory entries across the repository without loading whole files. When `--q` is set, memctl tokenizes English/ASCII compound words and CJK characters/bigrams in memory and ranks entries by multi-field weighted BM25 (`FilePath` 2.0, `Heading` 1.8, `FactText` 1.5, `DetailLines` 1.0) plus phrase and recency boosts (prioritizing 100% AND coverage before >= 50% OR fallback). `--file`, `--project`, `--agent`, `--device`, `--from` and `--to` narrow the result, `--include-transcripts` also searches recent (<= 14d) local SessionDigests, and JSON output includes 1-hop `relatedFiles` graph hints. It is the same query behind GET /api/v1/entries and the `memory_entries` MCP tool. Read-only: it never writes the repository.",
+			"在不整份读取文件的情况下检索仓库中已解析的记忆条目。指定 `--q` 时，memctl 在内存中对中英文与复合标识符分词，按多字段加权 BM25（`FilePath` 2.0、`Heading` 1.8、`FactText` 1.5、`DetailLines` 1.0）叠加短语与新鲜度加分排序（优先返回 100% 词项全命中，不足时补充 `>= 50%` 覆盖率结果）。`--file`、`--project`、`--agent`、`--device`、`--from` 与 `--to` 收窄范围，`--include-transcripts` 同步检索最近 14 天内的本地会话摘要（SessionDigest），JSON 模式额外返回一跳图谱导航提示 `relatedFiles`。它与 `GET /api/v1/entries` 和 `memory_entries` MCP 工具共用同一实现。只读，不写仓库。",
 		),
 		Flags: []helpItem{
-			{Name: "--q", Value: "TEXT", Description: loc("Case-insensitive substring over the entry fact text.", "对条目正文做大小写不敏感的子串匹配。")},
+			{Name: "--q", Value: "TEXT", Description: loc("Search query ranked by multi-field tokenized BM25 and recency.", "按多字段分词 BM25 与新鲜度排序的检索词。")},
 			{Name: "--file", Value: "PATH", Description: loc("Only entries of this repository-relative file.", "只返回该仓库相对路径文件的条目。")},
+			{Name: "--project", Value: "NAME", Description: loc("Only entries belonging to this project (`notes/<name>.md`, `notes/<name>-*.md`, or `[project: <name>]` in `MEMORY.md` `## Index`).", "只返回归属该项目的条目（匹配 `notes/<name>.md`、`notes/<name>-*.md` 或 `MEMORY.md` `## Index` 中带 `[project: <name>]` 的主题文件）。")},
+			{Name: "--include-transcripts", Description: loc("When `--q` is non-empty, also search recent (<= 14d) local session transcripts (`SessionDigest`) and return bounded `transcriptHits`.", "当 `--q` 非空时，一并检索最近 14 天内的本地会话轨迹摘要（`SessionDigest`），返回有界的 `transcriptHits`。")},
 			{Name: "--agent", Value: "NAME", Description: loc("Only entries whose source records this agent.", "只返回来源记录为该 Agent 的条目。")},
 			{Name: "--device", Value: "NAME", Description: loc("Only entries whose source records this device label.", "只返回来源记录为该设备标签的条目。")},
 			{Name: "--from", Value: "YYYY-MM-DD", Description: loc("Earliest added date, inclusive.", "最早的 added 日期，含当天。")},
 			{Name: "--to", Value: "YYYY-MM-DD", Description: loc("Latest added date, inclusive.", "最晚的 added 日期，含当天。")},
 			{Name: "--limit", Value: "N", Description: loc("Page size, 1-200. Defaults to 50.", "每页条数，1–200，默认 50。")},
 			{Name: "--offset", Value: "N", Description: loc("Number of matching entries to skip.", "跳过的匹配条目数。")},
-			{Name: "--json", Description: loc("Return {revision, items, total} instead of text lines.", "返回 {revision, items, total}，而不是文本行。")},
+			{Name: "--json", Description: loc("Return {revision, items, total, relatedFiles?, transcriptHits?} instead of text lines.", "返回 {revision, items, total, relatedFiles?, transcriptHits?}，而不是文本行。")},
 		},
 		Output: []localizedText{
-			loc("Text: one `<path>:<line> <fact>` per entry plus a `--- N of M entries` trailer.", "文本：每个条目一行 `<path>:<line> <fact>`，末尾输出 `--- N of M entries`。"),
-			loc("JSON: {revision, items, total}. Each item carries id, filePath, lineNumber, factText, sources and metadata.", "JSON：{revision, items, total}；每项包含 id、filePath、lineNumber、factText、sources 与 metadata。"),
+			loc("Text: one `<path>:<line> <fact>` per entry plus a `--- N of M entries` trailer (and transcript hit lines when `--include-transcripts` matches).", "文本：每个条目一行 `<path>:<line> <fact>`，末尾输出 `--- N of M entries`（启用 `--include-transcripts` 命中时追加会话轨迹摘要行）。"),
+			loc("JSON: {revision, items, total, relatedFiles?, transcriptHits?}. Each item carries id, filePath, lineNumber, factText, sources and metadata.", "JSON：{revision, items, total, relatedFiles?, transcriptHits?}；每项包含 id、filePath、lineNumber、factText、sources 与 metadata。"),
 		},
 		ExitCodes: []helpExit{
 			{Code: 0, Meaning: loc("Entries listed, including an empty result.", "已列出条目，包括空结果。")},
@@ -492,12 +494,12 @@ var helpCommandData = []helpCommand{
 			{Code: 2, Meaning: loc("Unknown flag, missing value or a non-integer limit/offset.", "未知选项、缺少取值，或 limit/offset 不是整数。")},
 		},
 		Examples: []helpExample{
-			{Command: "memctl entries --q vim", Note: loc("Find entries mentioning vim.", "查找提到 vim 的条目。")},
-			{Command: "memctl entries --file notes/prefs.md --json", Note: loc("Read one file's entries as JSON.", "以 JSON 读取某个文件的条目。")},
+			{Command: "memctl entries --q \"tag release\" --json", Note: loc("Rank entries matching multi-word query with 1-hop relatedFiles.", "检索多词查询并返回一跳关联文件提示。")},
+			{Command: "memctl entries --project atlas --q db --include-transcripts --json", Note: loc("Search project entries and recent session transcripts.", "按项目过滤并联合检索近期会话轨迹。")},
 		},
 		Notes: []localizedText{
-			loc("Use this to locate where a fact lives, then `memctl read <path>` for the full file.", "先用它定位事实所在文件，再用 `memctl read <path>` 读取整份文件。"),
-			loc("There is no semantic or vector search; only the stored fact text is matched.", "不提供语义或向量检索，只匹配已存储的条目正文。"),
+			loc("Use this to locate where a fact lives and see 1-hop `relatedFiles`, then `memctl read <path>` for the full file.", "先用它定位事实所在文件及一跳关联文件 `relatedFiles`，再用 `memctl read <path>` 读取整份文件。"),
+			loc("Pure Go in-memory tokenization and BM25 ranking; no external database or vector index is required.", "采用纯 Go 内存分词与多字段 BM25 排序，无需外部数据库或向量索引。"),
 		},
 		Related: []string{"read", "add", "write", "mcp"},
 	},

@@ -47,6 +47,7 @@ type MemoryEntry struct {
 	LineNumber   int
 	RawLine      string
 	FactText     string
+	DetailLines  []string
 	Sources      []SourceRef
 	Metadata     []MetadataField
 	Heading      string

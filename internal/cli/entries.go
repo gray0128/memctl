@@ -46,6 +46,14 @@ func runEntries(args []string, stdout, stderr io.Writer) int {
 				return ExitUsageError
 			}
 			query.File = got
+		case arg == "--project":
+			got, ok := value("--project")
+			if !ok {
+				return ExitUsageError
+			}
+			query.Project = got
+		case arg == "--include-transcripts":
+			query.IncludeTranscripts = true
 		case arg == "--agent":
 			got, ok := value("--agent")
 			if !ok {
@@ -110,19 +118,34 @@ func runEntries(args []string, stdout, stderr io.Writer) int {
 		}
 		return ExitOK
 	}
-	if len(page.Items) == 0 {
+	if len(page.Items) == 0 && len(page.TranscriptHits) == 0 {
 		fmt.Fprintf(stdout, "no matching entries (revision %s)\n", page.Revision)
 		return ExitOK
 	}
-	// Text output is one entry per line as "path:line\tfact", which stays
-	// grep- and awk-friendly without inventing a second serialization.
-	for _, entry := range page.Items {
-		fmt.Fprintf(stdout, "%s:%d\t%s\n", entry.FilePath, entry.LineNumber, entry.FactText)
-	}
-	if end := query.Offset + len(page.Items); end < page.Total {
-		fmt.Fprintf(stdout, "--- %d of %d entries; continue with --offset %d\n", end, page.Total, end)
+	if len(page.Items) > 0 {
+		// Text output is one entry per line as "path:line\tfact", which stays
+		// grep- and awk-friendly without inventing a second serialization.
+		for _, entry := range page.Items {
+			fmt.Fprintf(stdout, "%s:%d\t%s\n", entry.FilePath, entry.LineNumber, entry.FactText)
+		}
+		if end := query.Offset + len(page.Items); end < page.Total {
+			fmt.Fprintf(stdout, "--- %d of %d entries; continue with --offset %d\n", end, page.Total, end)
+		} else {
+			fmt.Fprintf(stdout, "--- %d of %d entries\n", page.Total, page.Total)
+		}
 	} else {
-		fmt.Fprintf(stdout, "--- %d of %d entries\n", page.Total, page.Total)
+		fmt.Fprintf(stdout, "no matching entries (revision %s)\n", page.Revision)
+	}
+	if len(page.TranscriptHits) > 0 {
+		fmt.Fprintf(stdout, "--- %d transcript hit(s)\n", len(page.TranscriptHits))
+		for _, hit := range page.TranscriptHits {
+			proj := hit.CwdBase
+			if proj == "" {
+				proj = "-"
+			}
+			fmt.Fprintf(stdout, "transcript:%s/%s#%d\t[%s]\t%s\n",
+				hit.Agent, hit.SessionID, hit.TurnIndex, proj, hit.Snippet)
+		}
 	}
 	return ExitOK
 }

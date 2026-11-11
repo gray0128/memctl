@@ -81,7 +81,7 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 | --- | --- | --- |
 | 仓库初始化 | `init`、`init <url> --confirm-private` | 无 URL 只建本地仓库与首笔提交；带 URL 需确认私有性与所有权，空远端完成首推，已有历史则克隆并建立 upstream |
 | 读取与受管写入 | `read`、`add`、`write` | 读写文件原文或追加单条记忆；`add` 在锁内按小节追加并同事务幂等维护 `MEMORY.md` 索引，`write` 校验修订基线并整文件原子提交，不静默覆盖其他更新 |
-| 条目检索 | `entries` | 按关键词、文件、来源与时间范围只读检索已解析条目；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
+| 条目检索 | `entries` | 按关键词（中英文多词分词与多字段权重 BM25 排序）、文件、项目（`--project`）、来源与时间范围只读检索已解析条目，返回一跳图谱关联邻居 `relatedFiles`，并可通过 `--include-transcripts` 检索本地最近 14 天内的脱敏会话摘要；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
 | 串行编辑与恢复 | `sync --capture`、`recover --status`、`recover --rollback` | 显式接收串行外部编辑；查看或回滚本工具未完成的事务，不接管外部 Git 操作 |
 | 同步与冲突 | `sync --wait`、`resolve` | 前台同步与多阶段冲突解决；断网不撤销已保存的本地内容 |
 | 会话上下文 | `start`、`context`、`pull`、`tag`、`wrap` | Hook 注入、会话级去重与来源标签；`wrap` 透传被包装程序的退出码与信号 |

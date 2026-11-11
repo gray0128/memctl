@@ -154,3 +154,4 @@ TestPrepareCollectsTheDeltaThreadCoversX13 1
 TestPrepareSurvivesAFailingDeltaCoversX14 3
 TestT140AddAndMemoryAppend 1
 TestT141SnapshotReadAndProjectDashboardCoversI2b 4
+TestT142TokenizedBM25RelatedFilesAndTranscriptsCoversI3a 1

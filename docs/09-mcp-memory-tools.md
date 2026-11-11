@@ -114,8 +114,8 @@ Agent（模型）
 
 | 工具 | 用途 | 参数 | 成功返回 | 注解 |
 | --- | --- | --- | --- | --- |
-| `memory_read` | 读取记忆文件并返回修订标识（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired` | `readOnlyHint: true`、`destructiveHint: false` |
-| `memory_entries` | 检索已解析条目，定位事实所在文件（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `q`、`file`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total` | `readOnlyHint: true`、`destructiveHint: false` |
+| `memory_read` | 读取记忆文件并返回修订标识与一跳图谱关联邻居（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `path`（仓库相对路径，可选，默认 `MEMORY.md`） | `filePath`、`fileRevision`、`rawContent`，存在到期条目时附带 `hiddenExpired`，受管 Markdown 文件存在一跳关联邻居时附带 `relatedFiles` | `readOnlyHint: true`、`destructiveHint: false` |
+| `memory_entries` | 检索已解析条目、一跳图谱关联文件与近期会话轨迹，定位事实所在文件（锁忙时无锁回退读取 `refs/heads/<branch>` 提交树快照） | `q`、`file`、`project`、`includeTranscripts`、`agent`、`device`、`from`、`to`、`limit`、`offset`（全部可选） | `revision`、`items`、`total`，存在关联邻居或轨迹命中时附带 `relatedFiles`、`transcriptHits` | `readOnlyHint: true`、`destructiveHint: false` |
 | `memory_dream_prepare` | 先刷新调用会话自身的摘要，再触发存量多会话补扫，锁定当前基线并按项目优先读取静态诊断、受管文件与最多 12 个未消费 `SessionDigest[]`，同时生成内容哈希 `bundleId` 并把本次会话列表写成 `propose` 用来解析下标的快照（阶段 H、`I-1b`） | `project?`（项目名 `cwdBase` 或完整 `cwdKey`）、`maxBytes?`（累计上限，默认 96 KiB）、`sid?`（可选会话标识，服务器未固定 `--sid` 且环境无会话 ID 时用于刷新当前会话摘要，校验规则与 `memory_write` 一致） | `DreamPrepareBundle`（`bundleId`、`today`、`baseHead`、`baseRevision`、`projectFilter`、`remainingUnconsumed`、`redactionNotice`、`rules`、`findings`、`files`、`sessions`） | 不声明（会改写 `cache/dream/prepare-<bundleId>.json` 与 `cache/dream/prepare.json` 快照） |
 | `memory_dream_propose` | 校验当前 Agent 提交的新记忆候选与文件修订，由 Go 拼装真实 `source` 并对 `files[]` 新增业务条目行做来源差集守卫，再执行父目录、断链与孤立文件的结构守卫后持久化本地提案（阶段 H、`I-1b`） | `bundleId?`、`baseHead`、`baseRevision`、`newMemories`、`files`、`warnings?` | `DreamProposal`（`proposalId`、`runner: "local-agent"`、`status: "ready"`、`patchHash`、`sessionsScanned`、`newMemoriesExtracted`、`changes`、`diff`、`warnings`） | 不声明 |
 | `memory_write` | 以版本基线整文件受管写入一个文件（用于改写、删除或多段重构） | `path`、`base`、`content`、`sid?` | `transaction`、`commit`、`revision`、`sync` | 不声明 |
@@ -123,7 +123,7 @@ Agent（模型）
 
 不提供 `memory_dream_apply`：MCP 场景下无法区分「用户已审阅」与「Agent 自行决定应用」，应用提案只保留 CLI `dream --apply` 与 Web UI「整理」视图两个用户入口（见 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md#32-禁止项)）。
 
-`memory_entries` 是只读查询：`q` 对条目正文做大小写不敏感的子串匹配，`file` 限定单文件，`agent`/`device`/`from`/`to` 按来源与 `added` 日期收窄，`limit` 上限 200（默认 50）。它不建立索引、不做语义检索，返回结构与 `GET /api/v1/entries` 一致；Agent 据此定位文件后再调用 `memory_read`。
+`memory_entries` 是只读查询：`q` 非空时使用纯 Go 中英文混合内存分词器对 `FilePath`（`2.0`）、`Heading`（`1.8`）、`FactText`（`1.5`）与 `DetailLines`（`1.0`）执行多字段权重 BM25 加短语与 `addedDate` 新鲜度排序（AND 全词项命中优先，不足补充 `>= 50%` OR 覆盖），`q` 为空时按 `filePath` 与 `lineNumber` 排序；`file` 限定单文件，`project` 按项目名过滤（匹配 `notes/<project>.md`、`notes/<project>-*.md`、`MEMORY.md` `## Index` 的 `[project: <project>]` 关联文件或条目级 `[project: <project>]`），`includeTranscripts: true` 在 `q` 非空时扫描本地 `cache/corpus/` 最近 14 天内的 `SessionDigest` 返回 `transcriptHits`（最多 10 条，`snippet <= 240 B` 且经 `corpus.Redact` 脱敏），`agent`/`device`/`from`/`to` 按来源与 `added` 日期收窄，`limit` 上限 200（默认 50）。它不建立外部持久化索引、不做向量语义检索，返回结构与 `GET /api/v1/entries` 一致（含一跳图谱关联邻居 `relatedFiles`）；Agent 据此定位文件或顺着 `relatedFiles` 导航后再调用 `memory_read`。
 
 日常单条新增优先调用 `memory_append`：服务端在持有排他锁期间直接读取当前磁盘基线，校验 `fact` 为非空单行正文（拒绝含换行、手写 `[source:` / `[added:` 元数据或到期占位符），将拼装好尾部元数据的条目插入匹配的 `heading` 小节末尾（小节不存在则在文件末尾新建），并在目标非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾追加 `- [[<linkTarget>]]`（传入 `indexSummary` 时为 `- [[<linkTarget>]] — <indexSummary>`）。`memory_write` 保留供改写、删除或多段重排使用，其 `base` 必须是 `memory_read` 返回的 `fileRevision`，新建文件使用 `absent`；基线过期返回 `REVISION_MISMATCH`，不覆盖他人更新。
 
@@ -252,7 +252,7 @@ MCP 与生命周期插件互补，不互相替代：
 | --- | --- | --- |
 | M01 | `initialize` 正常握手、未知方法、非法 JSON 行 | 返回正确处理；非法行不终止进程；标准输出只有 JSON 行 |
 | M02 | `tools/list` | 恰好返回 `memory_read`、`memory_entries`、`memory_dream_prepare`、`memory_dream_propose`、`memory_write` 与 `memory_append` 及其参数模式；不注册 `memory_dream_apply` |
-| M03 | `memory_read` 读取 `MEMORY.md` 与指定路径（含仓库排他锁被后台同步占用及 `rebase` 分离 `HEAD` 时） | 返回 `filePath`、`fileRevision`、`rawContent`，与 `read --json` 一致；锁忙且无未决冲突或未完成事务时无锁回退读取 `refs/heads/<branch>` 提交树快照；`until` 已到期的条目以占位符出现并计入 `hiddenExpired` |
+| M03 | `memory_read` 读取 `MEMORY.md` 与指定路径（含仓库排他锁被后台同步占用及 `rebase` 分离 `HEAD` 时） | 返回 `filePath`、`fileRevision`、`rawContent`（受管 Markdown 文件存在一跳关联邻居时附带 `relatedFiles`），与 `read --json` 一致；锁忙且无未决冲突或未完成事务时无锁回退读取 `refs/heads/<branch>` 提交树快照；`until` 已到期的条目以占位符出现并计入 `hiddenExpired` |
 | M04 | 路径越界、绝对路径、Git 内部路径、符号链接逃逸 | 返回 `INVALID_PATH`，不读取仓库外内容 |
 | M05 | `memory_write` 使用正确基线新建与覆盖；`memory_append` 在锁内追加单行条目并同事务维护 `MEMORY.md` 索引 | 产生一次本地提交，`memory_write` 返回 `transaction`、`commit`、`revision`、`sync`，`memory_append` 另返回 `indexUpdated` 与 `entry` |
 | M06 | 基线过期、并发写入 | `memory_write` 返回 `REVISION_MISMATCH`，不覆盖他人更新，不产生提交；`memory_append` 在锁内串行合并，无基线假冲突 |
@@ -262,7 +262,7 @@ MCP 与生命周期插件互补，不互相替代：
 | M10 | 无 `--sid` 且未传 `sid` 的调用 | 正常读写，提交只记录 `Agent` 与 `Device`，不伪造会话标识 |
 | M11 | 标准错误与诊断输出 | 不包含记忆正文、完整参数或凭据 |
 | M12 | 宿主关闭连接 | 进程退出，不遗留子进程与锁 |
-| M13 | `memory_entries` 按 `q`/`file`/`agent`/`device`/`from`/`to`/`limit`/`offset` 检索 | 参数原样下发到条目查询；返回 `{revision, items, total}` 与 `GET /api/v1/entries` 一致；负 `limit` 在调用前被拒绝；契约失败以 `isError` 携带错误码而非协议错误 |
+| M13 | `memory_entries` 按 `q`/`file`/`project`/`includeTranscripts`/`agent`/`device`/`from`/`to`/`limit`/`offset` 检索 | 参数原样下发到条目查询（含分词 BM25 排序、`project` 过滤与最近 14 天 `SessionDigest` 轨迹检索）；返回 `{revision, items, total, relatedFiles?, transcriptHits?}` 与 `GET /api/v1/entries` 一致；负 `limit` 在调用前被拒绝；契约失败以 `isError` 携带错误码而非协议错误 |
 | M14 | 无 `--sid` 时向 `memory_append`、`memory_write` 或 `memory_dream_prepare` 传 `sid`；已配置 `--sid` 时传不同值；传入含控制字符或超长值 | 前两者分别使用调用值（写入 `Session:` 与 `Session-Origin: model` trailer，或刷新当前会话摘要）与保留配置值（`Session-Origin: host-flag` 或 `env`）；非法值返回 `INVALID_ARGUMENT`，不产生提交或快照 |
 | M15 | `tools/list` 的注解取值 | `memory_read` 与 `memory_entries` 返回 `annotations: {readOnlyHint: true, destructiveHint: false}`；`memory_write`、`memory_append`、`memory_dream_prepare`、`memory_dream_propose` 的响应 JSON 里没有 `annotations` 键（不是 `null`）；两个读工具是唯一的注解持有者 |
 
@@ -315,7 +315,7 @@ Claude Code 未实测：它的 `ANTHROPIC_BASE_URL` 指向本机代理 `127.0.0.
 
 ## 7. 实现边界
 
-已实现（`T071`、`T072`、`T102`、`T132`、`T140`）：
+已实现（`T071`、`T072`、`T102`、`T132`、`T140`、`T142`）：
 
 - `memctl mcp` 子命令、六个工具（`memory_read`、`memory_entries`、`memory_dream_prepare`、`memory_dream_propose`、`memory_write`、`memory_append`）、只读工具注解、协议处理与错误映射。
 - `internal/mcp` 包与对应单元、集成测试；`internal/mcp/probe.go` 提供 `M09` 的能力探测。

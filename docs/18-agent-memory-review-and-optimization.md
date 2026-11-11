@@ -394,25 +394,25 @@ P0 阶段不改变外部命令形态，专门修复 §2 已复现的数据丢失
 
 ### 4.3 P2：纯 Go 内存分词 BM25 + 一跳图谱检索，及单轨本地 Dreaming 纠错升级
 
-#### 4.3.1 纯 Go 内存分词、BM25 排序与一跳图谱关联检索
+#### 4.3.1 纯 Go 内存分词、BM25 排序与一跳图谱关联检索（`I-3a` / `T142` 已完成）
 
-在不引入任何外部数据库或持久化索引的前提下（个人记忆库约 100 - 500 KB，【推断】内存全量扫描与评分估算耗时小于 2 ms，待实测），重写 [`internal/app/readsvc.go`](../internal/app/readsvc.go) 中的 `filterEntries`：
+在不引入任何外部数据库或持久化索引的前提下，新增 [`internal/vault/search.go`](../internal/vault/search.go) 并升级 [`internal/app/readsvc.go`](../internal/app/readsvc.go) 中的 `ListEntries`（`filterAndRankEntries`）：
 
-1. **中英文混合分词器（Tokenizer）**：
-   - ASCII 字母数字按单词边界切分并转小写（同时支持按 `-`、`_`、`/` 拆分复合标识符，使查询 `release tag` 或 `tag release` 均可拆出 `["tag", "release"]`）。
-   - CJK 汉字序列采用**字符级一元（Unigram）+ 相邻二元组（Bigram）**切分，无需外挂词典即可准确匹配中文多词查询（如 `发布 标签`）。
+1. **中英文混合分词器（Tokenizer，`internal/vault/search.go`）**：
+   - ASCII 字母数字按单词边界切分并转小写（同时支持按 `-`、`_`、`/`、`.` 等非字母数字分隔符拆分复合标识符，使查询 `release-tag`、`tag/release` 或 `release tag` 均可切出 `["release", "tag"]`）。
+   - CJK 汉字连续序列采用**字符级一元（Unigram）+ 相邻二元组（Bigram）**切分，保留词频信息供 BM25 TF/IDF 计算，并导出 `Tokenize`、`TokenFreqs`、`TokenSet`、`UniqueTokens`、`JaccardSimilarity`、`TextJaccardSimilarity` 供后续 `I-3b`（`internal/dream`）与 `I-4`（`internal/doctor`）无环导入复用。
 2. **多字段覆盖与相关性评分（BM25 + 新鲜度加权）**：
-   - 检索范围从单一的 `entry.FactText` 扩展至四类文本域，并赋予不同字段权重：
-     - 文件路径与文件名 `FilePath`（权重 `2.0`）
-     - 所属 Markdown 小节标题 `Heading`（权重 `1.8`）
-     - 条目主文本 `FactText`（权重 `1.5`）
-     - 条目下属的缩进子行 `DetailLines`（权重 `1.0`）
-   - 优先返回命中全部查询词项（AND）的条目；当 AND 结果不足 `limit` 时，补充命中部分词项（OR，词项覆盖率 `>= 50%`）的条目。按 `Score = BM25(field_weights) + PhraseBonus + RecencyBoost(addedDate)` 降序排列。
-3. **一跳图谱导航提示（1-Hop Graph Hints）**：
-   - 参照原文 Figure 10「Wiki 图谱导航 + Search 结合每题省 20,000 Tokens」的机制，在 `EntryPage`（以及 MCP `memory_entries` 和 `memory_read` 的返回结构）中新增 `relatedFiles` 字段：自动收集命中条目所在文件的**一跳出链（`outgoingLinks`）与一跳反向入链（`backlinks`）**及对应在 `MEMORY.md` 中的一行简述。Agent 检索一次即可直接获知关联的上下游主题文件路径，无需盲目遍历。
+   - 当 `q == ""` 时保持既有按 `FilePath` 与 `LineNumber` 的默认顺序与游标分页兼容；当 `q != ""` 时检索范围覆盖四类文本域，并赋予不同字段权重：
+     - 文件路径与文件名 `FilePath`（`WeightFilePath = 2.0`）
+     - 所属 Markdown 小节标题 `Heading`（`WeightHeading = 1.8`）
+     - 条目主文本 `FactText`（`WeightFactText = 1.5`）
+     - 条目下属的缩进子行 `DetailLines`（`WeightDetailLines = 1.0`）
+   - 优先返回命中全部核心查询词项（AND，100% 覆盖）的条目；当 AND 结果不足时，补充命中部分词项（OR，词项覆盖率 `>= 50%`）的条目。同层内按 `Score = BM25(field_weights) + PhraseBonus + RecencyBoost(addedDate)` 降序排列（同分按 `FilePath` + `LineNumber` 稳定决胜），覆盖持锁扫描与 `BUSY` 锁忙提交树无锁快照扫描两条路径，并过滤已过 `until` 日期的条目。
+3. **一跳图谱导航提示（1-Hop Graph Hints，`relatedFiles`）**：
+   - 参照原文 Figure 10「Wiki 图谱导航 + Search 结合每题省 20,000 Tokens」的机制，在 `EntryPage`（CLI `entries --json`、HTTP `GET /api/v1/entries`、MCP `memory_entries`）与 `FileRead`（CLI `read --json`、MCP `memory_read`、HTTP `GET /api/v1/files/{path...}`）中新增 `relatedFiles` 字段（`[]vault.RelatedFile`：`{path, relation: "outgoing"|"backlink"|"both", summary?}`）：自动收集目标文件的一跳出链与一跳反向入链（排除自环与 `MEMORY.md` 冗余邻居），并从 `MEMORY.md` 的 `## Index` 中提取对应文件的一行简述。Agent 检索或读取一次即可直接获知关联的上下游主题文件路径，无需盲目遍历。
 4. **支持项目过滤与近期会话轨迹后备检索（Transcript Search）**：
-   - 为 `memctl entries` 与 `memory_entries` 增加可选 `--project <name>` 过滤参数。
-   - 新增可选 `--include-transcripts`（或 `includeTranscripts: true`）参数：当记忆笔记中未命中时，使用同一套内存分词器扫描本地 `cache/corpus/` 下最近 14 天的 `SessionDigest`（匹配用户提问、助手结论与工具签名），返回匹配的会话摘要片段与 `sid`，直接补齐原文 Layer 1 的 **Transcript Search** 能力。
+   - 为 CLI `memctl entries`、HTTP `GET /api/v1/entries` 与 MCP `memory_entries` 增加可选 `--project <name>`（`project`）过滤参数（匹配 `notes/<name>.md`、`notes/<name>-*.md`、`MEMORY.md` `## Index` 的 `[project: <name>]` 关联文件或条目级 `[project: <name>]`）。
+   - 新增可选 `--include-transcripts`（`includeTranscripts: true`）参数：当 `q != ""` 时，使用同一套内存分词器与多字段 BM25 评分器扫描本地 `cache/corpus/` 下最近 14 天（`corpus.CorpusStateTTL`）内的 `SessionDigest`（匹配用户提问、助手回复与工具签名，支持按 `--project` 与 `--agent` 过滤），返回最多 `MaxTranscriptHits = 10` 条 `TranscriptHitDTO`（`{agent, sessionId, project, cwdBase, updatedAt, turnIndex, snippet, score}`，`snippet` 上限 `MaxTranscriptSnippetBytes = 240` B 且经 `corpus.Redact` 兜底脱敏），直接补齐原文 Layer 1 的 **Transcript Search** 能力。
 
 #### 4.3.2 冻结远端轨道，升级本地 Dreaming 为「提炼 + 对照 Transcript 纠错 + 结构化组装」完整环路
 

@@ -60,6 +60,9 @@ type FileRead struct {
 	// for each of them; the on-disk file is unchanged. See
 	// docs/10-memory-lifecycle.md section 3.3.
 	HiddenExpired int
+	// RelatedFiles lists one-hop outgoing and backlink neighbors in the
+	// wiki-link graph together with their MEMORY.md ## Index summaries.
+	RelatedFiles []RelatedFile
 }
 
 // Root is a repository-bound file accessor. Every path it accepts is

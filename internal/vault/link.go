@@ -5,7 +5,22 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
 )
+
+const (
+	RelationOutgoing = "outgoing"
+	RelationBacklink = "backlink"
+	RelationBoth     = "both"
+)
+
+// RelatedFile describes a one-hop neighbor in the wiki-link graph together
+// with its brief summary from MEMORY.md's ## Index section when available.
+type RelatedFile struct {
+	Path     string `json:"path"`
+	Relation string `json:"relation"`
+	Summary  string `json:"summary,omitempty"`
+}
 
 // RawLink is a `[[target]]` occurrence located during parsing, before it is
 // resolved against the set of existing files. Start and End are the byte offsets
@@ -215,4 +230,119 @@ func linkDiagnostic(raw RawLink, resolution LinkResolution) (LinkDiagnostic, boo
 		diagnostic.Message = fmt.Sprintf("link target %q does not exist", raw.RawTarget)
 	}
 	return diagnostic, true
+}
+
+// ExtractIndexSummaries extracts the short summary text after `[[target]]` for
+// each resolved wiki-link under MEMORY.md's `## Index` section (for example,
+// `- [[notes/foo]] — 简述` maps `"notes/foo.md"` to `"简述"`).
+func ExtractIndexSummaries(memoryParsed ParsedFile, index *LinkIndex) map[string]string {
+	summaries := make(map[string]string)
+	for _, entry := range memoryParsed.Entries {
+		if !strings.EqualFold(strings.TrimSpace(entry.Heading), "Index") {
+			continue
+		}
+		summary := extractEntryIndexSummary(entry.FactText)
+		if summary == "" {
+			continue
+		}
+		if len(entry.InlineLinks) > 0 {
+			for _, link := range entry.InlineLinks {
+				if link.ResolvedPath != "" && link.Exists && summaries[link.ResolvedPath] == "" {
+					summaries[link.ResolvedPath] = summary
+				}
+			}
+			continue
+		}
+		if index != nil {
+			for _, raw := range scanLinks(memoryParsed.RelPath, entry.LineNumber, entry.FactText) {
+				res := index.Resolve(raw.RawTarget)
+				if res.ResolvedPath != "" && res.Exists && summaries[res.ResolvedPath] == "" {
+					summaries[res.ResolvedPath] = summary
+				}
+			}
+		}
+	}
+	return summaries
+}
+
+func extractEntryIndexSummary(factText string) string {
+	idx := strings.LastIndex(factText, "]]")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(factText[idx+2:])
+	rest = strings.TrimLeftFunc(rest, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '—' || r == '–' || r == '-' || r == ':'
+	})
+	return strings.TrimSpace(rest)
+}
+
+// ComputeRelatedFiles returns the deduplicated, path-sorted one-hop outgoing
+// and backlink neighbors for targetPaths. Self-loops (neighbor == src) and,
+// when excludeEntryPoint is true, MEMORY.md as a neighbor are omitted.
+func ComputeRelatedFiles(
+	targetPaths []string,
+	outgoing map[string][]string,
+	backlinks map[string][]string,
+	summaries map[string]string,
+	excludeEntryPoint bool,
+) []RelatedFile {
+	type relFlags struct {
+		outgoing bool
+		backlink bool
+	}
+	neighbors := make(map[string]relFlags)
+	for _, src := range targetPaths {
+		if src == "" {
+			continue
+		}
+		for _, dst := range outgoing[src] {
+			if dst == "" || dst == src {
+				continue
+			}
+			if excludeEntryPoint && IsEntryPoint(dst) {
+				continue
+			}
+			f := neighbors[dst]
+			f.outgoing = true
+			neighbors[dst] = f
+		}
+		for _, from := range backlinks[src] {
+			if from == "" || from == src {
+				continue
+			}
+			if excludeEntryPoint && IsEntryPoint(from) {
+				continue
+			}
+			f := neighbors[from]
+			f.backlink = true
+			neighbors[from] = f
+		}
+	}
+	if len(neighbors) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(neighbors))
+	for p := range neighbors {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	out := make([]RelatedFile, 0, len(paths))
+	for _, p := range paths {
+		f := neighbors[p]
+		rel := RelationOutgoing
+		switch {
+		case f.outgoing && f.backlink:
+			rel = RelationBoth
+		case f.backlink:
+			rel = RelationBacklink
+		}
+		out = append(out, RelatedFile{
+			Path:     p,
+			Relation: rel,
+			Summary:  summaries[p],
+		})
+	}
+	return out
 }

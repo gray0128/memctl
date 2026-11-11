@@ -46,7 +46,9 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | --- | --- | --- |
 | `VaultSnapshot` | `repoId`, `repoPath`, `revision`, `stale`, `files`, `graph`, `syncState`, `health`, `hiddenExpired` | `entryPoint` 为根文件路径；`hiddenExpired` 为因 `until` 到期而排除的条目总数；未初始化时使用错误响应 |
 | `MemoryFile` | `relPath`, `fileRevision`, `kind`, `sizeBytes`, `updatedAt`, `editable` | `wikiKey`, `title`, `lineCount`, `indexedInRoot`, `entries`, `outgoingLinks`, `backlinks` |
-| `MemoryEntry` | `id`, `filePath`, `fileRevision`, `lineNumber`, `rawLine`, `factText`, `sources`, `metadata` | `heading`, `addedDate`, `inlineLinks`；`metadata` 是保序键值数组，不用 map 丢弃重复键 |
+| `MemoryEntry` | `id`, `filePath`, `fileRevision`, `lineNumber`, `rawLine`, `factText`, `sources`, `metadata` | `detailLines`, `heading`, `addedDate`, `inlineLinks`；`metadata` 是保序键值数组，不用 map 丢弃重复键 |
+| `RelatedFile` | `path`, `relation` | `summary`；一跳图谱关联邻居，`relation` 取 `outgoing \| backlink \| both`，`summary` 取自 `MEMORY.md` `## Index` 的单行简述（排除自环与 `MEMORY.md` 冗余邻居） |
+| `TranscriptHit` | `agent`, `sessionId`, `turnIndex`, `snippet`, `score` | `project`, `cwdBase`, `updatedAt`；当 `includeTranscripts` 启用且 `q` 非空时，从本地 `cache/corpus/` 最近 14 天内的 `SessionDigest` 中检索返回（最多 10 条，`snippet` 上限 `240 B` 且经 `corpus.Redact` 脱敏） |
 | `SourceRef` | `raw`, `scheme` | `device`, `agent`, `sessionId` 仅在合法 `agent://` 来源可解析时提供 |
 | `WikiLink` | `sourceFile`, `lineNumber`, `rawTarget`, `exists` | `resolvedPath` 在无歧义时提供 |
 | `KnowledgeGraph` | `nodes`, `edges` | 节点包含路径、类型、条目数、是否孤立；边包含起点、目标和是否失效 |
@@ -141,10 +143,10 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | 方法与路径 | 输入 | 输出及行为 |
 | --- | --- | --- |
 | `GET /api/v1/snapshot` | 无 | `VaultSnapshot` |
-| `GET /api/v1/files/{path...}` | 根相对路径 | `{file, rawContent, hiddenExpired}`，附带文件 `ETag`；`hiddenExpired` 为本次读取被隐藏的到期条目数 |
+| `GET /api/v1/files/{path...}` | 根相对路径 | `{file, rawContent, hiddenExpired, relatedFiles?}`，附带文件 `ETag`；`hiddenExpired` 为本次读取被隐藏的到期条目数；受管 Markdown 文件存在一跳关联邻居时附带 `relatedFiles`（`RelatedFile[]`） |
 | `PUT /api/v1/files/{path...}` | 版本头、`{rawContent}` | `MutationResult` |
 | `POST /api/v1/files:move` | `{fromPath, toPath, baseRevision}` | `MutationResult`；同一事务内移动文件并只重写已解析到源文件的链接；仅大小写不同的重命名经事务内中间路径完成，拒绝覆盖已有目标 |
-| `GET /api/v1/entries` | `q, agent, device, file, from, to, limit, offset` | `{revision, items, total}`；默认 50、最多 200 条，变更后重新分页 |
+| `GET /api/v1/entries` | `q, agent, device, file, project, includeTranscripts, from, to, limit, offset` | `{revision, items, total, relatedFiles?, transcriptHits?}`；默认 50、最多 200 条，变更后重新分页；`q` 非空时按四字段权重（`FilePath = 2.0`、`Heading = 1.8`、`FactText = 1.5`、`DetailLines = 1.0`）执行内存分词 BM25 加短语与 `addedDate` 新鲜度排序（AND 全词项命中优先，不足补充 `>= 50%` OR 覆盖），`q` 为空时按 `filePath` 与 `lineNumber` 排序；`project` 匹配 `notes/<project>.md`、`notes/<project>-*.md`、`MEMORY.md` `## Index` 的 `[project: <project>]` 关联文件或条目级 `[project: <project>]`；`includeTranscripts=true\|1` 且 `q` 非空时扫描最近 14 天内的 `SessionDigest` 返回 `transcriptHits`（非法布尔值返回 `400 INVALID_ARGUMENT`） |
 | `POST /api/v1/entries` | `{filePath, heading?, factText, sources?, expectedRevision}` | `{entry, result: MutationResult}` |
 | `PATCH /api/v1/entries/{id}` | 版本头、`{filePath, factText, moveToFilePath?, baseRevision?}` | `{entry, result}`；移动时要求仓库基线，目标不存在时创建该文件（图谱拆分），源文件只移除该条目并保留其余内容与元数据 |
 | `DELETE /api/v1/entries/{id}` | 版本头、`?filePath=` | `MutationResult` |

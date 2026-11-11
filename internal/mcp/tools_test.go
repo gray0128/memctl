@@ -436,7 +436,7 @@ func TestM13MemoryEntries(t *testing.T) {
 	server := newTestServer(service)
 
 	result, rpcErr := server.CallTool(context.Background(), "memory_entries", json.RawMessage(
-		`{"q":"vim","file":"notes/prefs.md","agent":"dsh","device":"mac","from":"2026-01-01","to":"2026-12-31","limit":5,"offset":2}`))
+		`{"q":"vim","file":"notes/prefs.md","project":"atlas","includeTranscripts":true,"agent":"dsh","device":"mac","from":"2026-01-01","to":"2026-12-31","limit":5,"offset":2}`))
 	if rpcErr != nil {
 		t.Fatalf("unexpected protocol error: %v", rpcErr)
 	}
@@ -444,8 +444,8 @@ func TestM13MemoryEntries(t *testing.T) {
 		t.Fatalf("unexpected tool error: %+v", result)
 	}
 	want := app.EntryQuery{
-		Q: "vim", File: "notes/prefs.md", Agent: "dsh", Device: "mac",
-		From: "2026-01-01", To: "2026-12-31", Limit: 5, Offset: 2,
+		Q: "vim", File: "notes/prefs.md", Project: "atlas", IncludeTranscripts: true,
+		Agent: "dsh", Device: "mac", From: "2026-01-01", To: "2026-12-31", Limit: 5, Offset: 2,
 	}
 	if len(service.entryQueries) != 1 || service.entryQueries[0] != want {
 		t.Fatalf("query = %+v, want %+v", service.entryQueries, want)

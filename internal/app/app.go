@@ -204,7 +204,22 @@ func (a *App) ReadFile(ctx context.Context, relPath string) (vault.FileRead, err
 	}
 	defer session.Close()
 	file, err := session.root.ReadFile(relPath)
-	return a.projectRead(relPath, file, err)
+	projected, err := a.projectRead(relPath, file, err)
+	if err != nil {
+		return projected, err
+	}
+	if projected.Kind == vault.KindEntryPoint || projected.Kind == vault.KindMarkdown {
+		if scan, scanErr := scanVault(session, a.clock()); scanErr == nil {
+			projected.RelatedFiles = vault.ComputeRelatedFiles(
+				[]string{projected.RelPath},
+				scan.outgoingPaths,
+				scan.backlinkPaths,
+				scan.indexSummaries,
+				true,
+			)
+		}
+	}
+	return projected, nil
 }
 
 // projectRead applies the hide projection to one file read. A non-Markdown or

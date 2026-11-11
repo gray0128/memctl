@@ -12,8 +12,9 @@ description: 读写共享的 Agent 记忆仓库：用 memctl 查看 MEMORY.md �
 ## 1. 确认环境
 
 1. 定位二进制：优先 `command -v memctl`，否则用 `~/.agent-memory/bin/memctl`。
-2. 读取入口：`memctl read MEMORY.md --json`。成功时记下 `fileRevision` 和正文。
-   不知道事实在哪个文件时，先用 `memctl entries --q <关键词>`（或 MCP `memory_entries`）定位，再按返回的 `filePath` 读取整份文件。
+2. 读取入口与按需检索：`memctl read MEMORY.md --json`。成功时记下 `fileRevision` 和正文。
+   - 不知道事实在哪个文件时，先用 `memctl entries --q "<多关键词>" [--project <项目名>] [--include-transcripts] --json`（或 MCP `memory_entries`）定位：`--q` 支持中英文多词分词与乱序匹配（跨文件路径、小节标题、条目正文与子行按多字段权重 BM25 加新鲜度排序）；`--project <name>` 限定目标项目的主题文件；`--include-transcripts` 同步检索本地最近 14 天内的脱敏会话摘要（返回 `transcriptHits`，含 `sessionId`、`turnIndex` 与 `snippet`）。
+   - `entries --json` 与 `read <path> --json`（及 MCP `memory_entries`、`memory_read`）均返回一跳图谱关联邻居 `relatedFiles`（`{path, relation: "outgoing"|"backlink"|"both", summary?}`），可按 `relatedFiles` 顺藤摸瓜读取上下游关联主题文件，不必全库盲目遍历。
 3. 读取失败时按错误处置：`NO_REPO` 表示尚未初始化，请用户运行 `memctl init`；`NOT_FOUND` 表示仓库缺少该文件，不要自行创建。
 
 会话上下文已经注入 `[agent-memory]` 正文时，先复用它；需要未注入的文件时再读取。
@@ -94,7 +95,7 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 IO_FAILED: cannot open repository lock
 ```
 
-这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write` 工具时改用它：查事实位置用 `memory_entries`；日常新增单条记忆优先调用 `memory_append`（传入 `path`、`fact` 及可选 `heading`、`until`、`indexSummary`、`sid`，无需预先调用 `memory_read` 取 `fileRevision` 基线，服务端在锁内追加并同事务幂等维护 `MEMORY.md` 的 `## Index` 索引）；仅在改写、删除或重排已有条目时，先用 `memory_read` 取 `fileRevision` 基线，再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_append` 或 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
+这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write` 工具时改用它：查事实位置用 `memory_entries`（支持 `q` 多词分词 BM25 检索、`project` 项目过滤、`includeTranscripts` 近期会话轨迹检索，并返回一跳图谱关联文件 `relatedFiles`）；日常新增单条记忆优先调用 `memory_append`（传入 `path`、`fact` 及可选 `heading`、`until`、`indexSummary`、`sid`，无需预先调用 `memory_read` 取 `fileRevision` 基线，服务端在锁内追加并同事务幂等维护 `MEMORY.md` 的 `## Index` 索引）；仅在改写、删除或重排已有条目时，先用 `memory_read` 取 `fileRevision` 基线（同时返回 `relatedFiles`），再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_append` 或 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
 Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能改走 MCP，直接在终端执行 `memctl`；会话身份由 Delta 注入的 `DELTA_CURRENT_THREAD_ID` 提供，`add` 与 `write` 不必再手动传 `--sid`。
 

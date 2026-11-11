@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gray0128/memctl/internal/config"
+	"github.com/gray0128/memctl/internal/corpus"
 	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
@@ -59,6 +62,7 @@ type MemoryEntryDTO struct {
 	LineNumber   int                `json:"lineNumber"`
 	RawLine      string             `json:"rawLine"`
 	FactText     string             `json:"factText"`
+	DetailLines  []string           `json:"detailLines,omitempty"`
 	Sources      []SourceRefDTO     `json:"sources"`
 	Metadata     []MetadataFieldDTO `json:"metadata"`
 	Heading      string             `json:"heading,omitempty"`
@@ -151,24 +155,52 @@ type Snapshot struct {
 	HiddenExpired int `json:"hiddenExpired"`
 }
 
+// RelatedFileDTO describes a one-hop neighbor in the wiki-link graph.
+type RelatedFileDTO = vault.RelatedFile
+
+const (
+	// MaxTranscriptHits bounds the number of session transcript turns returned
+	// by ListEntries when IncludeTranscripts is enabled.
+	MaxTranscriptHits = 10
+	// MaxTranscriptSnippetBytes bounds each transcript hit snippet in bytes.
+	MaxTranscriptSnippetBytes = 240
+)
+
+// TranscriptHitDTO is one matched turn from a recent (<= 14d) SessionDigest
+// returned when IncludeTranscripts is true and Q is non-empty.
+type TranscriptHitDTO struct {
+	Agent     string  `json:"agent"`
+	SessionID string  `json:"sessionId"`
+	Project   string  `json:"project,omitempty"`
+	CwdBase   string  `json:"cwdBase,omitempty"`
+	UpdatedAt string  `json:"updatedAt,omitempty"`
+	TurnIndex int     `json:"turnIndex"`
+	Snippet   string  `json:"snippet"`
+	Score     float64 `json:"score"`
+}
+
 // EntryQuery filters the paged entry list.
 type EntryQuery struct {
-	Q      string
-	Agent  string
-	Device string
-	File   string
-	From   string
-	To     string
-	Limit  int
-	Offset int
+	Q                  string
+	Agent              string
+	Device             string
+	File               string
+	Project            string
+	From               string
+	To                 string
+	IncludeTranscripts bool
+	Limit              int
+	Offset             int
 }
 
 // EntryPage is the paged entry result. Total counts every matching entry, not
 // only the current page.
 type EntryPage struct {
-	Revision string           `json:"revision"`
-	Items    []MemoryEntryDTO `json:"items"`
-	Total    int              `json:"total"`
+	Revision       string             `json:"revision"`
+	Items          []MemoryEntryDTO   `json:"items"`
+	Total          int                `json:"total"`
+	RelatedFiles   []RelatedFileDTO   `json:"relatedFiles,omitempty"`
+	TranscriptHits []TranscriptHitDTO `json:"transcriptHits,omitempty"`
 }
 
 // AuditQuery filters the paged commit list.
@@ -305,11 +337,14 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 		return EntryPage{}, memerr.New(memerr.InvalidArgument, "offset must not be negative")
 	}
 
+	now := a.clock()
 	var scan *vaultScan
+	var repoPath string
 	session, err := a.beginRead(ctx)
 	if err != nil {
 		if code, ok := memerr.As(err); ok && code.Code == memerr.Busy {
-			scan, err = a.scanSnapshot(ctx, a.clock())
+			repoPath, _, _ = a.ensureSnapshotAllowed(ctx)
+			scan, err = a.scanSnapshot(ctx, now)
 			if err != nil {
 				return EntryPage{}, err
 			}
@@ -318,12 +353,13 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 		}
 	} else {
 		defer session.Close()
-		scan, err = scanVault(session, a.clock())
+		repoPath = session.repoPath
+		scan, err = scanVault(session, now)
 		if err != nil {
 			return EntryPage{}, err
 		}
 	}
-	filtered := filterEntries(scan.entries, query)
+	filtered := filterAndRankEntries(scan, query, now)
 	total := len(filtered)
 	page := []MemoryEntryDTO{}
 	if query.Offset < total {
@@ -333,7 +369,35 @@ func (a *App) ListEntries(ctx context.Context, query EntryQuery) (EntryPage, err
 		}
 		page = filtered[query.Offset:end]
 	}
-	return EntryPage{Revision: scan.revision, Items: page, Total: total}, nil
+
+	var hitFiles []string
+	seenFiles := make(map[string]bool, len(page))
+	for _, item := range page {
+		if !seenFiles[item.FilePath] {
+			seenFiles[item.FilePath] = true
+			hitFiles = append(hitFiles, item.FilePath)
+		}
+	}
+	relatedFiles := vault.ComputeRelatedFiles(
+		hitFiles,
+		scan.outgoingPaths,
+		scan.backlinkPaths,
+		scan.indexSummaries,
+		true,
+	)
+
+	var transcriptHits []TranscriptHitDTO
+	if query.IncludeTranscripts && strings.TrimSpace(query.Q) != "" && repoPath != "" {
+		transcriptHits = a.searchTranscripts(repoPath, query, now)
+	}
+
+	return EntryPage{
+		Revision:       scan.revision,
+		Items:          page,
+		Total:          total,
+		RelatedFiles:   relatedFiles,
+		TranscriptHits: transcriptHits,
+	}, nil
 }
 
 // maxAuditScanPages bounds how many raw commit pages one filtered audit
@@ -461,12 +525,18 @@ func (a *App) ConflictState(ctx context.Context) (ConflictView, bool, error) {
 
 // vaultScan is one consistent pass over the managed files.
 type vaultScan struct {
-	head     string
-	revision string
-	files    []MemoryFileDTO
-	graph    KnowledgeGraphDTO
-	entries  []MemoryEntryDTO
-	health   HealthDTO
+	head           string
+	revision       string
+	files          []MemoryFileDTO
+	graph          KnowledgeGraphDTO
+	entries        []MemoryEntryDTO
+	rawEntries     []vault.MemoryEntry
+	outgoingPaths  map[string][]string
+	backlinkPaths  map[string][]string
+	indexSummaries map[string]string
+	memoryRaw      string
+	linkIndex      *vault.LinkIndex
+	health         HealthDTO
 	// hiddenExpired counts the time-limited entries the scan dropped because
 	// their `until` date had passed.
 	hiddenExpired int
@@ -484,9 +554,12 @@ func scanVault(session *writeSession, now time.Time) (*vaultScan, error) {
 	index := vault.NewLinkIndex(paths)
 
 	scan := &vaultScan{
-		head:  head,
-		files: []MemoryFileDTO{},
-		graph: KnowledgeGraphDTO{Nodes: []GraphNodeDTO{}, Edges: []GraphEdgeDTO{}},
+		head:          head,
+		files:         []MemoryFileDTO{},
+		outgoingPaths: map[string][]string{},
+		backlinkPaths: map[string][]string{},
+		linkIndex:     index,
+		graph:         KnowledgeGraphDTO{Nodes: []GraphNodeDTO{}, Edges: []GraphEdgeDTO{}},
 	}
 	metas := make([]vault.FileMeta, 0, len(paths))
 	// backlinks and reachability are derived after every file is parsed.
@@ -531,6 +604,10 @@ func scanVault(session *writeSession, now time.Time) (*vaultScan, error) {
 		// time-limited entry is dropped here, exactly as ReadFile hides it in a
 		// full-file read. See docs/10-memory-lifecycle.md section 3.3.
 		links, diagnostics := parsed.ResolveLinks(index)
+		if vault.IsEntryPoint(file.RelPath) {
+			scan.memoryRaw = file.RawContent
+			scan.indexSummaries = vault.ExtractIndexSummaries(parsed, index)
+		}
 		for _, diagnostic := range diagnostics {
 			switch diagnostic.Code {
 			case vault.LinkIssueInvalid, vault.LinkIssueMissing:
@@ -560,6 +637,7 @@ func scanVault(session *writeSession, now time.Time) (*vaultScan, error) {
 			entry := toEntryDTO(parsed.Entries[i])
 			fileDTO.Entries = append(fileDTO.Entries, entry)
 			scan.entries = append(scan.entries, entry)
+			scan.rawEntries = append(scan.rawEntries, parsed.Entries[i])
 		}
 		for _, link := range links {
 			linkDTO := WikiLinkDTO{
@@ -578,6 +656,8 @@ func scanVault(session *writeSession, now time.Time) (*vaultScan, error) {
 			})
 			if link.ResolvedPath != "" {
 				backlinks[link.ResolvedPath] = appendUnique(backlinks[link.ResolvedPath], link.SourceFile)
+				scan.outgoingPaths[file.RelPath] = appendUnique(scan.outgoingPaths[file.RelPath], link.ResolvedPath)
+				scan.backlinkPaths[link.ResolvedPath] = appendUnique(scan.backlinkPaths[link.ResolvedPath], link.SourceFile)
 			}
 		}
 		scan.files = append(scan.files, fileDTO)
@@ -673,14 +753,23 @@ func (a *App) syncState(ctx context.Context, session *writeSession, head string)
 	return stateDTO, nil
 }
 
-func filterEntries(entries []MemoryEntryDTO, query EntryQuery) []MemoryEntryDTO {
-	filtered := make([]MemoryEntryDTO, 0, len(entries))
-	lowerQuery := strings.ToLower(query.Q)
-	for _, entry := range entries {
-		if lowerQuery != "" && !strings.Contains(strings.ToLower(entry.FactText), lowerQuery) {
+func filterAndRankEntries(scan *vaultScan, query EntryQuery, now time.Time) []MemoryEntryDTO {
+	if scan == nil || len(scan.entries) == 0 {
+		return []MemoryEntryDTO{}
+	}
+	project := strings.TrimSpace(query.Project)
+	var projectFiles map[string]bool
+	if project != "" {
+		projectFiles = collectProjectIndexTargets(scan.memoryRaw, project, scan.linkIndex)
+	}
+
+	var dtoCandidates []MemoryEntryDTO
+	var rawCandidates []vault.MemoryEntry
+	for i, entry := range scan.entries {
+		if query.File != "" && entry.FilePath != query.File {
 			continue
 		}
-		if query.File != "" && entry.FilePath != query.File {
+		if project != "" && !entryMatchesProject(entry, project, projectFiles) {
 			continue
 		}
 		if query.Agent != "" && !hasSource(entry, "agent", query.Agent) {
@@ -695,15 +784,88 @@ func filterEntries(entries []MemoryEntryDTO, query EntryQuery) []MemoryEntryDTO 
 		if query.To != "" && (entry.AddedDate == "" || entry.AddedDate > query.To) {
 			continue
 		}
-		filtered = append(filtered, entry)
-	}
-	sort.SliceStable(filtered, func(i, j int) bool {
-		if filtered[i].FilePath != filtered[j].FilePath {
-			return filtered[i].FilePath < filtered[j].FilePath
+		dtoCandidates = append(dtoCandidates, entry)
+		if i < len(scan.rawEntries) {
+			rawCandidates = append(rawCandidates, scan.rawEntries[i])
+		} else {
+			rawCandidates = append(rawCandidates, vault.MemoryEntry{
+				ID:           entry.ID,
+				FilePath:     entry.FilePath,
+				FileRevision: entry.FileRevision,
+				LineNumber:   entry.LineNumber,
+				RawLine:      entry.RawLine,
+				FactText:     entry.FactText,
+				DetailLines:  entry.DetailLines,
+				Heading:      entry.Heading,
+				AddedDate:    entry.AddedDate,
+			})
 		}
-		return filtered[i].LineNumber < filtered[j].LineNumber
-	})
-	return filtered
+	}
+
+	if strings.TrimSpace(query.Q) == "" {
+		sort.SliceStable(dtoCandidates, func(i, j int) bool {
+			if dtoCandidates[i].FilePath != dtoCandidates[j].FilePath {
+				return dtoCandidates[i].FilePath < dtoCandidates[j].FilePath
+			}
+			return dtoCandidates[i].LineNumber < dtoCandidates[j].LineNumber
+		})
+		return dtoCandidates
+	}
+
+	scored := vault.RankEntries(rawCandidates, query.Q, now)
+	out := make([]MemoryEntryDTO, 0, len(scored))
+	for _, s := range scored {
+		out = append(out, toEntryDTO(s.Entry))
+	}
+	return out
+}
+
+func collectProjectIndexTargets(memoryRaw, project string, linkIdx *vault.LinkIndex) map[string]bool {
+	targets := make(map[string]bool)
+	if memoryRaw == "" || project == "" {
+		return targets
+	}
+	normalized := strings.ReplaceAll(memoryRaw, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	inIndex := false
+	for _, line := range lines {
+		clean := strings.TrimSpace(line)
+		if strings.HasPrefix(clean, "# ") || strings.HasPrefix(clean, "## ") {
+			inIndex = strings.EqualFold(clean, "## index")
+			continue
+		}
+		if !inIndex {
+			continue
+		}
+		if strings.HasPrefix(clean, "- ") || strings.HasPrefix(clean, "* ") || strings.HasPrefix(clean, "+ ") {
+			if matched, resolved := matchIndexLine(line, project, linkIdx); matched {
+				for _, rel := range resolved {
+					if validated, err := vault.ValidateRelPath(rel); err == nil && !vault.IsEntryPoint(validated) {
+						targets[validated] = true
+					}
+				}
+			}
+		}
+	}
+	return targets
+}
+
+func entryMatchesProject(entry MemoryEntryDTO, project string, projectFiles map[string]bool) bool {
+	if isProjectNotePath(entry.FilePath, project) {
+		return true
+	}
+	if projectFiles[entry.FilePath] {
+		return true
+	}
+	if !vault.IsEntryPoint(entry.FilePath) {
+		for _, meta := range entry.Metadata {
+			if strings.EqualFold(strings.TrimSpace(meta.Key), "project") &&
+				strings.EqualFold(strings.TrimSpace(meta.Value), project) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hasSource(entry MemoryEntryDTO, field, value string) bool {
@@ -736,6 +898,9 @@ func toEntryDTO(entry vault.MemoryEntry) MemoryEntryDTO {
 		Metadata:     []MetadataFieldDTO{},
 		Heading:      entry.Heading,
 		AddedDate:    entry.AddedDate,
+	}
+	if len(entry.DetailLines) > 0 {
+		dto.DetailLines = append([]string(nil), entry.DetailLines...)
 	}
 	for _, source := range entry.Sources {
 		dto.Sources = append(dto.Sources, SourceRefDTO{
@@ -967,7 +1132,22 @@ func (a *App) readSnapshotFile(ctx context.Context, relPath string) (vault.FileR
 	} else {
 		file.ModTime = a.clock().UTC()
 	}
-	return a.projectRead(clean, file, nil)
+	projected, err := a.projectRead(clean, file, nil)
+	if err != nil {
+		return projected, err
+	}
+	if projected.Kind == vault.KindEntryPoint || projected.Kind == vault.KindMarkdown {
+		if scan, scanErr := a.scanSnapshot(ctx, a.clock()); scanErr == nil {
+			projected.RelatedFiles = vault.ComputeRelatedFiles(
+				[]string{projected.RelPath},
+				scan.outgoingPaths,
+				scan.backlinkPaths,
+				scan.indexSummaries,
+				true,
+			)
+		}
+	}
+	return projected, nil
 }
 
 // scanSnapshot scans all managed files from the committed Git tree of the
@@ -983,9 +1163,11 @@ func (a *App) scanSnapshot(ctx context.Context, now time.Time) (*vaultScan, erro
 		return nil, err
 	}
 	scan := &vaultScan{
-		head:  commit,
-		files: []MemoryFileDTO{},
-		graph: KnowledgeGraphDTO{Nodes: []GraphNodeDTO{}, Edges: []GraphEdgeDTO{}},
+		head:          commit,
+		files:         []MemoryFileDTO{},
+		outgoingPaths: map[string][]string{},
+		backlinkPaths: map[string][]string{},
+		graph:         KnowledgeGraphDTO{Nodes: []GraphNodeDTO{}, Edges: []GraphEdgeDTO{}},
 	}
 	if commit == "" {
 		scan.revision = vault.RepoRevisionFrom("", repoPath, nil)
@@ -1014,6 +1196,7 @@ func (a *App) scanSnapshot(ctx context.Context, now time.Time) (*vaultScan, erro
 	sort.Strings(paths)
 
 	index := vault.NewLinkIndex(paths)
+	scan.linkIndex = index
 	metas := make([]vault.FileMeta, 0, len(managed))
 
 	for _, entry := range managed {
@@ -1055,18 +1238,260 @@ func (a *App) scanSnapshot(ctx context.Context, now time.Time) (*vaultScan, erro
 			Revision: file.FileRevision,
 		})
 		parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
-		parsed.ResolveLinks(index)
+		links, _ := parsed.ResolveLinks(index)
+		if vault.IsEntryPoint(file.RelPath) {
+			scan.memoryRaw = file.RawContent
+			scan.indexSummaries = vault.ExtractIndexSummaries(parsed, index)
+		}
 		for i := range parsed.Entries {
 			if vault.EntryExpired(parsed.Entries[i].UntilDate, now) {
 				scan.hiddenExpired++
 				continue
 			}
 			scan.entries = append(scan.entries, toEntryDTO(parsed.Entries[i]))
+			scan.rawEntries = append(scan.rawEntries, parsed.Entries[i])
+		}
+		for _, link := range links {
+			if link.ResolvedPath != "" && link.Exists {
+				scan.outgoingPaths[file.RelPath] = appendUnique(scan.outgoingPaths[file.RelPath], link.ResolvedPath)
+				scan.backlinkPaths[link.ResolvedPath] = appendUnique(scan.backlinkPaths[link.ResolvedPath], link.SourceFile)
+			}
 		}
 	}
 
 	scan.revision = vault.RepoRevisionFrom(commit, repoPath, metas)
 	return scan, nil
+}
+
+// searchTranscripts scans recent (<= 14d) SessionDigests in the local corpus
+// cache using the same in-memory tokenizer and BM25 scorer, returning bounded
+// redacted snippets.
+func (a *App) searchTranscripts(repoPath string, query EntryQuery, now time.Time) []TranscriptHitDTO {
+	if strings.TrimSpace(query.Q) == "" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	cache := corpus.OpenCache(a.cfg.StateDir, config.RepoID(repoPath))
+	digests := cache.List()
+	if len(digests) == 0 {
+		return nil
+	}
+
+	projectFilter := strings.TrimSpace(query.Project)
+	agentFilter := strings.TrimSpace(query.Agent)
+
+	type turnCandidate struct {
+		agent     string
+		sessionID string
+		cwdBase   string
+		updatedAt string
+		dateStr   string
+		turnIndex int
+		turn      corpus.Turn
+	}
+
+	var candidates []turnCandidate
+	var docs [][]vault.SearchField
+	var dates []string
+
+	for _, d := range digests {
+		updatedTime, ok := parseDigestTime(d.UpdatedAt, d.Date)
+		if !ok {
+			continue
+		}
+		if now.Sub(updatedTime) > corpus.CorpusStateTTL {
+			continue
+		}
+		cwdBase := strings.TrimSpace(d.CwdBase)
+		if projectFilter != "" && !strings.EqualFold(cwdBase, projectFilter) && !strings.EqualFold(strings.TrimSpace(d.CwdKey), projectFilter) {
+			continue
+		}
+		if agentFilter != "" && !strings.EqualFold(strings.TrimSpace(d.Agent), agentFilter) {
+			continue
+		}
+		dateStr := d.Date
+		if dateStr == "" {
+			dateStr = updatedTime.Format("2006-01-02")
+		}
+		for turnIdx, turn := range d.Turns {
+			toolsText := strings.Join(turn.Tools, "\n")
+			if strings.TrimSpace(turn.User) == "" && strings.TrimSpace(turn.Assistant) == "" && strings.TrimSpace(toolsText) == "" {
+				continue
+			}
+			candidates = append(candidates, turnCandidate{
+				agent:     d.Agent,
+				sessionID: d.SessionID,
+				cwdBase:   cwdBase,
+				updatedAt: d.UpdatedAt,
+				dateStr:   dateStr,
+				turnIndex: turnIdx,
+				turn:      turn,
+			})
+			docs = append(docs, []vault.SearchField{
+				{Text: turn.User, Weight: 1.8},
+				{Text: turn.Assistant, Weight: 1.5},
+				{Text: toolsText, Weight: 1.2},
+			})
+			dates = append(dates, dateStr)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	rawScores := vault.ScoreMultiFieldDocs(docs, dates, query.Q, now)
+	type scoredTurn struct {
+		cand      turnCandidate
+		fullMatch bool
+		score     float64
+	}
+	var matched []scoredTurn
+	for i, rs := range rawScores {
+		if !rs.Matched {
+			continue
+		}
+		matched = append(matched, scoredTurn{
+			cand:      candidates[i],
+			fullMatch: rs.FullMatch,
+			score:     rs.Score,
+		})
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+
+	sort.SliceStable(matched, func(i, j int) bool {
+		a, b := matched[i], matched[j]
+		if a.fullMatch != b.fullMatch {
+			return a.fullMatch
+		}
+		if math.Abs(a.score-b.score) > 1e-9 {
+			return a.score > b.score
+		}
+		if a.cand.updatedAt != b.cand.updatedAt {
+			return a.cand.updatedAt > b.cand.updatedAt
+		}
+		if a.cand.sessionID != b.cand.sessionID {
+			return a.cand.sessionID < b.cand.sessionID
+		}
+		return a.cand.turnIndex < b.cand.turnIndex
+	})
+
+	limit := MaxTranscriptHits
+	if query.Limit > 0 && query.Limit < limit {
+		limit = query.Limit
+	}
+	if len(matched) > limit {
+		matched = matched[:limit]
+	}
+
+	queryTokens := vault.TokenSet(query.Q)
+	hits := make([]TranscriptHitDTO, 0, len(matched))
+	for _, m := range matched {
+		snippet := buildTranscriptSnippet(m.cand.turn, queryTokens)
+		hits = append(hits, TranscriptHitDTO{
+			Agent:     m.cand.agent,
+			SessionID: m.cand.sessionID,
+			Project:   m.cand.cwdBase,
+			CwdBase:   m.cand.cwdBase,
+			UpdatedAt: m.cand.updatedAt,
+			TurnIndex: m.cand.turnIndex,
+			Snippet:   snippet,
+			Score:     math.Round(m.score*1000) / 1000,
+		})
+	}
+	return hits
+}
+
+func parseDigestTime(updatedAt, dateStr string) (time.Time, bool) {
+	if s := strings.TrimSpace(updatedAt); s != "" {
+		if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+			return t.UTC(), true
+		}
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	if s := strings.TrimSpace(dateStr); s != "" {
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
+func buildTranscriptSnippet(turn corpus.Turn, queryTokens map[string]struct{}) string {
+	type segment struct {
+		prefix string
+		text   string
+	}
+	var segments []segment
+	if u := strings.TrimSpace(turn.User); u != "" {
+		segments = append(segments, segment{prefix: "user: ", text: u})
+	}
+	if a := strings.TrimSpace(turn.Assistant); a != "" {
+		segments = append(segments, segment{prefix: "assistant: ", text: a})
+	}
+	if len(turn.Tools) > 0 {
+		segments = append(segments, segment{prefix: "tools: ", text: strings.Join(turn.Tools, ", ")})
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+
+	bestIdx := 0
+	bestHits := -1
+	for i, seg := range segments {
+		toks := vault.TokenSet(seg.text)
+		hits := 0
+		for qt := range queryTokens {
+			if _, ok := toks[qt]; ok {
+				hits++
+			}
+		}
+		if hits > bestHits {
+			bestHits = hits
+			bestIdx = i
+		}
+	}
+
+	var parts []string
+	primary := segments[bestIdx]
+	parts = append(parts, primary.prefix+collapseWhitespace(primary.text))
+	for i, seg := range segments {
+		if i == bestIdx {
+			continue
+		}
+		parts = append(parts, seg.prefix+collapseWhitespace(seg.text))
+	}
+	combined := strings.Join(parts, " | ")
+	redacted := corpus.Redact(combined)
+	return truncateUTF8Bytes(collapseWhitespace(redacted), MaxTranscriptSnippetBytes)
+}
+
+func collapseWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	const ellipsis = "..."
+	if maxBytes <= len(ellipsis) {
+		return ellipsis[:maxBytes]
+	}
+	budget := maxBytes - len(ellipsis)
+	cut := budget
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return strings.TrimRight(s[:cut], " \t\r\n") + ellipsis
 }
 
 // listManagedPaths returns sorted managed file paths from the locked worktree

@@ -36,7 +36,7 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("ETag", `"`+file.FileRevision+`"`)
-	writeJSON(w, map[string]any{
+	resp := map[string]any{
 		"file": app.MemoryFileDTO{
 			RelPath:      file.RelPath,
 			FileRevision: file.FileRevision,
@@ -50,7 +50,11 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		// were replaced by a placeholder; the baseline is still the on-disk
 		// revision. See docs/10-memory-lifecycle.md section 3.3.
 		"hiddenExpired": file.HiddenExpired,
-	})
+	}
+	if len(file.RelatedFiles) > 0 {
+		resp["relatedFiles"] = file.RelatedFiles
+	}
+	writeJSON(w, resp)
 }
 
 // handleEntries returns one page of parsed entries.
@@ -66,15 +70,22 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 		s.writeAppError(w, err)
 		return
 	}
+	includeTranscripts, err := boolParam(query.Get("includeTranscripts"))
+	if err != nil {
+		s.writeAppError(w, err)
+		return
+	}
 	page, err := s.app.ListEntries(r.Context(), app.EntryQuery{
-		Q:      query.Get("q"),
-		Agent:  query.Get("agent"),
-		Device: query.Get("device"),
-		File:   query.Get("file"),
-		From:   query.Get("from"),
-		To:     query.Get("to"),
-		Limit:  limit,
-		Offset: offset,
+		Q:                  query.Get("q"),
+		Agent:              query.Get("agent"),
+		Device:             query.Get("device"),
+		File:               query.Get("file"),
+		Project:            query.Get("project"),
+		IncludeTranscripts: includeTranscripts,
+		From:               query.Get("from"),
+		To:                 query.Get("to"),
+		Limit:              limit,
+		Offset:             offset,
 	})
 	if err != nil {
 		s.writeAppError(w, err)
@@ -146,6 +157,21 @@ func intParam(value string) (int, error) {
 		return 0, memerr.New(memerr.InvalidArgument, "query parameter is not an integer: %q", value)
 	}
 	return parsed, nil
+}
+
+func boolParam(value string) (bool, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false, nil
+	}
+	switch strings.ToLower(trimmed) {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, memerr.New(memerr.InvalidArgument, "query parameter is not a boolean: %q", value)
+	}
 }
 
 func busyCode(code memerr.Code) bool {

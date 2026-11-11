@@ -87,18 +87,26 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_entries",
-			Description: "List or filter memory entries without reading whole files. Matching is a case-insensitive substring over the entry fact text; filters narrow by file, agent, device and added date. Use this to find where a fact lives before calling memory_read. Read-only; it never writes.",
+			Description: "List or search memory entries without reading whole files. When q is set, entries are tokenized in memory and ranked by multi-field weighted BM25 (FilePath, Heading, FactText, DetailLines) and recency, returning 1-hop relatedFiles graph hints and optional recent (<= 14d) session transcriptHits. Use this to find where a fact lives before calling memory_read. Read-only; it never writes.",
 			Annotations: readOnlyAnnotations(),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"q": map[string]any{
 						"type":        "string",
-						"description": "Case-insensitive substring to match against the entry fact text.",
+						"description": "Search query ranked by multi-field tokenized BM25 and recency.",
 					},
 					"file": map[string]any{
 						"type":        "string",
 						"description": "Only entries of this repository-relative file.",
+					},
+					"project": map[string]any{
+						"type":        "string",
+						"description": "Only entries belonging to this project (matches notes/<name>.md, notes/<name>-*.md, or [project: <name>] in MEMORY.md ## Index).",
+					},
+					"includeTranscripts": map[string]any{
+						"type":        "boolean",
+						"description": "When true and q is non-empty, also search recent (<= 14d) local SessionDigests and return bounded transcriptHits.",
 					},
 					"agent": map[string]any{
 						"type":        "string",
@@ -310,14 +318,16 @@ type readArgs struct {
 
 // entriesArgs is the memory_entries argument object.
 type entriesArgs struct {
-	Q      string `json:"q"`
-	File   string `json:"file"`
-	Agent  string `json:"agent"`
-	Device string `json:"device"`
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
+	Q                  string `json:"q"`
+	File               string `json:"file"`
+	Project            string `json:"project"`
+	IncludeTranscripts bool   `json:"includeTranscripts"`
+	Agent              string `json:"agent"`
+	Device             string `json:"device"`
+	From               string `json:"from"`
+	To                 string `json:"to"`
+	Limit              int    `json:"limit"`
+	Offset             int    `json:"offset"`
 }
 
 // writeArgs is the memory_write argument object.
@@ -422,15 +432,17 @@ func (s *Server) memoryRead(ctx context.Context, params json.RawMessage) (CallTo
 		return textResult(errorText(err), true), nil
 	}
 	payload := struct {
-		FilePath      string `json:"filePath"`
-		FileRevision  string `json:"fileRevision"`
-		RawContent    string `json:"rawContent"`
-		HiddenExpired int    `json:"hiddenExpired,omitempty"`
+		FilePath      string              `json:"filePath"`
+		FileRevision  string              `json:"fileRevision"`
+		RawContent    string              `json:"rawContent"`
+		HiddenExpired int                 `json:"hiddenExpired,omitempty"`
+		RelatedFiles  []vault.RelatedFile `json:"relatedFiles,omitempty"`
 	}{
 		FilePath:      file.RelPath,
 		FileRevision:  file.FileRevision,
 		RawContent:    file.RawContent,
 		HiddenExpired: file.HiddenExpired,
+		RelatedFiles:  file.RelatedFiles,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -452,14 +464,16 @@ func (s *Server) memoryEntries(ctx context.Context, params json.RawMessage) (Cal
 		return textResult("INVALID_ARGUMENT: limit and offset must not be negative", true), nil
 	}
 	page, err := s.service.ListEntries(ctx, app.EntryQuery{
-		Q:      args.Q,
-		Agent:  args.Agent,
-		Device: args.Device,
-		File:   args.File,
-		From:   args.From,
-		To:     args.To,
-		Limit:  args.Limit,
-		Offset: args.Offset,
+		Q:                  args.Q,
+		Agent:              args.Agent,
+		Device:             args.Device,
+		File:               args.File,
+		Project:            args.Project,
+		IncludeTranscripts: args.IncludeTranscripts,
+		From:               args.From,
+		To:                 args.To,
+		Limit:              args.Limit,
+		Offset:             args.Offset,
 	})
 	if err != nil {
 		return textResult(errorText(err), true), nil
