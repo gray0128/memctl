@@ -2,7 +2,7 @@
 
 `memctl` 是管理 Agent 记忆仓库的单文件 Go 二进制。记忆以 Markdown 保存在独立的 Git 仓库，`memctl` 负责受管读写、本地提交与远端同步、Hook 上下文注入、内嵌 Web UI，以及需要人工确认的 Dreaming 整理（在记忆仓库的 GitHub Actions 中运行）。
 
-当前版本 `v0.16.0`。逐版改动见 [开发状态](./docs/STATUS.md)，发布产物见 [Releases](https://github.com/gray0128/memctl/releases)。
+当前版本 `v0.17.0`。逐版改动见 [开发状态](./docs/STATUS.md)，发布产物见 [Releases](https://github.com/gray0128/memctl/releases)。
 
 运行时依赖系统 Git；Node.js 仅用于前端构建；Dreaming 整理在记忆仓库远端的 GitHub Actions 中调用模型提供商，本地不读取模型凭据。`version`、`help`、`install`、`dsh`、`pi`、`tag` 与 `update` 不访问记忆仓库。各平台与宿主组合的验证状态见 [平台与限制](#平台与限制)。
 
@@ -205,7 +205,7 @@ shasum -a 256 -c SHA256SUMS
 
 本地 `make release` 只用于离线或调试时验证构建链路，产物会被流水线覆盖，不构成发布步骤。发布前在本地应运行 `make test` 验证代码。发布入口与理由的权威定义见 [发布入口](./docs/04-ui-and-cli-specification.md#61-发布入口)。
 
-GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）分三个作业：`verify` 四个分片并行跑测试，`build` 与测试并行运行 `make release-dist` 产出候选包，`publish` 在两者成功后创建 Release。工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
+GitHub Actions 的 `build` 工作流（`.github/workflows/build.yml`）分四个作业：`verify` 四个分片并行跑测试，`build` 与测试并行运行 `make release-dist` 产出候选包，`publish` 与 `npm-publish` 在前两者成功后创建 Release 并按需发布 npm 插件。工作流在 `macos-latest` 上运行，`RELEASE-INFO.txt` 记录该次构建宿主的运行时验证状态；流水线通过不替代目标平台的运行时、生命周期与隔离验证。
 
 发布产物内的静态资源、默认指引与 adapter 模板全部随二进制打包，不依赖外部 CDN；交叉编译通过只说明可构建，运行与生命周期以 [性能与适配记录](./docs/05-validation-and-delivery.md#3-性能与适配记录) 为准。`memctl-pi` 的 tarball 只用于审计，不作为 `pi install` 的输入。`dist/` 与 `bin/` 不提交。
 
