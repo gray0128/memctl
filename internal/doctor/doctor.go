@@ -51,11 +51,36 @@ const (
 	// documented behavior, and removing the entry is an explicit action after
 	// the hidden period. See docs/10-memory-lifecycle.md section 3.3.
 	CodeExpiredEntry = "EXPIRED_ENTRY"
+	// CodeUnconfirmedHypothesis, CodeTopicBloat and CodeNearDuplicate are the
+	// warning-level review hints of docs/18-agent-memory-review-and-optimization.md
+	// sections 4.4.2 and 4.4.3. None of them is an error: they ask for a review
+	// in the next session or Dreaming run and never change the exit code.
+	CodeUnconfirmedHypothesis = "UNCONFIRMED_HYPOTHESIS"
+	CodeTopicBloat            = "TOPIC_BLOAT"
+	CodeNearDuplicate         = "NEAR_DUPLICATE"
 )
 
 // EntryBloatLineThreshold is the project hint that MEMORY.md is growing past a
 // comfortable index size. It is a warning, not an upstream format error.
 const EntryBloatLineThreshold = 100
+
+// Topic bloat and near-duplicate bounds of docs/18 section 4.4.3. They are
+// shared with the Dreaming static findings so the two diagnoses cannot drift.
+const (
+	// MaxTopicLines and MaxTopicBytes bound one Markdown topic file other than
+	// MEMORY.md; exceeding either reports TOPIC_BLOAT.
+	MaxTopicLines = 150
+	MaxTopicBytes = 16 * 1024
+	// NearDuplicateThreshold is the minimum token-set Jaccard similarity of
+	// two entries reported as NEAR_DUPLICATE.
+	NearDuplicateThreshold = 0.75
+	// NearDuplicateMinTokens is the minimum distinct token count an entry's
+	// fact needs to take part in the comparison; shorter facts match too
+	// easily to be meaningful candidates.
+	NearDuplicateMinTokens = 5
+	// MaxNearDuplicatePairs bounds the listed candidate pairs of one report.
+	MaxNearDuplicatePairs = 50
+)
 
 // suspiciousPatterns are conservative prompt-injection phrases. Diagnosis
 // reports them for review; it does not decide that code samples are malicious.
@@ -174,6 +199,8 @@ func CheckAt(ctx context.Context, repoPath string, now func() time.Time) (Report
 	}
 	report.Issues = append(report.Issues, checkEntryBloat(parsed)...)
 	report.Issues = append(report.Issues, checkEntries(parsed, now())...)
+	report.Issues = append(report.Issues, checkTopicBloat(parsed)...)
+	report.Issues = append(report.Issues, checkNearDuplicates(parsed, now())...)
 
 	gitIssues, repoState, err := checkGitState(ctx, repoPath)
 	if err != nil {
@@ -365,6 +392,22 @@ func checkEntries(parsed map[string]vault.ParsedFile, now time.Time) []Issue {
 				Suggestion: suggestion,
 			})
 		}
+		// An unexpired `status: hypothesis` entry is an unconfirmed
+		// conclusion; a later session should confirm or remove it. An expired
+		// one is already hidden and reported as EXPIRED_ENTRY above.
+		for _, entry := range file.Entries {
+			if !memoryText(rel) || !UnconfirmedHypothesis(entry, now) {
+				continue
+			}
+			issues = append(issues, Issue{
+				Code:       CodeUnconfirmedHypothesis,
+				Severity:   SeverityWarning,
+				FilePath:   rel,
+				LineNumber: entry.LineNumber,
+				Message:    "entry is marked `status: hypothesis` and has not been verified",
+				Suggestion: "check it against new session evidence, then mark it `status: verified` or remove it",
+			})
+		}
 		// The whole text is scanned line by line because pull/start inject the
 		// file into host context: a phrase in a heading, a paragraph or an
 		// indented block matters just as much as one in a bullet.
@@ -391,6 +434,175 @@ func hasMetadata(entry vault.MemoryEntry, key string) bool {
 		}
 	}
 	return false
+}
+
+// memoryText reports whether rel is a Markdown memory file (the entry point
+// or a topic file), the only files whose bullets are memory entries.
+func memoryText(rel string) bool {
+	kind := vault.ClassifyKind(rel)
+	return kind == vault.KindEntryPoint || kind == vault.KindMarkdown
+}
+
+// UnconfirmedHypothesis reports whether entry is an unexpired
+// `status: hypothesis` entry, the UNCONFIRMED_HYPOTHESIS candidate of docs/18
+// section 4.4.2. It is shared with the Dreaming prepare bundle.
+func UnconfirmedHypothesis(entry vault.MemoryEntry, now time.Time) bool {
+	if entry.Status != vault.StatusHypothesis {
+		return false
+	}
+	return entry.UntilDate == "" || !vault.EntryExpired(entry.UntilDate, now)
+}
+
+// TopicBloat reports whether one Markdown topic file other than MEMORY.md
+// exceeds MaxTopicLines lines or MaxTopicBytes bytes (docs/18 section 4.4.3).
+func TopicBloat(rel string, lines, size int) bool {
+	if vault.ClassifyKind(rel) != vault.KindMarkdown {
+		return false
+	}
+	return lines > MaxTopicLines || size > MaxTopicBytes
+}
+
+// checkTopicBloat warns about every oversized topic file.
+func checkTopicBloat(parsed map[string]vault.ParsedFile) []Issue {
+	var issues []Issue
+	for rel, file := range parsed {
+		lines, size := len(file.Lines), len(file.Raw())
+		if !TopicBloat(rel, lines, size) {
+			continue
+		}
+		issues = append(issues, Issue{
+			Code:     CodeTopicBloat,
+			Severity: SeverityWarning,
+			FilePath: rel,
+			Message: fmt.Sprintf("%s has %d lines and %d bytes, above the %d line or %d byte topic hint",
+				rel, lines, size, MaxTopicLines, MaxTopicBytes),
+			Suggestion: "condense it into a summary or split it into linked topic files in the next Dreaming run",
+		})
+	}
+	return issues
+}
+
+// NearDuplicatePair is one NEAR_DUPLICATE candidate: two entries whose fact
+// token sets have a Jaccard similarity of at least NearDuplicateThreshold.
+// Left sorts before Right by file path and line number.
+type NearDuplicatePair struct {
+	Left       vault.MemoryEntry
+	Right      vault.MemoryEntry
+	Similarity float64
+}
+
+// NearDuplicates compares the unexpired business entries of the Markdown
+// memory files pairwise (docs/18 section 4.4.3). MEMORY.md `## Index` lines
+// are navigation and facts with fewer than NearDuplicateMinTokens distinct
+// tokens are left out; two `kind: event` entries are never paired because
+// events are append-only and are not merged. The pairs are sorted by the left
+// entry's path and line, then the right entry's, and at most
+// MaxNearDuplicatePairs are returned; total is the count before truncation.
+func NearDuplicates(files []vault.ParsedFile, now time.Time) (pairs []NearDuplicatePair, total int) {
+	type candidate struct {
+		entry  vault.MemoryEntry
+		tokens map[string]struct{}
+	}
+	sorted := append([]vault.ParsedFile(nil), files...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].RelPath < sorted[j].RelPath })
+	var candidates []candidate
+	for _, file := range sorted {
+		if !memoryText(file.RelPath) {
+			continue
+		}
+		for _, entry := range file.Entries {
+			if entry.UntilDate != "" && vault.EntryExpired(entry.UntilDate, now) {
+				continue
+			}
+			if vault.IsEntryPoint(file.RelPath) && strings.EqualFold(entry.Heading, "Index") {
+				continue
+			}
+			tokens := vault.TokenSet(entry.FactText)
+			if len(tokens) < NearDuplicateMinTokens {
+				continue
+			}
+			candidates = append(candidates, candidate{entry: entry, tokens: tokens})
+		}
+	}
+	// Jaccard(A, B) <= min(|A|, |B|) / max(|A|, |B|), so with the candidates
+	// ordered by token count the inner loop stops at the first size that can
+	// no longer reach the threshold.
+	bySize := make([]int, len(candidates))
+	for index := range bySize {
+		bySize[index] = index
+	}
+	sort.SliceStable(bySize, func(i, j int) bool {
+		return len(candidates[bySize[i]].tokens) < len(candidates[bySize[j]].tokens)
+	})
+	for i, left := range bySize {
+		small := len(candidates[left].tokens)
+		for _, right := range bySize[i+1:] {
+			if float64(small)/float64(len(candidates[right].tokens)) < NearDuplicateThreshold {
+				break
+			}
+			a, b := candidates[left], candidates[right]
+			if a.entry.IsEvent() && b.entry.IsEvent() {
+				continue
+			}
+			similarity := vault.JaccardSimilarity(a.tokens, b.tokens)
+			if similarity < NearDuplicateThreshold {
+				continue
+			}
+			if left > right {
+				a, b = b, a
+			}
+			pairs = append(pairs, NearDuplicatePair{Left: a.entry, Right: b.entry, Similarity: similarity})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		x, y := pairs[i], pairs[j]
+		if x.Left.FilePath != y.Left.FilePath {
+			return x.Left.FilePath < y.Left.FilePath
+		}
+		if x.Left.LineNumber != y.Left.LineNumber {
+			return x.Left.LineNumber < y.Left.LineNumber
+		}
+		if x.Right.FilePath != y.Right.FilePath {
+			return x.Right.FilePath < y.Right.FilePath
+		}
+		return x.Right.LineNumber < y.Right.LineNumber
+	})
+	total = len(pairs)
+	if total > MaxNearDuplicatePairs {
+		pairs = pairs[:MaxNearDuplicatePairs]
+	}
+	return pairs, total
+}
+
+// checkNearDuplicates reports each listed near-duplicate pair on its left
+// entry, plus one summary issue when the pair list was truncated.
+func checkNearDuplicates(parsed map[string]vault.ParsedFile, now time.Time) []Issue {
+	files := make([]vault.ParsedFile, 0, len(parsed))
+	for _, file := range parsed {
+		files = append(files, file)
+	}
+	pairs, total := NearDuplicates(files, now)
+	issues := make([]Issue, 0, len(pairs)+1)
+	for _, pair := range pairs {
+		issues = append(issues, Issue{
+			Code:       CodeNearDuplicate,
+			Severity:   SeverityWarning,
+			FilePath:   pair.Left.FilePath,
+			LineNumber: pair.Left.LineNumber,
+			Message: fmt.Sprintf("entry is a near duplicate of %s:%d (token Jaccard %.2f)",
+				pair.Right.FilePath, pair.Right.LineNumber, pair.Similarity),
+			Suggestion: "merge the two entries in a Dreaming proposal, keeping the newer fact",
+		})
+	}
+	if total > len(pairs) {
+		issues = append(issues, Issue{
+			Code:       CodeNearDuplicate,
+			Severity:   SeverityWarning,
+			Message:    fmt.Sprintf("%d more near-duplicate pairs are not listed (limit %d)", total-len(pairs), MaxNearDuplicatePairs),
+			Suggestion: "merge the listed pairs first, then run doctor again",
+		})
+	}
+	return issues
 }
 
 // AutoFixable reports whether the first version has a deterministic repair for

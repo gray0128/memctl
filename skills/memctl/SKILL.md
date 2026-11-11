@@ -29,32 +29,34 @@ description: 读写共享的 Agent 记忆仓库：用 memctl 查看 MEMORY.md �
 
 不保存密钥、令牌、密码、一次性任务状态、原始日志，以及用户要求不要保留的内容。无法判断是否敏感时先询问用户。
 
-写入前读取 `MEMORY.md` 与相关链接文件，确认同一事实没有别处记录。旧条目失效时按类型处理：状态型（偏好、环境、当前角色、项目现状）就地改写或删除；事件型（决策理由、发布、事故、迁移）追加带日期的新条目，旧条目保留。一个事实只保留一处，其他位置用 `[[path]]` 链接；正文不写变更记录。`MEMORY.md` 只放索引与跨项目偏好；项目决策、事件与主题事实写入 `notes/<topic>.md`，并在索引中增加一行 `[[path]]`。链接目标不限于 `MEMORY.md`：主题文件已记录的事实在别的主题文件里只写 `[[path]]`，不复制条目正文。日常新增单条记忆或追加事件型条目时，优先使用 `memctl add`（或 MCP `memory_append`）；仅在就地改写、删除状态型条目或多段重构时才使用整文件 `memctl write`（或 MCP `memory_write`）。
+写入前读取 `MEMORY.md` 与相关链接文件，确认同一事实没有别处记录。编写工程规则与排障记忆时遵循三要素结构：**「结论/规则 + 实测验证依据（具体命令、探针输出或代码行）+ 常见陷阱警告」**；多步排障步骤或代码块可紧跟在顶层 `- ` 条目下方，以 2 个空格缩进写成附属子行（`DetailLines`，上限 20 行 / `2 KiB`，会被 `entries --q` 检索并与顶层条目整块移动或删除）。旧条目失效时按类型处理：状态型（`--kind state`，偏好、环境、当前角色、项目现状）与操作步骤型（`--kind procedural`）就地改写或删除；事件型（`--kind event`，决策理由、发布、事故、迁移）追加带日期的新条目，旧条目保留且受代码级 `EVENT_PROTECTED` 守卫保护（禁止静默删改）。当前会话首次观察到、尚待后续复现验证的规律，写入时带 `--status hypothesis`（已验证事实默认 `verified`）。一个事实只保留一处，其他位置用 `[[path]]` 链接；正文不写变更记录。`MEMORY.md` 只放索引与跨项目偏好；项目决策、事件与主题事实写入 `notes/<topic>.md`，并在索引中增加一行 `[[path]]`。链接目标不限于 `MEMORY.md`：主题文件已记录的事实在别的主题文件里只写 `[[path]]`，不复制条目正文。日常新增单条记忆或追加事件型条目时，优先使用 `memctl add`（或 MCP `memory_append`）；仅在就地改写、删除状态型条目、编写多行缩进子块或多段重构时才使用整文件 `memctl write`（或 MCP `memory_write`）。
 
-完成标准：明确本次只读、追加新事实，还是改写或删除旧条目，以及该条目属于状态型还是事件型。
+完成标准：明确本次只读、追加新事实，还是改写或删除旧条目，以及该条目的 `kind`（`state|event|procedural`）与 `status`（`verified|hypothesis`）。
 
 ## 3. 受管写入
 
 ### 3.1 日常单条追加（优先使用 `memctl add`）
 
-新增单条记忆或新建 `notes/<topic>.md` 主题文件时，优先调用 `memctl add`，无需预先传入 `fileRevision` 基线。`memctl` 在持有仓库排他锁期间直接读取最新磁盘原文，将条目插入匹配的 `heading` 小节末尾（小节不存在则在文件末尾新建），由服务端拼装 `[source: agent://<device>/<agent>/<sid>; added: YYYY-MM-DD]`（含可选 `; until: YYYY-MM-DD`），并在 `path` 非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾幂等追加 `- [[notes/<topic>]] — <indexSummary>`：
+新增单条记忆或新建 `notes/<topic>.md` 主题文件时，优先调用 `memctl add`，无需预先传入 `fileRevision` 基线。`memctl` 在持有仓库排他锁期间直接读取最新磁盘原文，将条目插入匹配的 `heading` 小节末尾（小节不存在则在文件末尾新建），由服务端拼装 `[source: agent://<device>/<agent>/<sid>; added: YYYY-MM-DD]`（含可选 `; until: YYYY-MM-DD`、`; kind: <kind>`、`; status: <status>`），并在 `path` 非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾幂等追加 `- [[notes/<topic>]] — <indexSummary>`：
 
 ```bash
 memctl add notes/<topic>.md \
-  --fact "<单行事实正文，不含前导 - 与尾部元数据>" \
+  --fact "<单行事实正文：结论/规则 + 验证依据 + 陷阱警告，不含前导 - 与尾部元数据>" \
   --heading "## Decisions" \
+  --kind event \
+  --status verified \
   --index-summary "<根索引简述>" \
   --agent <agent> --sid <sid>
 ```
 
-`fact` 必须为非空单行正文，不得包含换行、手写 `[source:` / `[added:` 元数据或到期占位符。默认输出 `transaction:`、`commit:`、`revision:`、`sync:`、`file:`、`line:` 和 `indexUpdated:` 七行；加 `--json` 输出 `{transaction, commit, revision, sync, indexUpdated, entry}`。
+`fact` 必须为非空单行正文，不得包含换行、手写 `[source:` / `[added:` 元数据或到期占位符；`--kind`（`state|event|procedural`）与 `--status`（`verified|hypothesis`）均为可选。默认输出 `transaction:`、`commit:`、`revision:`、`sync:`、`file:`、`line:` 和 `indexUpdated:` 七行；加 `--json` 输出 `{transaction, commit, revision, sync, indexUpdated, entry}`。
 
 ### 3.2 整文件改写与重构（`memctl write`）
 
-仅在就地改写或删除已有状态型条目、跨多段重排或合并内容时使用整文件覆盖：
+仅在就地改写或删除已有状态型条目、为顶层条目附加 2 空格缩进子块（`DetailLines`）、跨多段重排或合并内容时使用整文件覆盖：
 
 1. 已存在的文件先读取取基线：`memctl read <path> --json`；新建文件跳过读取，直接用 `--base absent`。
-2. 生成完整文件文本，保留未修改条目的原文、换行和文件末尾状态。
+2. 生成完整文件文本，保留未修改条目的原文、缩进子块、换行和文件末尾状态（勿删改 `kind: event` 条目）。
 3. 写入：
 
 ```bash
@@ -67,9 +69,10 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 
 | 错误码 | 处置 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 修正 `fact` 单行格式、去掉手写 `[source:]`/`[added:]` 元数据或修正 `until` 日期后重试 |
+| `INVALID_ARGUMENT` | 修正 `fact` 单行格式、去掉手写 `[source:]`/`[added:]` 元数据或修正 `until`/`kind`/`status` 后重试 |
 | `REVISION_MISMATCH` | （仅 `write`）重新读取并合并最新内容，重试一次；仍失败则报告用户 |
 | `DELETION_DEFERRED` | （仅 `write`）恢复被删改的未满 30 天隐藏期到期条目后重试 |
+| `EVENT_PROTECTED` | （仅 `write`）恢复被删改的 `kind: event` 历史事件条目并改为追加新条目；仅当用户明确要求强制删除该事件条目时才在终端加 `--force-delete-event` |
 | `BUSY` | 等待数秒重试一次；仍忙则报告，不删除锁文件 |
 | `NO_REPO` | 请用户运行 `memctl init`，不自行创建仓库 |
 | `NOT_FOUND` | 目标文件的父目录不存在，先确认目录结构，不重试 |
@@ -95,7 +98,7 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 IO_FAILED: cannot open repository lock
 ```
 
-这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write` 工具时改用它：查事实位置用 `memory_entries`（支持 `q` 多词分词 BM25 检索、`project` 项目过滤、`includeTranscripts` 近期会话轨迹检索，并返回一跳图谱关联文件 `relatedFiles`）；日常新增单条记忆优先调用 `memory_append`（传入 `path`、`fact` 及可选 `heading`、`until`、`indexSummary`、`sid`，无需预先调用 `memory_read` 取 `fileRevision` 基线，服务端在锁内追加并同事务幂等维护 `MEMORY.md` 的 `## Index` 索引）；仅在改写、删除或重排已有条目时，先用 `memory_read` 取 `fileRevision` 基线（同时返回 `relatedFiles`），再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_append` 或 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
+这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write` 工具时改用它：查事实位置用 `memory_entries`（支持 `q` 多词分词 BM25 检索、`project` 项目过滤、`includeTranscripts` 近期会话轨迹检索，并返回一跳图谱关联文件 `relatedFiles`）；日常新增单条记忆优先调用 `memory_append`（传入 `path`、`fact` 及可选 `heading`、`until`、`kind`、`status`、`indexSummary`、`sid`，无需预先调用 `memory_read` 取 `fileRevision` 基线，服务端在锁内追加并同事务幂等维护 `MEMORY.md` 的 `## Index` 索引）；仅在改写、删除或重排已有条目时，先用 `memory_read` 取 `fileRevision` 基线（同时返回 `relatedFiles`），再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_append` 或 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
 Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能改走 MCP，直接在终端执行 `memctl`；会话身份由 Delta 注入的 `DELTA_CURRENT_THREAD_ID` 提供，`add` 与 `write` 不必再手动传 `--sid`。
 
@@ -122,7 +125,7 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
 - **显式纠正与持久偏好**：用户纠正你的假设、命名、工具选择或输出风格（如「发布只推标签，别在本地跑 `make release`」）。
 - **多轮排障结论**：排查后才定位的非显然事实、模块映射或环境约束。
 - **架构决策与有时效约束**：选型理由、迁移结论，或带明确截止日期的临时约束（按所引用会话的 `date` 换算 `until`）。
-- **对照 `toolOutcomes` 与会话轨迹证伪旧条目**：逐条检查 `relatedExistingEntries`，若本次会话的真实命令报错/验证输出（`turns[].toolOutcomes`）或最终排障结论证明某条旧记录写错了参数、路径、方向或状态已过时，用 `replace_entry` 就地修正或用 `delete_entry` 删除。
+- **对照 `toolOutcomes` 与会话轨迹证伪旧条目及复核 `status: hypothesis`**：逐条检查 `relatedExistingEntries`（其中未到期的 `status: hypothesis` 待复核假设会被优先置顶，同时出现在 `findings` 的 `UNCONFIRMED_HYPOTHESIS` 中）：若本次会话的真实命令报错/验证输出（`turns[].toolOutcomes`）或最终排障结论证明某条旧记录写错了参数、路径、方向或状态已过时，用 `replace_entry` 就地修正或用 `delete_entry` 整块删除（`kind: event` 事件条目禁止删改）；若某条 `status: hypothesis` 假设在本次会话中得到证实，用 `replace_entry` 并传 `"status": "verified"` 将其升级为已验证事实，若被证伪则用 `delete_entry` 删除。
 
 跨会话频次门控：用户明说的全局规则、显式纠正、已验证的根因，可以从单个会话提炼或修正（`sessionIndices` 长度 ≥ 1）；只是从交互里看出的隐式倾向，必须在至少 2 个不同会话中重复出现才可提炼，`sessionIndices` 必须指向不同 `sessionId`。以下不提炼：单次任务的待办状态、`git log` 或代码搜索就能得出的事实、临时报错日志、与现有条目语义重复的内容。
 
@@ -131,9 +134,9 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
 `propose` 提供两种**互斥**的提交格式（不可在同一次请求中混用 `operations[]` 与 `files[]`/`newMemories[]`）：
 
 1. **首选：结构化动作列表 `operations[]`（最多 30 条，服务端自动拼装 `[source; added]` 与补齐 `MEMORY.md` 索引）**：
-   - `append_entry`：必填 `path`、`fact`、`sessionIndices`，可选 `heading`、`until`（`YYYY-MM-DD`，不早于引用会话日期）、`indexSummary`（不含 `[` 的单行纯文本）。服务端将拼装好的条目追加到目标小节末尾（文件不存在时自动新建，父目录必须已存在），并在 `path != "MEMORY.md"` 且根索引未链接该文件时，自动在 `MEMORY.md` 的 `## Index` 末尾幂等补齐 `- [[<target>]] — <indexSummary>`。
-   - `replace_entry`：必填 `path`、`fact`、`sessionIndices`，以及 `targetEntryId`（取自 `relatedExistingEntries[].id`）或 `targetRawLine`（取自 `relatedExistingEntries[].rawLine`）之一，可选 `until`。服务端精确定位单条基线记录并原位替换。
-   - `delete_entry`：必填 `path` 以及 `targetEntryId` 或 `targetRawLine` 之一，可选 `reason` 与 `sessionIndices`（提供 `sessionIndices` 时在 `apply` 后将对应会话标为已消费）。
+   - `append_entry`：必填 `path`、`fact`、`sessionIndices`，可选 `heading`、`until`（`YYYY-MM-DD`，不早于引用会话日期）、`kind`（`state|event|procedural`）、`status`（`verified|hypothesis`）、`indexSummary`（不含 `[` 的单行纯文本）。服务端将拼装好的条目追加到目标小节末尾（文件不存在时自动新建，父目录必须已存在），并在 `path != "MEMORY.md"` 且根索引未链接该文件时，自动在 `MEMORY.md` 的 `## Index` 末尾幂等补齐 `- [[<target>]] — <indexSummary>`。
+   - `replace_entry`：必填 `path`、`fact`、`sessionIndices`，以及 `targetEntryId`（取自 `relatedExistingEntries[].id`）或 `targetRawLine`（取自 `relatedExistingEntries[].rawLine`）之一，可选 `until`、`kind`、`status`（省略 `kind`/`status` 时沿用原条目的 `kind`/`status`）。服务端精确定位单条基线记录，原位替换顶层行并保留紧随其后的 `DetailLines` 子块。
+   - `delete_entry`：必填 `path` 以及 `targetEntryId` 或 `targetRawLine` 之一，可选 `reason` 与 `sessionIndices`（提供 `sessionIndices` 时在 `apply` 后将对应会话标为已消费）。服务端连带 `DetailLines` 子块整块删除。
    - 每条 `fact` 必须为单行非空文本，不带前导 `- `，**不得**手写 `[source: ...]`、`[added: ...]` 或到期占位符，也不得包含未脱敏凭据或可疑指令（命中时直接返回 `INVALID_ARGUMENT`，不会静默替你删改）。
 
    ```json
@@ -146,7 +149,9 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
          "op": "append_entry",
          "path": "notes/topic.md",
          "heading": "## Decisions",
-         "fact": "新提炼的跨会话事实",
+         "fact": "新提炼的跨会话事实：结论 + 验证依据 + 常见陷阱",
+         "kind": "event",
+         "status": "verified",
          "indexSummary": "主题简述",
          "sessionIndices": [0]
        },
@@ -154,7 +159,8 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
          "op": "replace_entry",
          "path": "notes/topic.md",
          "targetEntryId": "sha256:...",
-         "fact": "对照会话轨迹与 toolOutcomes 修正后的准确事实",
+         "fact": "对照会话轨迹与 toolOutcomes 验证确认后的准确事实",
+         "status": "verified",
          "sessionIndices": [0]
        }
      ]
@@ -162,9 +168,9 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
    ```
 
 2. **备用：整文件 `files[]` + `newMemories[]`（仅用于跨文件重排或大段结构调整）**：
-   - 当你需要重排整个文件结构时，改传 `files[]` 与 `newMemories[]`：你必须在 `files[]` 的对应 `targetPath` 中**逐字写入 `memctl` 会拼出的条目行** `- <fact> [source: <sourceTag>; added: <date>]`（`sourceTag` 照抄 `prepare` 返回的 `sessions[].sourceTag`，`added` 取所引用会话中最新 `date`），并在新建文件时同时更新 `MEMORY.md` 索引。
+   - 当你需要重排整个文件结构、响应 `TOPIC_BLOAT` 拆分过长主题文件或响应 `NEAR_DUPLICATE` 合并近似重复条目时，改传 `files[]` 与 `newMemories[]`：你必须在 `files[]` 的对应 `targetPath` 中**逐字写入 `memctl` 会拼出的条目行** `- <fact> [source: <sourceTag>; added: <date>]`（`sourceTag` 照抄 `prepare` 返回的 `sessions[].sourceTag`，`added` 取所引用会话中最新 `date`），并在新建文件时同时更新 `MEMORY.md` 索引。
 
-无论使用哪种通道，目标文件所在的父目录必须已经存在于基线中（缺失返回 `NOT_FOUND`）；不要替换或删除未满 30 天隐藏期的 `until` 到期条目（`DELETION_DEFERRED`），也不要触碰 `.git`、`.github` 等受保护路径。`MEMORY.md` 超过 100 行不会阻断生成，提案 `warnings` 会给出提示。
+无论使用哪种通道，目标文件所在的父目录必须已经存在于基线中（缺失返回 `NOT_FOUND`）；不要替换或删除未满 30 天隐藏期的 `until` 到期条目（`DELETION_DEFERRED`），不要删除或篡改 `kind: event` 历史事件条目（`EVENT_PROTECTED`，跨文件原样迁移允许），也不要触碰 `.git`、`.github` 等受保护路径。`MEMORY.md` 超过 100 行不会阻断生成，提案 `warnings` 会给出提示。
 
 ### 6.3 准备包与隐私
 
@@ -176,8 +182,9 @@ Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能
 
 | 错误码 | 处置 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 按消息修正混用通道、越界下标、`fact` 格式、歧义 `targetRawLine`、`until` 或补齐 `files[]` 中缺的条目行，重试一次 |
+| `INVALID_ARGUMENT` | 按消息修正混用通道、越界下标、`fact` 格式、非法 `kind`/`status`、歧义 `targetRawLine`、`until` 或补齐 `files[]` 中缺的条目行，重试一次 |
 | `DELETION_DEFERRED` | 目标条目仍处到期后 30 天隐藏期内，撤回对该条目的 `replace_entry`/`delete_entry` 或恢复原行 |
+| `EVENT_PROTECTED` | 目标条目带 `kind: event`，撤回对该条目的 `replace_entry`/`delete_entry` 或在 `files[]` 中恢复原事件条目 |
 | `UNSUPPORTED` | 消息列出提案新增的断链或不可达文件，补 `MEMORY.md` 索引或修链接后重试 |
 | `NOT_FOUND` | 目标文件的父目录不在基线中，或 `targetEntryId`/`targetRawLine` 在基线文件中未找到，核对后重试 |
 | `LIMIT_EXCEEDED` | 单次提案 `operations[]` 或 `newMemories[]` 超过 30 条，拆批提交 |

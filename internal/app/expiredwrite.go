@@ -61,7 +61,8 @@ func expiryApplies(relPath string) bool {
 }
 
 // restoreExpiredPlaceholders replaces every placeholder line in content with
-// the original line of the expired entry it hides on disk. A placeholder line
+// the original line of the expired entry it hides on disk, followed by the
+// entry's DetailLines that the projection left out. A placeholder line
 // matches when it is byte for byte the projection of an expired entry in
 // before, that is the placeholder followed by the unchanged trailing metadata.
 // Several entries with the same projection are restored in their on-disk
@@ -72,14 +73,19 @@ func restoreExpiredPlaceholders(relPath string, before []byte, content string, n
 	if !strings.Contains(content, vault.ExpiredFactPlaceholder) {
 		return content, nil
 	}
-	originals := map[string][]string{}
+	originals := map[string][]hiddenBlock{}
 	if before != nil && !now.IsZero() {
-		for _, entry := range vault.ParseFile(relPath, "", before).Entries {
+		parsed := vault.ParseFile(relPath, "", before)
+		for _, entry := range parsed.Entries {
 			if entry.UntilDate == "" || !vault.EntryExpired(entry.UntilDate, now) {
 				continue
 			}
 			hidden := vault.HideExpiredLine(entry.RawLine)
-			originals[hidden] = append(originals[hidden], entry.RawLine)
+			block := hiddenBlock{raw: entry.RawLine, ending: parsed.Lines[entry.LineNumber-1].Ending}
+			for number := entry.LineNumber + 1; number <= entry.LastLine(); number++ {
+				block.details = append(block.details, parsed.Lines[number-1])
+			}
+			originals[hidden] = append(originals[hidden], block)
 		}
 	}
 	var b strings.Builder
@@ -94,12 +100,37 @@ func restoreExpiredPlaceholders(relPath string, before []byte, content string, n
 					line.Number, relPath)
 			}
 			originals[text] = queue[1:]
-			text = queue[0]
+			block := queue[0]
+			b.WriteString(block.raw)
+			if len(block.details) == 0 {
+				b.WriteString(line.Ending)
+				continue
+			}
+			// The projection gave the bullet the terminator of its whole
+			// block; the bullet and all but the last detail get their own
+			// on-disk terminators back.
+			b.WriteString(block.ending)
+			for i, detail := range block.details {
+				b.WriteString(detail.Text)
+				if i < len(block.details)-1 {
+					b.WriteString(detail.Ending)
+				}
+			}
+			b.WriteString(line.Ending)
+			continue
 		}
 		b.WriteString(text)
 		b.WriteString(line.Ending)
 	}
 	return b.String(), nil
+}
+
+// hiddenBlock is the on-disk text of one expired entry: its bullet with its
+// terminator and the detail lines the read projection left out.
+type hiddenBlock struct {
+	raw     string
+	ending  string
+	details []vault.Line
 }
 
 // expiredRemovals lists the expired entries of before that are inside their

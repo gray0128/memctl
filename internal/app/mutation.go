@@ -68,6 +68,12 @@ type MutationRequest struct {
 	// Operation overrides the short operation label in the local commit
 	// message. An empty value means "write".
 	Operation string
+	// ForceDeleteEvent lets a whole-file write delete or rewrite an entry
+	// marked `kind: event`. Without it such a write fails with
+	// EVENT_PROTECTED unless the event moves unchanged to another file of the
+	// same request. See docs/18-agent-memory-review-and-optimization.md
+	// section 4.4.2.
+	ForceDeleteEvent bool
 }
 
 // MutationResult is the outcome of one local transaction.
@@ -140,6 +146,11 @@ func (a *App) Apply(ctx context.Context, req MutationRequest) (MutationResult, e
 	// must not bypass the hidden period of expired entries.
 	if err := a.reconcileExpiredWrites(plans); err != nil {
 		return MutationResult{}, err
+	}
+	if !req.ForceDeleteEvent {
+		if err := requireEventsKept(plans); err != nil {
+			return MutationResult{}, err
+		}
 	}
 	operation := req.Operation
 	if operation == "" {

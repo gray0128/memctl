@@ -60,7 +60,7 @@ func statusFor(code memerr.Code) int {
 		return http.StatusForbidden
 	case memerr.ExternalChanges, memerr.OperationActive, memerr.ConflictStale,
 		memerr.RecoveryRequired, memerr.ContentConflict, memerr.ProposalStale,
-		memerr.DeletionDeferred:
+		memerr.DeletionDeferred, memerr.EventProtected:
 		return http.StatusConflict
 	case memerr.RevisionMismatch:
 		return http.StatusPreconditionFailed

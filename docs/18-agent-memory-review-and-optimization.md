@@ -1,6 +1,6 @@
 # 18. 实现审查与记忆架构优化方案
 
-> 图位置：本文是针对 `memctl` 现有实现的深度审查报告与架构演进方案，按 [方案索引](./README.md) 的规范图规则，未落地的审查与方案文档不进入 spec 图（不添加 frontmatter）。待各阶段方案实施并验收后，相关契约变更将同步并入 [01. 架构与模块](./01-architecture-and-modules.md)、[02. 模型与契约](./02-domain-models-and-contracts.md)、[03. 流程与恢复](./03-workflows-and-dataflows.md)、[09. MCP 记忆工具](./09-mcp-memory-tools.md)、[10. 记忆更新与过期](./10-memory-lifecycle.md) 与 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)。当前生效契约仍以 [方案索引](./README.md) 下的 `00` 至 `17` 号文档为准。
+> 图位置：本文是针对 `memctl` 现有实现的深度审查报告与架构演进方案，按 [方案索引](./README.md) 的规范图规则，审查与方案文档不进入 spec 图（不添加 frontmatter）。阶段 I（`I-1a`–`I-4`，`T138`–`T144`）全部 7 个步骤已实施并验收完成，相关契约变更已同步并入 [01. 架构与模块](./01-architecture-and-modules.md)、[02. 模型与契约](./02-domain-models-and-contracts.md)、[03. 流程与恢复](./03-workflows-and-dataflows.md)、[04. CLI、UI 与分发](./04-ui-and-cli-specification.md)、[05. 验收与交付](./05-validation-and-delivery.md)、[09. MCP 记忆工具](./09-mcp-memory-tools.md)、[10. 记忆更新与过期](./10-memory-lifecycle.md) 与 [12. 跨会话新记忆提炼](./12-session-corpus-dreaming.md)。当前生效契约仍以 [方案索引](./README.md) 下的 `00` 至 `17` 号文档为准。
 >
 > 审查基线：仓库版本 `v0.16.0`（HEAD `54af14f`），结合本机真实记忆仓库（`~/memory`）与会话摘要缓存的只读统计数据，并在 `/tmp` 隔离环境下完成缺陷复现。外部理论与实证基准为 Anthropic Engineering 团队发表的《The components of agent memory》（作者 Lance Martin，2026 年 11 月 6 日）。
 
@@ -429,36 +429,36 @@ P0 阶段不改变外部命令形态，专门修复 §2 已复现的数据丢失
    - 新增 [`internal/dream/operations.go`](../internal/dream/operations.go)，保留 `files[]` + `newMemories[]` 供整文件重构使用，同时在 `DreamProposeInput` 与 MCP `memory_dream_propose` 中新增互斥的结构化动作列表 `operations []DreamOperation`（`json:"operations,omitempty"`，上限 `MaxProposeOperations = 30`）：支持 `append_entry`（必填 `path`、`fact`、`sessionIndices`，可选 `heading`、`until`、`indexSummary`）、`replace_entry`（必填 `path`、`fact`、`sessionIndices` 及 `targetEntryId` 或 `targetRawLine` 之一，可选 `until`）与 `delete_entry`（必填 `path` 及 `targetEntryId` 或 `targetRawLine` 之一，可选 `reason`、`sessionIndices`）。
    - 由 Go 代码根据 `operations[]` 和 `sessionIndices` 自动拼装权威的 `[source: ...; added: ...]` 行，在内存中无损完成基线文件的行替换、行删除、按小节追加（或新建文件）及 `MEMORY.md` `## Index` 的同事务幂等补链，并统一执行差集守卫、父目录校验、30 天 `DELETION_DEFERRED` 删除窗口、断链/孤立文件校验与 `patchHash` 计算。
 
-### 4.4 P3：块级条目模型、可选生命周期/验证状态元数据守卫与膨胀诊断
+### 4.4 P3：块级条目模型、可选生命周期/验证状态元数据守卫与膨胀诊断（`I-4` / `T144` 已完成）
 
-#### 4.4.1 支持缩进子块的块级条目模型与稳定 `EntryID`
+#### 4.4.1 支持缩进子块的块级条目模型与稳定 `EntryID`（`I-4` / `T144` 已完成）
 
 1. **附属详情块（`DetailLines`）**：
-   - 扩展 [`internal/vault/parse.go`](../internal/vault/parse.go)（第 118 - 139 行）：当解析到顶层 bullet 行 `- <fact> [source: ...; added: ...]` 后，若紧随其后的连续行是以至少两个空格或一个 Tab 缩进的子列表项、编号步骤或缩进代码围栏（```` ``` ````），将其归属为该 `MemoryEntry` 的 `DetailLines []string`（上限如 20 行 / 2 KiB），而不再视为与条目无关的未知文本行。
-   - 顶层行仍然承载摘要事实与行尾 `[source; added; ...]` 元数据，不改变已有文件字节，与 [方案索引](./README.md) 引用的上游 [`SPEC.md`](https://github.com/AgentMemoryRepo/agentmemoryrepo/blob/8798cb26c817d451a5ed6cba0ad8d9eca8d5ec3e/SPEC.md) 保持兼容（上游与旧版解析器仍将缩进行作为未结构化原文保留）；多步排障配方、脚本或合同关键条款（原文 Figure 4、Figure 14）可自然放置在缩进子行中，彻底解决本机 27% 条目被迫挤成超长单行以及缩进子步骤无法被 `entries` 检索的问题。
+   - 扩展 [`internal/vault/parse.go`](../internal/vault/parse.go)（`collectDetailLines`）：当解析到顶层 bullet 行 `- <fact> [source: ...; added: ...]` 后，若紧随其后的连续行是以至少 2 个空格（`"  "`）或 1 个 Tab（`"\t"`）缩进的子列表项、编号步骤或缩进代码围栏（```` ``` ```` / `~~~`，含围栏内部空行），将其归属为该 `MemoryEntry` 的 `DetailLines []string`（上限 `MaxDetailLines = 20` 行且 `MaxDetailBytes = 2048` 字节；若缩进代码围栏未闭合或超出上限则整段回退为普通行，避免块级编辑拆散围栏），并提供 `LastLine()`、`WithoutLines`、`WithoutEntry` 与 `EntryBlock` 供单条删除、跨文件移动与 `dream` `delete_entry` 整块操作（原位 `PatchEntry` 与 `replace_entry` 保留 `DetailLines`）；[`HideExpiredEntries`](../internal/vault/hide.go) 在隐藏到期条目时连带隐藏 `DetailLines`，[`reconcileExpiredWrites`](../internal/app/expiredwrite.go) 在整文件写回含到期占位符时逐字节还原顶层行与 `DetailLines`。
+   - 顶层行仍然承载摘要事实与行尾 `[source; added; ...]` 元数据，不改变已有文件字节，与 [方案索引](./README.md) 引用的上游 [`SPEC.md`](https://github.com/AgentMemoryRepo/agentmemoryrepo/blob/8798cb26c817d451a5ed6cba0ad8d9eca8d5ec3e/SPEC.md) 保持兼容（上游与旧版解析器仍将缩进行作为未结构化原文保留）；多步排障配方、脚本或合同关键条款（原文 Figure 4、Figure 14）可自然放置在缩进子行中，并由 `entries --q` 通过 `WeightDetailLines = 1.0` 纳入多字段 BM25 检索，解决本机 27% 条目被迫挤成超长单行以及缩进子步骤无法被 `entries` 检索的问题。
 2. **分号转义与稳定 `EntryID`**：
-   - 在 [`parseMetadataGroup`](../internal/vault/parse.go)（第 378 - 396 行）中支持 `\;` 转义或双引号包裹的元数据值，避免含分号的 URL/命令导致元数据解析失效。
-   - 将 [`EntryID`](../internal/vault/parse.go)（第 97 - 103 行）的计算输入从 `FilePath + FileRevision + LineNumber` 改为 `FilePath + NormalizedFactText + AddedDate`（同文件同日完全相同文本时追加序号消歧），使条目 ID 在文件其他位置发生编辑时保持稳定。
+   - 在 [`parseMetadataGroup`](../internal/vault/parse.go)（`splitMetadataTokens`、`unescapeMetadataValue`）中支持 `\;` 转义与双引号包裹（`"..."`，内部支持 `\"` 与 `\;`）的元数据值，`MetadataField.Value` 保存反转义后的值，`MetadataField.Raw` 保留原始片段（引号未闭合时回退按未转义 `;` 切分），避免含分号的 URL/命令导致元数据解析失效。
+   - 将 [`EntryID`](../internal/vault/parse.go) 的计算签名升级为 `EntryID(relPath, factText, addedDate string, occurrence int) string`，输入从 `FilePath + FileRevision + LineNumber` 改为长度前缀编码的 `FilePath + NormalizeFactText(factText) + AddedDate`（同文件同日归一化正文完全相同的条目从第 2 条起混入 0 基 `occurrence` 序号消歧），使未改动条目的 ID 在同文件其他位置发生增删编辑时保持稳定。
 
-#### 4.4.2 可选生命周期（`kind`）与验证状态（`status`）元数据代码守卫
+#### 4.4.2 可选生命周期（`kind`）与验证状态（`status`）元数据代码守卫（`I-4` / `T144` 已完成）
 
-复用现有开放行尾元数据 `[key: value]` 语法（零格式破坏，缺省时完全向后兼容），在 [`internal/vault/parse.go`](../internal/vault/parse.go) 中识别两个可选标准键：
+复用现有开放行尾元数据 `[key: value]` 语法（零格式破坏，缺省时完全向后兼容），在 [`internal/vault/parse.go`](../internal/vault/parse.go) 与 [`internal/vault/event.go`](../internal/vault/event.go) 中识别两个可选标准键（`ValidKind`、`ValidStatus`、`CheckKindStatus`），并在 CLI `memctl add --kind/--status`、MCP `memory_append` 与 `DreamOperation`（`append_entry` / `replace_entry`）中支持写入校验（非法枚举值返回 `INVALID_ARGUMENT`）：
 
 1. **`kind: state | event | procedural`**：
-   - 将 [10. 记忆更新与过期](./10-memory-lifecycle.md) §1 的纸面分类落实为代码级守卫：当条目显式标记为 `kind: event`（架构决策记录、事故复盘、发布里程碑）时，[`verifyDeleteWindow`](../internal/dream/propose.go)（第 284 - 317 行）与 `Apply` 整文件写入检查在代码层**禁止静默删除或篡改其核心事实文本**（仅允许跨文件迁移归档并保持可达；若确需删除必须带显式 `--force-delete-event` 标志）。
+   - 将 [10. 记忆更新与过期](./10-memory-lifecycle.md) §1 的分类落实为代码级守卫（新增错误码 `memerr.EventProtected = "EVENT_PROTECTED"`，HTTP `409`）：当条目显式标记为 `kind: event`（架构决策记录、事故复盘、发布里程碑）时，[`EventRemovals`](../internal/vault/event.go) 与 [`verifyEventGuard`](../internal/app/eventguard.go) 在 `App.Apply`、`App.DeleteEntry`、`App.PatchEntry`、`dream.ProposeLocal`（`files[]` 与 `operations[]`）及 `App.ApplyDream` 中**禁止静默删除或篡改其归一化事实文本、`added` 日期与 `kind: event` 标记**（允许在同一事务或提案内跨文件原样迁移；确需人工删除时须通过 CLI `memctl write --force-delete-event` 或 `DELETE /api/v1/entries/{id}?filePath=...&forceDeleteEvent=true` 显式覆盖）。
 2. **`status: verified | hypothesis`**：
    - 吸收原文 Figure 3 中 `Opus 4.7` 区分 `checked` 与 `unconfirmed` 使准确率从 `0.383` 跃升至 `0.700` 的关键发现：允许 Agent 在排障尚未最终证实或仅完成局部推演时写入 `status: hypothesis`（或配合 `until` 设置短期复核期限）。
-   - `memctl doctor` 与 `dream --prepare` 自动扫描带有 `status: hypothesis` 的条目，生成 `UNCONFIRMED_HYPOTHESIS` 提醒，引导后续会话根据新执行轨迹将其验证升级为 `verified` 或清理删除。
+   - `memctl doctor` 与 `dream --prepare`（[`doctor.UnconfirmedHypothesis`](../internal/doctor/doctor.go)）自动扫描未到期的 `status: hypothesis` 条目，生成 `UNCONFIRMED_HYPOTHESIS`（`warning`）提醒，并在 [`recallRelatedEntries`](../internal/dream/related.go) 中将其优先置顶召回至 `relatedExistingEntries`、向 `rules.tasks` 追加复核任务，引导后续会话根据新执行轨迹通过 `replace_entry` 升级为 `status: verified` 或通过 `delete_entry` 清理删除。
 3. **推广「规则 + 验证依据 + 陷阱警告」三要素写法**：
-   - 更新配套 Skill 与精简后的 `INSTRUCTIONS.md`，引导模型在编写工程规则与排障记忆时遵循原文 `Opus 5` 的高收益结构：**「结论/规则 + 证明该规则成立的实测依据（具体命令、探针输出或代码行）+ 常见误区/陷阱警告」**。
+   - 更新配套 Skill（[`skills/memctl/SKILL.md`](../skills/memctl/SKILL.md)、[`skills/memctl/references/memory-conventions.md`](../skills/memctl/references/memory-conventions.md)）与内嵌 [`internal/assets/INSTRUCTIONS.md`](../internal/assets/INSTRUCTIONS.md)（`24` 行 / `1,496 B`，满足 `<= 30` 行且 `<= 1,500 B`），引导模型在编写工程规则与排障记忆时遵循原文 `Opus 5` 的结构：**「结论/规则 + 证明该规则成立的实测依据（具体命令、探针输出或代码行）+ 常见误区/陷阱警告」**，多步排查步骤使用 2 空格缩进子行。
 
-#### 4.4.3 记忆膨胀度与近似重复诊断（防范博尔赫斯反模式）
+#### 4.4.3 记忆膨胀度与近似重复诊断（防范博尔赫斯反模式；`I-4` / `T144` 已完成）
 
 参照原文 Figure 12（115 KB 原始文档膨胀为 203 KB Wiki）：
 
-- 在 [`internal/doctor/doctor.go`](../internal/doctor/doctor.go) 与 [`internal/dream/worker.go`](../internal/dream/worker.go)（`staticFindings`）中新增两项静态检查：
-  1. **单主题膨胀检查（`TOPIC_BLOAT`）**：当单个 `notes/<topic>.md` 超过 `150` 行或 `16 KiB` 时发出诊断提示，建议在下次 Dreaming 中提炼摘要或拆分归档。
-  2. **跨文件近似重复检查（`NEAR_DUPLICATE`）**：复用 P2 的分词器计算不同条目之间的词集 Jaccard 相似度（或 Bigram 重合率），当两条非索引条目的词项重合率 `>= 0.75` 时报告近似重复候选，供 Dreaming 合并去重。
+- 在 [`internal/doctor/doctor.go`](../internal/doctor/doctor.go) 与 [`internal/dream/worker.go`](../internal/dream/worker.go)（`staticFindings` 共用 `doctor.UnconfirmedHypothesis`、`doctor.TopicBloat`、`doctor.NearDuplicates`）中新增两项非阻塞 `warning` 级静态检查（`autoFixable: false`，仅含 `warning`/`info` 时 `doctor` 退出码保持 `0`）：
+  1. **单主题膨胀检查（`TOPIC_BLOAT`）**：当非 `MEMORY.md` 的受管 Markdown 主题文件超过 `MaxTopicLines = 150` 行或 `MaxTopicBytes = 16 * 1024`（`16 KiB`）时发出诊断提示，建议在下次 Dreaming 中提炼摘要或拆分归档。
+  2. **跨条目近似重复检查（`NEAR_DUPLICATE`）**：复用 P2 的分词器计算未过期业务条目（排除 `MEMORY.md` `## Index` 导航行、少于 `NearDuplicateMinTokens = 5` 个不同分词的短条目，以及双端均为 `kind: event` 的历史事件对）之间的 `FactText` 词集 Jaccard 相似度，当重合率 `>= NearDuplicateThreshold = 0.75` 时按路径与行号稳定排序报告近似重复候选（上限 `MaxNearDuplicatePairs = 50` 对），供 Dreaming 合并去重。
 
 ---
 

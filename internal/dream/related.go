@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/vault"
 )
 
@@ -63,7 +64,8 @@ var relatedStopwords = map[string]bool{
 // baseline entries related to the bundle's sessions. The queries are the
 // sessions' project names and their most frequent user, assistant and tool
 // outcome terms; each query is scored with the vault BM25 scorer and the
-// scores are summed. Entries of a project-associated topic file get a bonus.
+// scores are summed. Entries of a project-associated topic file get a bonus,
+// and unexpired `status: hypothesis` entries are listed first.
 func relatedExistingEntries(base *baseline, sessions []BundleSession, now time.Time) []RelatedExistingEntry {
 	if base == nil || len(sessions) == 0 {
 		return nil
@@ -124,14 +126,22 @@ func relatedExistingEntries(base *baseline, sessions []BundleSession, now time.T
 		}
 	}
 
+	// Unexpired `status: hypothesis` entries come first whatever their score
+	// (docs/18 section 4.4.2): the sessions are the evidence that confirms or
+	// disproves them. Inside each group the BM25 order applies.
+	hypothesis := make([]bool, len(entries))
 	order := make([]int, 0, len(entries))
-	for index := range entries {
-		if scores[index] > 0 {
+	for index, entry := range entries {
+		hypothesis[index] = doctor.UnconfirmedHypothesis(entry, now)
+		if scores[index] > 0 || hypothesis[index] {
 			order = append(order, index)
 		}
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		a, b := order[i], order[j]
+		if hypothesis[a] != hypothesis[b] {
+			return hypothesis[a]
+		}
 		if scores[a] != scores[b] {
 			return scores[a] > scores[b]
 		}
@@ -159,6 +169,22 @@ func relatedExistingEntries(base *baseline, sessions []BundleSession, now time.T
 			AddedDate:  entry.AddedDate,
 			UntilDate:  entry.UntilDate,
 		})
+	}
+	return out
+}
+
+// hypothesisEntries lists the unexpired `status: hypothesis` entries of the
+// baseline's recallable entries, the UNCONFIRMED_HYPOTHESIS candidates of a
+// prepare bundle.
+func hypothesisEntries(base *baseline, now time.Time) []vault.MemoryEntry {
+	if base == nil {
+		return nil
+	}
+	var out []vault.MemoryEntry
+	for _, entry := range recallableEntries(base, now) {
+		if doctor.UnconfirmedHypothesis(entry, now) {
+			out = append(out, entry)
+		}
 	}
 	return out
 }

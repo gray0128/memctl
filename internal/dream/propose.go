@@ -105,6 +105,9 @@ func (s *Service) ProposeLocal(ctx context.Context, input DreamProposeInput) (Pr
 	if err := verifyDeleteWindow(base, targets, s.timeNow()); err != nil {
 		return ProposeResult{}, err
 	}
+	if err := verifyEventsKept(base, targets); err != nil {
+		return ProposeResult{}, err
+	}
 	if err := verifyTargetLinks(base, targets); err != nil {
 		return ProposeResult{}, err
 	}
@@ -355,6 +358,45 @@ func verifyDeleteWindow(base *baseline, targets map[string]workFile, now time.Ti
 	return memerr.New(memerr.DeletionDeferred,
 		"the proposal removes an expired entry before its hidden period ends (%s); keep it until the named date",
 		joinLimited(deferred, 3))
+}
+
+// verifyEventsKept refuses a proposal that deletes an entry marked `kind:
+// event` or rewrites its fact text or `added` date. Moving the event unchanged
+// to another file of the proposal is allowed. A proposal has no force flag:
+// an event is only removed by a deliberate `memctl write
+// --force-delete-event`. See docs/18-agent-memory-review-and-optimization.md
+// section 4.4.2.
+func verifyEventsKept(base *baseline, targets map[string]workFile) error {
+	before := map[string][]byte{}
+	after := map[string][]byte{}
+	for rel, file := range base.files {
+		if markdownPath(rel) {
+			before[rel] = file.content
+		}
+	}
+	for rel, file := range targets {
+		if markdownPath(rel) {
+			after[rel] = file.content
+		}
+	}
+	removed := vault.EventRemovals(before, after)
+	if len(removed) == 0 {
+		return nil
+	}
+	noun := "entries"
+	if len(removed) == 1 {
+		noun = "entry"
+	}
+	return memerr.New(memerr.EventProtected,
+		"the proposal deletes or rewrites %d kind: event %s (%s); events are append-only: keep the fact and added date unchanged or move the entry to another file, and record the change as a new entry",
+		len(removed), noun, joinLimited(removed, 3))
+}
+
+// markdownPath reports whether rel is a Markdown memory file, the files whose
+// entries the lifecycle guards inspect.
+func markdownPath(rel string) bool {
+	kind := vault.ClassifyKind(rel)
+	return kind == vault.KindEntryPoint || kind == vault.KindMarkdown
 }
 
 // verifyParentDirs refuses a proposal that creates or updates a file under a

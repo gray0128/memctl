@@ -88,7 +88,7 @@ func TestParseFileCoversF01(t *testing.T) {
 	if len(first.Sources) != 1 || first.Sources[0].Scheme != "https" || first.Sources[0].Raw != "https://example.com/sessions/100" {
 		t.Fatalf("sources = %+v", first.Sources)
 	}
-	if first.ID != vault.EntryID("MEMORY.md", "sha256:base", 3) {
+	if first.ID != vault.EntryID("MEMORY.md", first.FactText, first.AddedDate, 0) {
 		t.Fatalf("entry ID = %q", first.ID)
 	}
 
@@ -310,16 +310,26 @@ func TestParseFileAndResolveLinksCoversF02(t *testing.T) {
 }
 
 // TestResolveLinksDistinguishesEntryIDs checks that the identity is bound to
-// the file revision and line.
+// the file path, the normalized fact, the added date and the occurrence, and
+// not to the file revision or line (docs/18 section 4.4.1).
 func TestResolveLinksDistinguishesEntryIDs(t *testing.T) {
-	first := vault.EntryID("MEMORY.md", "sha256:one", 1)
-	if first == vault.EntryID("MEMORY.md", "sha256:one", 2) {
-		t.Fatal("entry ID does not depend on the line")
+	first := vault.EntryID("MEMORY.md", "fact one", "2026-01-01", 0)
+	if !strings.HasPrefix(first, "sha256:") || len(first) != len("sha256:")+64 {
+		t.Fatalf("entry ID format = %q", first)
 	}
-	if first == vault.EntryID("MEMORY.md", "sha256:two", 1) {
-		t.Fatal("entry ID does not depend on the file revision")
+	if first == vault.EntryID("notes/a.md", "fact one", "2026-01-01", 0) {
+		t.Fatal("entry ID does not depend on the path")
 	}
-	if first != vault.EntryID("MEMORY.md", "sha256:one", 1) {
-		t.Fatal("entry ID is not deterministic")
+	if first == vault.EntryID("MEMORY.md", "fact two", "2026-01-01", 0) {
+		t.Fatal("entry ID does not depend on the fact")
+	}
+	if first == vault.EntryID("MEMORY.md", "fact one", "2026-01-02", 0) {
+		t.Fatal("entry ID does not depend on the added date")
+	}
+	if first == vault.EntryID("MEMORY.md", "fact one", "2026-01-01", 1) {
+		t.Fatal("entry ID does not depend on the occurrence")
+	}
+	if first != vault.EntryID("MEMORY.md", "  fact   one ", "2026-01-01", 0) {
+		t.Fatal("entry ID is not stable across whitespace normalization")
 	}
 }

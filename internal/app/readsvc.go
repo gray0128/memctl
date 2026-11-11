@@ -67,6 +67,8 @@ type MemoryEntryDTO struct {
 	Metadata     []MetadataFieldDTO `json:"metadata"`
 	Heading      string             `json:"heading,omitempty"`
 	AddedDate    string             `json:"addedDate,omitempty"`
+	Kind         string             `json:"kind,omitempty"`
+	Status       string             `json:"status,omitempty"`
 	InlineLinks  []WikiLinkDTO      `json:"inlineLinks,omitempty"`
 }
 
@@ -898,6 +900,8 @@ func toEntryDTO(entry vault.MemoryEntry) MemoryEntryDTO {
 		Metadata:     []MetadataFieldDTO{},
 		Heading:      entry.Heading,
 		AddedDate:    entry.AddedDate,
+		Kind:         entry.Kind,
+		Status:       entry.Status,
 	}
 	if len(entry.DetailLines) > 0 {
 		dto.DetailLines = append([]string(nil), entry.DetailLines...)

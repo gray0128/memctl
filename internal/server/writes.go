@@ -299,14 +299,17 @@ func (s *Server) handlePatchEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, entryResultDTO{Entry: result.Entry, Result: toMutationResultDTO(result.Result)})
 }
 
-// handleDeleteEntry removes one entry's line from the named file.
+// handleDeleteEntry removes one entry's block from the named file. The
+// forceDeleteEvent=true query parameter is the explicit consent to delete an
+// entry marked `kind: event`.
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	fileRevision, _ := ifMatch(r)
 	result, err := s.app.DeleteEntry(r.Context(), app.DeleteEntryRequest{
-		ID:           r.PathValue("id"),
-		FilePath:     r.URL.Query().Get("filePath"),
-		FileRevision: fileRevision,
-		Device:       deviceLabel(),
+		ID:               r.PathValue("id"),
+		FilePath:         r.URL.Query().Get("filePath"),
+		FileRevision:     fileRevision,
+		ForceDeleteEvent: r.URL.Query().Get("forceDeleteEvent") == "true",
+		Device:           deviceLabel(),
 	})
 	if err != nil {
 		s.writeAppError(w, err)

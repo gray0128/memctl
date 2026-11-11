@@ -37,9 +37,52 @@ type SourceRef struct {
 	SessionID string
 }
 
+// Optional standard metadata keys of docs/18-agent-memory-review-and-optimization.md
+// section 4.4.2. Both are open metadata: an absent or unknown value keeps the
+// entry exactly as it was, and only the legal values below are recognized.
+const (
+	KindKey   = "kind"
+	StatusKey = "status"
+
+	KindState      = "state"
+	KindEvent      = "event"
+	KindProcedural = "procedural"
+
+	StatusVerified   = "verified"
+	StatusHypothesis = "hypothesis"
+)
+
+// Detail block bounds of docs/18 section 4.4.1. Indented lines beyond either
+// bound stay ordinary unattributed lines; no byte is ever dropped.
+const (
+	MaxDetailLines = 20
+	MaxDetailBytes = 2048
+)
+
+// ValidKind reports whether value is a recognized `kind` metadata value.
+func ValidKind(value string) bool {
+	switch value {
+	case KindState, KindEvent, KindProcedural:
+		return true
+	}
+	return false
+}
+
+// ValidStatus reports whether value is a recognized `status` metadata value.
+func ValidStatus(value string) bool {
+	switch value {
+	case StatusVerified, StatusHypothesis:
+		return true
+	}
+	return false
+}
+
 // MemoryEntry is one bullet line parsed losslessly. RawLine is the exact line
 // text without its terminator; FactText is the trimmed fact text before the
-// trailing metadata region. InlineLinks stays empty until ResolveLinks runs.
+// trailing metadata region. DetailLines are the indented lines directly after
+// the bullet that belong to it (docs/18 section 4.4.1); they occupy the
+// physical lines LineNumber+1 .. LastLine(). InlineLinks stays empty until
+// ResolveLinks runs.
 type MemoryEntry struct {
 	ID           string
 	FilePath     string
@@ -54,8 +97,23 @@ type MemoryEntry struct {
 	AddedDate    string
 	// UntilDate is the raw `until` metadata value when it is a legal
 	// YYYY-MM-DD date; otherwise it stays empty and the entry never expires.
-	UntilDate   string
+	UntilDate string
+	// Kind and Status are the recognized `kind` and `status` metadata values,
+	// or empty when the key is absent or carries an unknown value.
+	Kind        string
+	Status      string
 	InlineLinks []WikiLink
+}
+
+// LastLine returns the physical line number of the last line of the entry's
+// block: the bullet itself or its last detail line.
+func (e MemoryEntry) LastLine() int {
+	return e.LineNumber + len(e.DetailLines)
+}
+
+// IsEvent reports whether the entry is explicitly marked `kind: event`.
+func (e MemoryEntry) IsEvent() bool {
+	return e.Kind == KindEvent
 }
 
 // Line is one physical line kept with its original terminator so Raw reproduces
@@ -92,21 +150,37 @@ func (p ParsedFile) Raw() string {
 	return b.String()
 }
 
-// EntryID is the documented identity of an entry within a specific file
-// revision and line. It is not promised to survive edits; inserting a line is
-// allowed to change it.
-func EntryID(relPath, fileRevision string, lineNumber int) string {
+// EntryID is the content-stable identity of an entry within one file
+// (docs/18 section 4.4.1). It hashes the file path, the normalized fact text
+// and the `added` date, so editing, inserting or deleting other lines of the
+// file keeps the ID; rewriting the entry's own fact or `added` changes it.
+// occurrence is the 0-based count of earlier entries of the same file with
+// the same normalized fact and `added` date; it is mixed in only from the
+// second such entry, so identical lines still get distinct IDs.
+func EntryID(relPath, factText, addedDate string, occurrence int) string {
 	hash := sha256.New()
 	writeField(hash, []byte(relPath))
-	writeField(hash, []byte(fileRevision))
-	writeField(hash, []byte(strconv.Itoa(lineNumber)))
+	writeField(hash, []byte(NormalizeFactText(factText)))
+	writeField(hash, []byte(addedDate))
+	if occurrence > 0 {
+		writeField(hash, []byte(strconv.Itoa(occurrence)))
+	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
+}
+
+// NormalizeFactText is the comparison form of a fact: surrounding whitespace
+// trimmed and inner whitespace runs collapsed to one space. It is the identity
+// input of EntryID and of the `kind: event` guard.
+func NormalizeFactText(fact string) string {
+	return strings.Join(strings.Fields(fact), " ")
 }
 
 // ParseFile parses one managed text file without touching the filesystem.
 // Entries are top-level `- ` bullets; trailing `[key: value; ...]` metadata
 // groups are split into order-preserving fields, and `[[target]]` links are
-// collected outside code fences and inline code.
+// collected outside code fences and inline code. The indented lines directly
+// after a bullet become its DetailLines; they keep their place in Lines, so
+// Raw still reproduces every byte.
 func ParseFile(relPath, fileRevision string, content []byte) ParsedFile {
 	parsed := ParsedFile{RelPath: relPath, FileRevision: fileRevision}
 	parsed.Lines = splitLines(string(content))
@@ -115,29 +189,95 @@ func ParseFile(relPath, fileRevision string, content []byte) ParsedFile {
 	inFence := false
 	fenceChar := byte(0)
 	fenceLen := 0
+	occurrences := map[string]int{}
+
+	// block tracks the entry that is collecting detail lines. A block that
+	// ends inside a fence it opened drops that fence again, so a later block
+	// edit never removes half of a fence and turns its rest into an opener.
+	block := -1
+	blockBytes := 0
+	blockFence := false
+	blockFenceStart := 0
+	stopBlock := func() {
+		if block >= 0 && blockFence {
+			entry := &parsed.Entries[block]
+			entry.DetailLines = entry.DetailLines[:blockFenceStart]
+			if len(entry.DetailLines) == 0 {
+				entry.DetailLines = nil
+			}
+		}
+		block, blockBytes, blockFence = -1, 0, false
+	}
+	// attach adds one line to the open block, or ends the block when the
+	// line would exceed a bound.
+	attach := func(text string) bool {
+		entry := &parsed.Entries[block]
+		if len(entry.DetailLines)+1 > MaxDetailLines || blockBytes+len(text)+1 > MaxDetailBytes {
+			stopBlock()
+			return false
+		}
+		entry.DetailLines = append(entry.DetailLines, text)
+		blockBytes += len(text) + 1
+		return true
+	}
 
 	for _, line := range parsed.Lines {
 		if inFence {
-			if closesFence(line.Text, fenceChar, fenceLen) {
+			closing := closesFence(line.Text, fenceChar, fenceLen)
+			if block >= 0 {
+				if blockFence && (strings.TrimSpace(line.Text) == "" || isDetailIndent(line.Text)) {
+					if attach(line.Text) && closing {
+						blockFence = false
+					}
+				} else {
+					stopBlock()
+				}
+			}
+			if closing {
 				inFence = false
 				fenceChar, fenceLen = 0, 0
 			}
 			continue
 		}
+		if block >= 0 {
+			if _, _, isHeading := headingLevelAndText(line.Text); isHeading || !isDetailIndent(line.Text) || strings.TrimSpace(line.Text) == "" {
+				stopBlock()
+			}
+		}
 		if char, length, ok := opensFence(line.Text); ok {
 			inFence = true
 			fenceChar, fenceLen = char, length
+			if block >= 0 {
+				blockFenceStart = len(parsed.Entries[block].DetailLines)
+				blockFence = true
+				attach(line.Text)
+			}
 			continue
 		}
 		if text, ok := headingText(line.Text); ok {
 			heading = text
 		}
 		parsed.Links = append(parsed.Links, scanLinks(relPath, line.Number, line.Text)...)
+		if block >= 0 {
+			attach(line.Text)
+			continue
+		}
 		if body, ok := bulletBody(line.Text); ok {
-			parsed.Entries = append(parsed.Entries, parseEntry(relPath, fileRevision, line.Number, line.Text, body, heading))
+			entry := parseEntry(relPath, fileRevision, line.Number, line.Text, body, heading)
+			key := NormalizeFactText(entry.FactText) + "\x00" + entry.AddedDate
+			entry.ID = EntryID(relPath, entry.FactText, entry.AddedDate, occurrences[key])
+			occurrences[key]++
+			parsed.Entries = append(parsed.Entries, entry)
+			block = len(parsed.Entries) - 1
 		}
 	}
 	return parsed
+}
+
+// isDetailIndent reports a line indented by at least two spaces or one tab,
+// the indentation that attaches a line to the bullet above it.
+func isDetailIndent(text string) bool {
+	return strings.HasPrefix(text, "  ") || strings.HasPrefix(text, "\t")
 }
 
 // Parse reads and parses one managed text file. It does not write to the
@@ -279,7 +419,6 @@ func bulletBody(text string) (string, bool) {
 func parseEntry(relPath, fileRevision string, lineNumber int, rawLine, body, heading string) MemoryEntry {
 	fields, fact := splitTrailingMetadata(body)
 	entry := MemoryEntry{
-		ID:           EntryID(relPath, fileRevision, lineNumber),
 		FilePath:     relPath,
 		FileRevision: fileRevision,
 		LineNumber:   lineNumber,
@@ -299,6 +438,14 @@ func parseEntry(relPath, fileRevision string, lineNumber int, rawLine, body, hea
 		case UntilKey:
 			if isDate(field.Value) {
 				entry.UntilDate = field.Value
+			}
+		case KindKey:
+			if ValidKind(field.Value) {
+				entry.Kind = field.Value
+			}
+		case StatusKey:
+			if ValidStatus(field.Value) {
+				entry.Status = field.Value
 			}
 		}
 	}
@@ -526,17 +673,40 @@ func (p ParsedFile) WithAppendedLineInSection(heading, line string) (string, int
 // WithoutLine returns the content with one physical line removed, including its
 // terminator. It reports false when the line is not part of the file.
 func (p ParsedFile) WithoutLine(lineNumber int) (string, bool) {
+	return p.WithoutLines(lineNumber, lineNumber)
+}
+
+// WithoutLines returns the content with the physical lines first..last
+// removed, including their terminators. It reports false when first is not
+// part of the file.
+func (p ParsedFile) WithoutLines(first, last int) (string, bool) {
 	var b strings.Builder
 	found := false
 	for _, line := range p.Lines {
-		if line.Number == lineNumber {
-			found = true
+		if line.Number >= first && line.Number <= last {
+			found = found || line.Number == first
 			continue
 		}
 		b.WriteString(line.Text)
 		b.WriteString(line.Ending)
 	}
 	return b.String(), found
+}
+
+// WithoutEntry returns the content with the entry's whole block removed: the
+// bullet and its DetailLines, so no indented line is left behind.
+func (p ParsedFile) WithoutEntry(entry MemoryEntry) (string, bool) {
+	return p.WithoutLines(entry.LineNumber, entry.LastLine())
+}
+
+// EntryBlock returns the entry's bullet line with newLine in place of its raw
+// line, followed by its DetailLines, joined by "\n". It is the text a block
+// move appends to another file.
+func EntryBlock(newLine string, entry MemoryEntry) string {
+	if len(entry.DetailLines) == 0 {
+		return newLine
+	}
+	return newLine + "\n" + strings.Join(entry.DetailLines, "\n")
 }
 
 // WithReplacedLine returns the content with one physical line replaced by text.
@@ -557,11 +727,19 @@ func (p ParsedFile) WithReplacedLine(lineNumber int, text string) (string, bool)
 	return b.String(), found
 }
 
+// parseMetadataGroup splits one bracket group into `key: value` fields. A
+// value may carry a literal `;` escaped as `\;` or inside a double-quoted
+// value (docs/18 section 4.4.1); Value holds the unescaped text and Raw keeps
+// the exact original segment. Unbalanced quotes fall back to splitting on
+// every unescaped `;`, the behavior of a group without quoting.
 func parseMetadataGroup(content string) ([]MetadataField, bool) {
 	if content == "" || strings.ContainsAny(content, "[]") {
 		return nil, false
 	}
-	segments := strings.Split(content, ";")
+	segments, ok := splitMetadataSegments(content, true)
+	if !ok {
+		segments, _ = splitMetadataSegments(content, false)
+	}
 	fields := make([]MetadataField, 0, len(segments))
 	for _, segment := range segments {
 		key, value, ok := strings.Cut(segment, ":")
@@ -572,9 +750,53 @@ func parseMetadataGroup(content string) ([]MetadataField, bool) {
 		if key == "" || !isMetadataKey(key) {
 			return nil, false
 		}
-		fields = append(fields, MetadataField{Key: key, Value: strings.TrimSpace(value), Raw: segment})
+		fields = append(fields, MetadataField{Key: key, Value: unescapeMetadataValue(strings.TrimSpace(value)), Raw: segment})
 	}
 	return fields, true
+}
+
+// splitMetadataSegments splits on every `;` that is not escaped by a
+// backslash and, when quotes is set, not inside a double-quoted run. It
+// reports false when quotes is set and a quote is left open.
+func splitMetadataSegments(content string, quotes bool) ([]string, bool) {
+	if !strings.Contains(content, `\;`) && (!quotes || !strings.Contains(content, `"`)) {
+		return strings.Split(content, ";"), true
+	}
+	var segments []string
+	start := 0
+	inQuote := false
+	for i := 0; i < len(content); i++ {
+		switch content[i] {
+		case '\\':
+			if i+1 < len(content) && (content[i+1] == ';' || (quotes && content[i+1] == '"')) {
+				i++
+			}
+		case '"':
+			if quotes {
+				inQuote = !inQuote
+			}
+		case ';':
+			if !inQuote {
+				segments = append(segments, content[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if inQuote {
+		return nil, false
+	}
+	return append(segments, content[start:]), true
+}
+
+// unescapeMetadataValue strips one pair of surrounding double quotes and
+// turns `\;` and, inside quotes, `\"` back into the literal characters.
+func unescapeMetadataValue(value string) string {
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		inner := value[1 : len(value)-1]
+		inner = strings.ReplaceAll(inner, `\"`, `"`)
+		return strings.ReplaceAll(inner, `\;`, ";")
+	}
+	return strings.ReplaceAll(value, `\;`, ";")
 }
 
 func isMetadataKey(key string) bool {

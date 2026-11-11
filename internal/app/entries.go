@@ -45,13 +45,16 @@ type PatchEntryRequest struct {
 }
 
 // DeleteEntryRequest is the input of DELETE /api/v1/entries/{id}.
+// ForceDeleteEvent allows deleting an entry marked `kind: event`; without it
+// such a delete fails with EVENT_PROTECTED.
 type DeleteEntryRequest struct {
-	ID           string
-	FilePath     string
-	FileRevision string
-	Agent        string
-	SessionID    string
-	Device       string
+	ID               string
+	FilePath         string
+	FileRevision     string
+	ForceDeleteEvent bool
+	Agent            string
+	SessionID        string
+	Device           string
 }
 
 // EntryResult is the response of the entry create and patch routes: the
@@ -63,12 +66,15 @@ type EntryResult struct {
 
 // AppendEntryRequest is the input of `memctl add` and the `memory_append` MCP
 // tool. The repository baseline is read under the exclusive write lock so
-// callers do not supply a fileRevision precondition.
+// callers do not supply a fileRevision precondition. Kind and Status are the
+// optional `kind` and `status` metadata values of docs/18 section 4.4.2.
 type AppendEntryRequest struct {
 	FilePath      string
 	Heading       string
 	FactText      string
 	Until         string
+	Kind          string
+	Status        string
 	IndexSummary  string
 	Agent         string
 	SessionID     string
@@ -128,6 +134,10 @@ func (a *App) AppendEntry(ctx context.Context, req AppendEntryRequest) (AppendEn
 				"until %q must be a valid YYYY-MM-DD date", req.Until)
 		}
 	}
+	entryKind, entryStatus, err := vault.CheckKindStatus(req.Kind, req.Status)
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
 
 	agent := strings.TrimSpace(req.Agent)
 	if agent == "" {
@@ -151,6 +161,12 @@ func (a *App) AppendEntry(ctx context.Context, req AppendEntryRequest) (AppendEn
 	}
 	if until != "" {
 		metaParts = append(metaParts, "until: "+until)
+	}
+	if entryKind != "" {
+		metaParts = append(metaParts, vault.KindKey+": "+entryKind)
+	}
+	if entryStatus != "" {
+		metaParts = append(metaParts, vault.StatusKey+": "+entryStatus)
 	}
 	entryLine := "- " + factText + " [" + strings.Join(metaParts, "; ") + "]"
 
@@ -479,8 +495,16 @@ func planEntryPatch(session *writeSession, req PatchEntryRequest, factText strin
 	if !ok {
 		return nil, 0, memerr.New(memerr.InvalidArgument, "entry %s is not a bullet line", req.ID)
 	}
+	// An event keeps its fact text; moving it unchanged to another file is
+	// the allowed archive path.
+	if entry.IsEvent() && vault.NormalizeFactText(factText) != vault.NormalizeFactText(entry.FactText) {
+		return nil, 0, eventProtectedError(
+			[]string{sourcePath + ": " + entry.FactText + " (added " + entry.AddedDate + ")"},
+			"append a new entry that records the change instead")
+	}
 
 	if !moving {
+		// Only the bullet line changes; its DetailLines stay in place.
 		content, ok := parsed.WithReplacedLine(entry.LineNumber, newLine)
 		if !ok {
 			return nil, 0, memerr.New(memerr.NotFound, "entry %s is not present in %s", req.ID, sourcePath)
@@ -497,10 +521,12 @@ func planEntryPatch(session *writeSession, req PatchEntryRequest, factText strin
 	if err != nil {
 		return nil, 0, err
 	}
-	sourceContent, ok := parsed.WithoutLine(entry.LineNumber)
+	// A move carries the whole block: the bullet and its DetailLines.
+	sourceContent, ok := parsed.WithoutEntry(entry)
 	if !ok {
 		return nil, 0, memerr.New(memerr.NotFound, "entry %s is not present in %s", req.ID, sourcePath)
 	}
+	block := vault.EntryBlock(newLine, entry)
 	changes := []FileChange{{
 		Path:             sourcePath,
 		ExpectedRevision: source.FileRevision,
@@ -520,13 +546,15 @@ func planEntryPatch(session *writeSession, req PatchEntryRequest, factText strin
 		if err != nil {
 			return nil, 0, err
 		}
-		targetContent, targetLine = vault.ParseFile(targetPath, target.FileRevision, []byte(target.RawContent)).WithAppendedLine(newLine)
+		targetContent, targetLine = vault.ParseFile(targetPath, target.FileRevision, []byte(target.RawContent)).WithAppendedLine(block)
 		targetRevision = target.FileRevision
 	} else {
-		targetContent = newEntryFileContent(headingFromPath(targetPath), newLine)
+		targetContent = newEntryFileContent(headingFromPath(targetPath), block)
 		targetLine = strings.Count(targetContent, "\n")
 		targetRevision = vault.AbsentRevision
 	}
+	// The appended block ends the file, so the bullet sits above its details.
+	targetLine -= len(entry.DetailLines)
 	changes = append(changes, FileChange{
 		Path:             targetPath,
 		ExpectedRevision: targetRevision,
@@ -582,7 +610,14 @@ func planEntryDelete(session *writeSession, req DeleteEntryRequest) (FileChange,
 		return FileChange{}, memerr.New(memerr.NotFound,
 			"entry %s is not present in %s at this revision", req.ID, relPath)
 	}
-	content, ok := parsed.WithoutLine(entry.LineNumber)
+	if entry.IsEvent() && !req.ForceDeleteEvent {
+		return FileChange{}, eventProtectedError(
+			[]string{relPath + ": " + entry.FactText + " (added " + entry.AddedDate + ")"},
+			"pass forceDeleteEvent to delete it deliberately")
+	}
+	// The whole block goes: a detail line left behind would attach itself to
+	// the bullet above it.
+	content, ok := parsed.WithoutEntry(entry)
 	if !ok {
 		return FileChange{}, memerr.New(memerr.NotFound, "entry %s is not present in %s", req.ID, relPath)
 	}
@@ -595,8 +630,8 @@ func planEntryDelete(session *writeSession, req DeleteEntryRequest) (FileChange,
 }
 
 // entryAt reads one file after a committed transaction and returns the entry on
-// the given line. The entry ID is derived from the new file revision, so it is
-// never the pre-edit ID.
+// the given line. The entry ID is derived from the entry's new content, so a
+// rewritten fact never keeps the pre-edit ID.
 func (s *writeSession) entryAt(relPath string, lineNumber int) (MemoryEntryDTO, error) {
 	file, err := s.root.ReadFile(relPath)
 	if err != nil {

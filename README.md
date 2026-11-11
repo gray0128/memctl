@@ -80,12 +80,12 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 | 能力 | 命令 | 说明 |
 | --- | --- | --- |
 | 仓库初始化 | `init`、`init <url> --confirm-private` | 无 URL 只建本地仓库与首笔提交；带 URL 需确认私有性与所有权，空远端完成首推，已有历史则克隆并建立 upstream |
-| 读取与受管写入 | `read`、`add`、`write` | 读写文件原文或追加单条记忆；`add` 在锁内按小节追加并同事务幂等维护 `MEMORY.md` 索引，`write` 校验修订基线并整文件原子提交，不静默覆盖其他更新 |
-| 条目检索 | `entries` | 按关键词（中英文多词分词与多字段权重 BM25 排序）、文件、项目（`--project`）、来源与时间范围只读检索已解析条目，返回一跳图谱关联邻居 `relatedFiles`，并可通过 `--include-transcripts` 检索本地最近 14 天内的脱敏会话摘要；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
+| 读取与受管写入 | `read`、`add`、`write` | 读写文件原文或追加单条记忆；`add` 在锁内按小节追加（支持可选 `--kind`、`--status`、`--until`）并同事务幂等维护 `MEMORY.md` 索引，`write` 校验修订基线并整文件原子提交（默认保护 `kind: event` 条目不被静默删改），不静默覆盖其他更新 |
+| 条目检索 | `entries` | 按关键词（中英文多词分词与多字段权重 BM25 排序，覆盖顶层事实与 2 空格缩进子块 `DetailLines`）、文件、项目（`--project`）、来源与时间范围只读检索已解析条目，返回一跳图谱关联邻居 `relatedFiles`，并可通过 `--include-transcripts` 检索本地最近 14 天内的脱敏会话摘要；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
 | 串行编辑与恢复 | `sync --capture`、`recover --status`、`recover --rollback` | 显式接收串行外部编辑；查看或回滚本工具未完成的事务，不接管外部 Git 操作 |
 | 同步与冲突 | `sync --wait`、`resolve` | 前台同步与多阶段冲突解决；断网不撤销已保存的本地内容 |
 | 会话上下文 | `start`、`context`、`pull`、`tag`、`wrap` | Hook 注入、会话级去重与来源标签；`wrap` 透传被包装程序的退出码与信号 |
-| 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
+| 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀、单主题膨胀（`TOPIC_BLOAT`）、跨条目近似重复（`NEAR_DUPLICATE`）、待复核假设（`UNCONFIRMED_HYPOTHESIS`）与运行状态；修复只重建缺失的入口文件 |
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理、客户端接入 8 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；没有生命周期 Hook 的宿主（Delta）只探测并列出人工步骤，不写文件；不自动安装第三方插件，不改全局 Git 配置 |
 | MCP 记忆工具 | `mcp` | 在标准输入输出上提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write`、`memory_dream_prepare` 与 `memory_dream_propose` 6 个工具；由宿主启动，不受 Agent 的 bash 沙箱限制，写入仍经受管事务与基线校验；不写宿主配置 |

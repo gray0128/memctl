@@ -80,6 +80,12 @@ func (a *App) ApplyDream(ctx context.Context, proposalID, patchHash string) (Mut
 		session.Close()
 		return MutationResult{}, err
 	}
+	// Apply below refuses the same change; checking here keeps a refused
+	// proposal ready instead of moving it to applying first.
+	if err := requireDreamEventsKept(session.root, plan); err != nil {
+		session.Close()
+		return MutationResult{}, err
+	}
 	session.Close()
 
 	if err := service.MarkApplying(ctx, proposalID); err != nil {

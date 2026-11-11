@@ -36,18 +36,25 @@ const MaxProposeOperations = MaxExtractedCandidates
 
 // DreamOperation is one structured change of DreamProposeInput.operations.
 //
-//   - append_entry: path, fact and sessionIndices are required; heading, until
-//     and indexSummary are optional. The entry is appended at the end of the
+//   - append_entry: path, fact and sessionIndices are required; heading, until,
+//     kind, status and indexSummary are optional. The entry is appended at the end of the
 //     heading's section (or of the file); a new file is created when path does
 //     not exist yet and its parent directory does. A path other than MEMORY.md
 //     that MEMORY.md does not link yet gets one `- [[target]]` line, with
 //     ` — <indexSummary>` when given, at the end of MEMORY.md's `## Index`.
 //   - replace_entry: path, fact, sessionIndices and one of targetEntryId or
-//     targetRawLine are required; until is optional. The target line is
-//     replaced by the new fact with freshly assembled metadata.
+//     targetRawLine are required; until, kind and status are optional, and an
+//     omitted kind or status keeps the target's value. The target line is
+//     replaced by the new fact with freshly assembled metadata; its
+//     DetailLines stay in place.
 //   - delete_entry: path and one of targetEntryId or targetRawLine are
-//     required; reason and sessionIndices are optional. The target line is
-//     removed.
+//     required; reason and sessionIndices are optional. The target line and
+//     its DetailLines are removed.
+//
+// kind and status are the optional `kind` and `status` metadata of
+// docs/18-agent-memory-review-and-optimization.md section 4.4.2. A baseline
+// entry marked `kind: event` is never replaced or deleted by a proposal
+// (EVENT_PROTECTED).
 //
 // targetEntryId is the entry id of the prepare bundle baseline (the id field of
 // relatedExistingEntries); targetRawLine is the exact entry line of that
@@ -58,6 +65,8 @@ type DreamOperation struct {
 	Heading        string `json:"heading,omitempty"`
 	Fact           string `json:"fact,omitempty"`
 	Until          string `json:"until,omitempty"`
+	Kind           string `json:"kind,omitempty"`
+	Status         string `json:"status,omitempty"`
 	IndexSummary   string `json:"indexSummary,omitempty"`
 	TargetEntryID  string `json:"targetEntryId,omitempty"`
 	TargetRawLine  string `json:"targetRawLine,omitempty"`
@@ -151,6 +160,13 @@ func (s *Service) assembleOperations(ops []DreamOperation, snapshot prepareSnaps
 				"operations[%d].path %q is not exported to proposals", index, rel)
 		}
 
+		entryKind, entryStatus, err := vault.CheckKindStatus(op.Kind, op.Status)
+		if err != nil {
+			if contractErr, ok := memerr.As(err); ok {
+				return nil, nil, nil, nil, memerr.New(contractErr.Code, "operations[%d]: %s", index, contractErr.Message)
+			}
+			return nil, nil, nil, nil, err
+		}
 		var tags, sessionIDs []string
 		latest := ""
 		if len(op.SessionIndices) > 0 {
@@ -192,7 +208,7 @@ func (s *Service) assembleOperations(ops []DreamOperation, snapshot prepareSnaps
 						index, rel, parent)
 				}
 			}
-			line := assembleEntryLine(fact, tags, latest, until)
+			line := assembleEntryLine(fact, tags, latest, until, entryKind, entryStatus)
 			edit := editFor(rel)
 			edit.appends = append(edit.appends, appendLine{heading: op.Heading, line: line})
 			if edit.summary == "" {
@@ -217,8 +233,16 @@ func (s *Service) assembleOperations(ops []DreamOperation, snapshot prepareSnaps
 				return nil, nil, nil, nil, memerr.New(memerr.InvalidArgument,
 					"operations[%d] targets line %d of %s, which another operation already changes", index, entry.LineNumber, rel)
 			}
+			if entry.IsEvent() {
+				return nil, nil, nil, nil, memerr.New(memerr.EventProtected,
+					"operations[%d] (%s) targets a kind: event entry of %s; events are append-only, so record the change as a new append_entry instead",
+					index, op.Op, rel)
+			}
 			if op.Op == OpDeleteEntry {
-				edit.remove[entry.LineNumber] = true
+				// The whole block goes, so no detail line is left behind.
+				for number := entry.LineNumber; number <= entry.LastLine(); number++ {
+					edit.remove[number] = true
+				}
 				if len(sessionIDs) > 0 {
 					cited = append(cited, acceptedCandidate{path: rel, sessionIDs: sessionIDs})
 				}
@@ -232,7 +256,13 @@ func (s *Service) assembleOperations(ops []DreamOperation, snapshot prepareSnaps
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
-			line := assembleEntryLine(fact, tags, latest, until)
+			if entryKind == "" {
+				entryKind = entry.Kind
+			}
+			if entryStatus == "" {
+				entryStatus = entry.Status
+			}
+			line := assembleEntryLine(fact, tags, latest, until, entryKind, entryStatus)
 			edit.replace[entry.LineNumber] = line
 			candidate := acceptedCandidate{line: line, path: rel, sessionIDs: sessionIDs}
 			accepted = append(accepted, candidate)
@@ -360,11 +390,17 @@ func operationUntil(index int, raw, latest string) (string, error) {
 }
 
 // assembleEntryLine builds the authoritative entry line, in the same layout as
-// a newMemories candidate.
-func assembleEntryLine(fact string, tags []string, added, until string) string {
+// a newMemories candidate, with the optional kind and status after until.
+func assembleEntryLine(fact string, tags []string, added, until, kind, status string) string {
 	line := "- " + fact + " [source: " + strings.Join(tags, "; source: ") + "; added: " + added
 	if until != "" {
 		line += "; until: " + until
+	}
+	if kind != "" {
+		line += "; " + vault.KindKey + ": " + kind
+	}
+	if status != "" {
+		line += "; " + vault.StatusKey + ": " + status
 	}
 	return line + "]"
 }

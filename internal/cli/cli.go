@@ -253,8 +253,8 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 	return ExitOK
 }
 
-// runWrite implements `write <path> --base REV --stdin [--agent NAME] [--sid ID]`.
-// stdin is the file's new text, not Hook JSON.
+// runWrite implements `write <path> --base REV --stdin [--agent NAME] [--sid ID]
+// [--force-delete-event]`. stdin is the file's new text, not Hook JSON.
 func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	relPath := ""
 	base := ""
@@ -262,12 +262,15 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	useStdin := false
 	agent := ""
 	sid := ""
+	forceDeleteEvent := false
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "--stdin":
 			useStdin = true
+		case arg == "--force-delete-event":
+			forceDeleteEvent = true
 		case arg == "--base" || arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "write", arg+" requires a value")
@@ -327,10 +330,11 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Action:           app.ActionPut,
 			RawContent:       string(content),
 		}},
-		Agent:         hookio.ResolveAgent(agent, os.Getenv),
-		SessionID:     resolvedSID,
-		SessionOrigin: sidOrigin,
-		Device:        hookio.ResolveDevice(os.Getenv),
+		Agent:            hookio.ResolveAgent(agent, os.Getenv),
+		SessionID:        resolvedSID,
+		SessionOrigin:    sidOrigin,
+		Device:           hookio.ResolveDevice(os.Getenv),
+		ForceDeleteEvent: forceDeleteEvent,
 	})
 	if err != nil {
 		return fail(stderr, "write", err)
@@ -341,6 +345,7 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // runAdd implements `add <path> --fact TEXT [--heading TEXT] [--until YYYY-MM-DD]
+// [--kind state|event|procedural] [--status verified|hypothesis]
 // [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]`.
 func runAdd(args []string, stdout, stderr io.Writer) int {
 	var relPath string
@@ -348,6 +353,8 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	factSet := false
 	var heading string
 	var until string
+	var kind string
+	var status string
 	var indexSummary string
 	var agent string
 	var sid string
@@ -358,7 +365,7 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 		switch {
 		case arg == "--json":
 			jsonMode = true
-		case arg == "--fact" || arg == "--heading" || arg == "--until" || arg == "--index-summary" || arg == "--agent" || arg == "--sid":
+		case arg == "--fact" || arg == "--heading" || arg == "--until" || arg == "--kind" || arg == "--status" || arg == "--index-summary" || arg == "--agent" || arg == "--sid":
 			if index+1 >= len(args) {
 				return usageError(stderr, "add", arg+" requires a value")
 			}
@@ -370,6 +377,10 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 				heading = args[index]
 			case "--until":
 				until = args[index]
+			case "--kind":
+				kind = args[index]
+			case "--status":
+				status = args[index]
 			case "--index-summary":
 				indexSummary = args[index]
 			case "--agent":
@@ -383,6 +394,10 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 			heading = strings.TrimPrefix(arg, "--heading=")
 		case strings.HasPrefix(arg, "--until="):
 			until = strings.TrimPrefix(arg, "--until=")
+		case strings.HasPrefix(arg, "--kind="):
+			kind = strings.TrimPrefix(arg, "--kind=")
+		case strings.HasPrefix(arg, "--status="):
+			status = strings.TrimPrefix(arg, "--status=")
 		case strings.HasPrefix(arg, "--index-summary="):
 			indexSummary = strings.TrimPrefix(arg, "--index-summary=")
 		case strings.HasPrefix(arg, "--agent="):
@@ -419,6 +434,8 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 		Heading:       heading,
 		FactText:      fact,
 		Until:         until,
+		Kind:          kind,
+		Status:        status,
 		IndexSummary:  indexSummary,
 		Agent:         hookio.ResolveAgent(agent, os.Getenv),
 		SessionID:     resolvedSID,

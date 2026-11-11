@@ -263,6 +263,16 @@ func (s *Server) Tools() []Tool {
 									"type":        "string",
 									"description": "Optional YYYY-MM-DD expiry, not earlier than the cited sessions.",
 								},
+								"kind": map[string]any{
+									"type":        "string",
+									"enum":        []string{"state", "event", "procedural"},
+									"description": "append_entry and replace_entry: optional lifecycle kind written as `kind: <kind>`. replace_entry keeps the target's kind when omitted. An existing kind: event entry cannot be replaced or deleted (EVENT_PROTECTED).",
+								},
+								"status": map[string]any{
+									"type":        "string",
+									"enum":        []string{"verified", "hypothesis"},
+									"description": "append_entry and replace_entry: optional verification status written as `status: <status>`; use hypothesis for an unconfirmed conclusion and replace it with verified once a session proves it. replace_entry keeps the target's status when omitted.",
+								},
 								"indexSummary": map[string]any{
 									"type":        "string",
 									"description": "append_entry only: summary written after the MEMORY.md index link when memctl adds one.",
@@ -301,7 +311,7 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_write",
-			Description: "Write one full file to the shared memory repository through the managed transaction. Prefer memory_append for daily single-entry additions so you do not need to read or supply a fileRevision baseline; use memory_write only when rewriting, reordering or deleting existing lines. The base revision must come from memory_read; use absent to create a new file. A stale base is rejected instead of overwriting another update.",
+			Description: "Write one full file to the shared memory repository through the managed transaction. Prefer memory_append for daily single-entry additions so you do not need to read or supply a fileRevision baseline; use memory_write only when rewriting, reordering or deleting existing lines. The base revision must come from memory_read; use absent to create a new file. A stale base is rejected instead of overwriting another update. Indented lines directly under a bullet belong to that entry, so keep them with it. Deleting an entry marked kind: event or changing its fact text or added date is refused with EVENT_PROTECTED; moving it unchanged to another file is allowed.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -347,6 +357,16 @@ func (s *Server) Tools() []Tool {
 					"until": map[string]any{
 						"type":        "string",
 						"description": "Optional expiration date (YYYY-MM-DD) for a time-limited entry.",
+					},
+					"kind": map[string]any{
+						"type":        "string",
+						"enum":        []string{"state", "event", "procedural"},
+						"description": "Optional lifecycle kind written as `kind: <kind>`: state for a current fact that is rewritten when it changes, event for an append-only decision, release or incident (later deletes and rewrites are refused with EVENT_PROTECTED), procedural for a verified recipe.",
+					},
+					"status": map[string]any{
+						"type":        "string",
+						"enum":        []string{"verified", "hypothesis"},
+						"description": "Optional verification status written as `status: <status>`; use hypothesis for a conclusion that is not proven yet so doctor and dream prepare remind later sessions to verify or remove it.",
 					},
 					"indexSummary": map[string]any{
 						"type":        "string",
@@ -397,6 +417,8 @@ type appendArgs struct {
 	Fact         string `json:"fact"`
 	Heading      string `json:"heading"`
 	Until        string `json:"until"`
+	Kind         string `json:"kind"`
+	Status       string `json:"status"`
 	IndexSummary string `json:"indexSummary"`
 	SID          string `json:"sid"`
 }
@@ -622,6 +644,8 @@ func (s *Server) memoryAppend(ctx context.Context, params json.RawMessage) (Call
 			Heading:       args.Heading,
 			FactText:      args.Fact,
 			Until:         args.Until,
+			Kind:          args.Kind,
+			Status:        args.Status,
 			IndexSummary:  args.IndexSummary,
 			Agent:         s.session.Agent,
 			SessionID:     sessionID,

@@ -32,6 +32,11 @@ const (
 	// its documented hidden period ends. The message names the first allowed
 	// date. See docs/10-memory-lifecycle.md section 3.3.
 	DeletionDeferred Code = "DELETION_DEFERRED"
+	// EventProtected refuses to delete an entry marked `kind: event`, or to
+	// rewrite its fact text or `added` date, without an explicit force flag.
+	// Moving it unchanged to another managed file is allowed. See
+	// docs/18-agent-memory-review-and-optimization.md section 4.4.2.
+	EventProtected Code = "EVENT_PROTECTED"
 
 	// Internal Git failure classes from
 	// docs/02-domain-models-and-contracts.md section 4.3. They select the

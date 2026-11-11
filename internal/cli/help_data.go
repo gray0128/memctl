@@ -506,12 +506,12 @@ var helpCommandData = []helpCommand{
 	{
 		Name: "add",
 		Usage: []string{
-			"memctl add <path> --fact TEXT [--heading TEXT] [--until YYYY-MM-DD] [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]",
+			"memctl add <path> --fact TEXT [--heading TEXT] [--until YYYY-MM-DD] [--kind state|event|procedural] [--status verified|hypothesis] [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]",
 		},
 		Summary: loc("Append one memory entry inside the repository lock.", "在仓库排他锁内追加单条记忆。"),
 		Description: loc(
-			"Appends one single-line memory entry to a Markdown file under the repository exclusive lock without requiring a prior `read --json` or `--base` revision, eliminating `REVISION_MISMATCH` false conflicts across concurrent sessions. memctl assembles the trailing `[source: ...; added: ...]` metadata on the server from `--agent`, `--sid`, the device label and today's date (plus `until` when supplied). When `--heading` is given on an existing file, the entry is inserted at the end of the matching section (or a new section is created at the end of the file). When `<path>` is not `MEMORY.md`, memctl idempotently adds `- [[<linkTarget>]]` (with ` — <indexSummary>` when `--index-summary` is set) under `## Index` in `MEMORY.md` within the same transaction.",
-			"在仓库排他锁内向 Markdown 文件追加单条单行记忆，无需预先执行 `read --json` 或传入 `--base` 修订号，从根源消除多会话并发写入时的 `REVISION_MISMATCH` 假冲突。memctl 在服务端根据 `--agent`、`--sid`、设备名与当日日期自动拼装末尾的 `[source: ...; added: ...]` 元数据（提供 `--until` 时一并写入）。对已存在文件传入 `--heading` 时，精确插入到匹配小节末尾（不存在该小节则在文件末尾新建小节）。当 `<path>` 不是 `MEMORY.md` 时，在同一事务中自动幂等维护 `MEMORY.md` 的 `## Index` 链接（提供 `--index-summary` 时追加 ` — <摘要>`），避免产生孤立文件。",
+			"Appends one single-line memory entry to a Markdown file under the repository exclusive lock without requiring a prior `read --json` or `--base` revision, eliminating `REVISION_MISMATCH` false conflicts across concurrent sessions. memctl assembles the trailing `[source: ...; added: ...]` metadata on the server from `--agent`, `--sid`, the device label and today's date (plus `until`, `kind` and `status` when supplied). When `--heading` is given on an existing file, the entry is inserted at the end of the matching section (or a new section is created at the end of the file). When `<path>` is not `MEMORY.md`, memctl idempotently adds `- [[<linkTarget>]]` (with ` — <indexSummary>` when `--index-summary` is set) under `## Index` in `MEMORY.md` within the same transaction.",
+			"在仓库排他锁内向 Markdown 文件追加单条单行记忆，无需预先执行 `read --json` 或传入 `--base` 修订号，从根源消除多会话并发写入时的 `REVISION_MISMATCH` 假冲突。memctl 在服务端根据 `--agent`、`--sid`、设备名与当日日期自动拼装末尾的 `[source: ...; added: ...]` 元数据（提供 `--until`、`--kind`、`--status` 时一并写入）。对已存在文件传入 `--heading` 时，精确插入到匹配小节末尾（不存在该小节则在文件末尾新建小节）。当 `<path>` 不是 `MEMORY.md` 时，在同一事务中自动幂等维护 `MEMORY.md` 的 `## Index` 链接（提供 `--index-summary` 时追加 ` — <摘要>`），避免产生孤立文件。",
 		),
 		Arguments: []helpItem{
 			{Name: "<path>", Required: true, Description: loc(
@@ -531,6 +531,14 @@ var helpCommandData = []helpCommand{
 			{Name: "--until", Value: "YYYY-MM-DD", Description: loc(
 				"Optional expiration date for a time-limited entry.",
 				"可选的到期日期（YYYY-MM-DD），用于时效性记忆条目。",
+			)},
+			{Name: "--kind", Value: "state|event|procedural", Description: loc(
+				"Optional lifecycle kind written as `kind: <kind>`: `state` for a current fact rewritten when it changes, `event` for an append-only decision, release or incident (deleting it or changing its fact text or added date later returns EVENT_PROTECTED), `procedural` for a verified recipe. Other values are INVALID_ARGUMENT.",
+				"可选的生命周期类别，写为 `kind: <kind>`：`state` 表示随变化改写的当前状态，`event` 表示只追加不改写的决策、发布或事故记录（之后删除它或修改其事实正文、`added` 日期返回 `EVENT_PROTECTED`），`procedural` 表示经过验证的操作配方。其他取值返回 `INVALID_ARGUMENT`。",
+			)},
+			{Name: "--status", Value: "verified|hypothesis", Description: loc(
+				"Optional verification status written as `status: <status>`. Use `hypothesis` for a conclusion that is not proven yet; `doctor` reports it as UNCONFIRMED_HYPOTHESIS and `dream --prepare` asks a later session to verify or remove it. Other values are INVALID_ARGUMENT.",
+				"可选的验证状态，写为 `status: <status>`。尚未证实的结论使用 `hypothesis`；`doctor` 将其报告为 `UNCONFIRMED_HYPOTHESIS`，`dream --prepare` 提示后续会话核验或清理。其他取值返回 `INVALID_ARGUMENT`。",
 			)},
 			{Name: "--index-summary", Value: "TEXT", Description: loc(
 				"Optional one-line summary appended as ' — <summary>' when adding a new [[link]] to MEMORY.md ## Index.",
@@ -571,16 +579,17 @@ var helpCommandData = []helpCommand{
 		Notes: []localizedText{
 			loc("Prefer `memctl add` for daily single-entry additions; use `memctl write` when rewriting, reordering or deleting existing lines.", "日常新增单条记忆优先使用 `memctl add`；仅在需要重写、重排或删除既有内容时使用 `memctl write`。"),
 			loc("Do not include `[source: ...]` or `[added: ...]` in `--fact`: memctl constructs them deterministically.", "不要在 `--fact` 中手写 `[source: ...]` 或 `[added: ...]`，它们由 memctl 确定性拼装。"),
+			loc("A useful engineering or troubleshooting entry states the rule or conclusion, the evidence that proves it (command, probe output or code line) and the common pitfall. Multi-step recipes go into lines indented by two spaces under the bullet, written with `memctl write`; they belong to the entry and are searched by `entries`.", "工程规则与排障记忆建议写成「结论或规则 + 证明它成立的实测依据（命令、探针输出或代码行）+ 常见陷阱」。多步配方用 `memctl write` 写在条目下方缩进两个空格的子行中；子行归属该条目，并可被 `entries` 检索。"),
 		},
 		Related: []string{"entries", "read", "write", "mcp"},
 	},
 	{
 		Name:    "write",
-		Usage:   []string{"memctl write <path> --base REV --stdin [--agent NAME] [--sid ID]"},
+		Usage:   []string{"memctl write <path> --base REV --stdin [--agent NAME] [--sid ID] [--force-delete-event]"},
 		Summary: loc("Write a memory file with a baseline check.", "按修订基线受管写入记忆文件。"),
 		Description: loc(
-			"Managed whole-file write. Prefer `memctl add` for daily single-entry additions so you do not need a prior read or `--base` revision; use `memctl write` when rewriting, reordering or deleting existing lines. Reads the complete new file text from stdin, verifies that the current file still matches the --base revision, applies the write atomically, creates one local Git commit, and starts a best-effort background sync unless disabled. A stale baseline returns REVISION_MISMATCH and changes nothing. stdin is raw file text, not Hook JSON.",
-			"整文件受管写入。日常新增单条记忆优先使用无需基线的 `memctl add`；仅在重写、重排或删除既有内容时使用 `memctl write`。从 stdin 读取完整的新文件文本，校验当前文件是否仍与 `--base` 修订一致，然后原子写入并生成一个本地 Git 提交，最后尽力尝试后台同步（可关闭）。旧基线返回 REVISION_MISMATCH，且不修改任何内容。stdin 是原始文件文本，不是 Hook JSON。",
+			"Managed whole-file write. Prefer `memctl add` for daily single-entry additions so you do not need a prior read or `--base` revision; use `memctl write` when rewriting, reordering or deleting existing lines. Reads the complete new file text from stdin, verifies that the current file still matches the --base revision, applies the write atomically, creates one local Git commit, and starts a best-effort background sync unless disabled. A stale baseline returns REVISION_MISMATCH and changes nothing. A write that deletes an entry marked `kind: event`, or changes its fact text or `added` date, returns EVENT_PROTECTED unless `--force-delete-event` is set; moving the entry unchanged to another file is not a deletion. Indented lines directly under a bullet are that entry's detail lines. stdin is raw file text, not Hook JSON.",
+			"整文件受管写入。日常新增单条记忆优先使用无需基线的 `memctl add`；仅在重写、重排或删除既有内容时使用 `memctl write`。从 stdin 读取完整的新文件文本，校验当前文件是否仍与 `--base` 修订一致，然后原子写入并生成一个本地 Git 提交，最后尽力尝试后台同步（可关闭）。旧基线返回 REVISION_MISMATCH，且不修改任何内容。删除标记 `kind: event` 的条目，或修改其事实正文、`added` 日期时返回 `EVENT_PROTECTED`，除非显式传入 `--force-delete-event`；将条目原样迁移到其他文件不算删除。紧随条目下方的缩进行属于该条目的详情子行。stdin 是原始文件文本，不是 Hook JSON。",
 		),
 		Arguments: []helpItem{
 			{Name: "<path>", Required: true, Description: loc(
@@ -605,6 +614,10 @@ var helpCommandData = []helpCommand{
 				"Session id for provenance. Falls back to AGENT_MEMORY_SID.",
 				"用于溯源的会话 ID。回退到 `AGENT_MEMORY_SID`。",
 			)},
+			{Name: "--force-delete-event", Description: loc(
+				"Explicitly allow this write to delete or rewrite entries marked `kind: event`. Without it such a write returns EVENT_PROTECTED and changes nothing.",
+				"显式允许本次写入删除或改写标记 `kind: event` 的条目。不传时此类写入返回 `EVENT_PROTECTED`，且不修改任何内容。",
+			)},
 		},
 		Input: []localizedText{
 			loc("Raw file text on stdin, at most 2 MiB. Bytes and trailing newline are preserved.", "stdin 上的原始文件文本，最多 2 MiB；保留字节内容和结尾换行。"),
@@ -614,7 +627,7 @@ var helpCommandData = []helpCommand{
 		},
 		ExitCodes: []helpExit{
 			{Code: 0, Meaning: loc("Committed locally; background sync was started or skipped by configuration.", "已在本地提交；后台同步已启动或因配置跳过。")},
-			{Code: 1, Meaning: loc("REVISION_MISMATCH, NO_REPO, INVALID_PATH, LIMIT_EXCEEDED, IO_FAILED or GIT_FAILED.", "REVISION_MISMATCH、NO_REPO、INVALID_PATH、LIMIT_EXCEEDED、IO_FAILED 或 GIT_FAILED。")},
+			{Code: 1, Meaning: loc("REVISION_MISMATCH, EVENT_PROTECTED, DELETION_DEFERRED, NO_REPO, INVALID_PATH, LIMIT_EXCEEDED, IO_FAILED or GIT_FAILED.", "REVISION_MISMATCH、EVENT_PROTECTED、DELETION_DEFERRED、NO_REPO、INVALID_PATH、LIMIT_EXCEEDED、IO_FAILED 或 GIT_FAILED。")},
 			{Code: 2, Meaning: loc("Missing <path>, --base or --stdin, or an unknown flag.", "缺少 `<path>`、`--base` 或 `--stdin`，或存在未知选项。")},
 		},
 		Examples: []helpExample{
@@ -989,6 +1002,7 @@ var helpCommandData = []helpCommand{
 		},
 		Notes: []localizedText{
 			loc("--fix binds the revision from the diagnosis it just ran. If the repository changed in between, the fix is rejected; rerun doctor.", "`--fix` 绑定刚刚执行的诊断修订。若期间仓库发生变化，修复会被拒绝；重新运行 doctor。"),
+			loc("Warning-level review hints: UNCONFIRMED_HYPOTHESIS (unexpired `status: hypothesis` entries), TOPIC_BLOAT (a topic file over 150 lines or 16 KiB) and NEAR_DUPLICATE (entries with token Jaccard >= 0.75, at most 50 pairs listed); none changes the exit code.", "警告级复核提示：UNCONFIRMED_HYPOTHESIS（未过期的 `status: hypothesis` 条目）、TOPIC_BLOAT（单个主题文件超过 150 行或 16 KiB）、NEAR_DUPLICATE（条目词集 Jaccard >= 0.75，最多列 50 对），均不改变退出码。"),
 		},
 		Related: []string{"recover", "ui"},
 	},
@@ -1030,14 +1044,14 @@ var helpCommandData = []helpCommand{
 			{Name: "--json", Description: loc("Print JSON. Every mode already prints JSON; the flag documents the intent.", "输出 JSON。各模式本来就输出 JSON，该选项只用于表明意图。")},
 		},
 		Input: []localizedText{
-			loc("`--propose` reads `DreamProposeInput` as JSON from stdin, bounded to 8 MiB: `baseHead`, `baseRevision`, and either `operations` (at most 30 structured changes: `append_entry` with `path`, `fact`, `sessionIndices` and optional `heading`, `until`, `indexSummary`; `replace_entry` with `path`, `fact`, `sessionIndices`, optional `until` and `targetEntryId` or `targetRawLine`; `delete_entry` with `path`, `targetEntryId` or `targetRawLine` and optional `reason`) or `newMemories` (at most 30 candidates with `kind`, `targetPath`, `fact`, `sessionIndices`, optional `until` and `rationale`) plus `files` (the whole target content of every create or update). `operations` combined with `files` or `newMemories` is INVALID_ARGUMENT. Unknown fields are rejected.", "`--propose` 从 stdin 读取 JSON 形式的 `DreamProposeInput`，上限 8 MiB：`baseHead`、`baseRevision`，以及 `operations`（最多 30 条结构化变更：`append_entry` 含 `path`、`fact`、`sessionIndices` 与可选的 `heading`、`until`、`indexSummary`；`replace_entry` 含 `path`、`fact`、`sessionIndices`、可选的 `until` 与 `targetEntryId` 或 `targetRawLine`；`delete_entry` 含 `path`、`targetEntryId` 或 `targetRawLine` 与可选的 `reason`），或者 `newMemories`（最多 30 条候选，含 `kind`、`targetPath`、`fact`、`sessionIndices`、可选的 `until` 与 `rationale`）加 `files`（每个新增或更新目标的完整内容）。`operations` 与 `files` 或 `newMemories` 同时提交时返回 `INVALID_ARGUMENT`。未知字段会被拒绝。"),
+			loc("`--propose` reads `DreamProposeInput` as JSON from stdin, bounded to 8 MiB: `baseHead`, `baseRevision`, and either `operations` (at most 30 structured changes: `append_entry` with `path`, `fact`, `sessionIndices` and optional `heading`, `until`, `kind`, `status`, `indexSummary`; `replace_entry` with `path`, `fact`, `sessionIndices`, optional `until`, `kind`, `status` and `targetEntryId` or `targetRawLine`; `delete_entry` with `path`, `targetEntryId` or `targetRawLine` and optional `reason`) or `newMemories` (at most 30 candidates with `kind`, `targetPath`, `fact`, `sessionIndices`, optional `until` and `rationale`) plus `files` (the whole target content of every create or update). `operations` combined with `files` or `newMemories` is INVALID_ARGUMENT. Unknown fields are rejected.", "`--propose` 从 stdin 读取 JSON 形式的 `DreamProposeInput`，上限 8 MiB：`baseHead`、`baseRevision`，以及 `operations`（最多 30 条结构化变更：`append_entry` 含 `path`、`fact`、`sessionIndices` 与可选的 `heading`、`until`、`kind`、`status`、`indexSummary`；`replace_entry` 含 `path`、`fact`、`sessionIndices`、可选的 `until`、`kind`、`status` 与 `targetEntryId` 或 `targetRawLine`；`delete_entry` 含 `path`、`targetEntryId` 或 `targetRawLine` 与可选的 `reason`），或者 `newMemories`（最多 30 条候选，含 `kind`、`targetPath`、`fact`、`sessionIndices`、可选的 `until` 与 `rationale`）加 `files`（每个新增或更新目标的完整内容）。`operations` 与 `files` 或 `newMemories` 同时提交时返回 `INVALID_ARGUMENT`。未知字段会被拒绝。"),
 		},
 		Output: []localizedText{
 			loc("JSON proposal for generation, propose or show; the prepare bundle for --prepare; `{proposals}` for --list; the init result for --init-workflow; the worker result for --worker; or the apply result for --apply. A failed generation may still print the persisted proposal.", "生成、提交提案与查看输出 JSON 提案，`--prepare` 输出准备包，`--list` 输出 `{proposals}`，`--init-workflow` 输出初始化结果，`--worker` 输出 worker 结果，应用输出应用结果。生成失败时仍可能输出已保存的提案。"),
 		},
 		ExitCodes: []helpExit{
 			{Code: 0, Meaning: loc("Proposal generated, prepared, listed, shown or applied; workflow installed; worker result published.", "提案已生成、准备、列举、查看或应用；工作流已安装；worker 结果已发布。")},
-			{Code: 1, Meaning: loc("UNSUPPORTED, NO_REPO, REMOTE_NOT_APPROVED, dirty repository, PROPOSAL_STALE, INVALID_ARGUMENT, DELETION_DEFERRED, provider failure or invalid apply.", "UNSUPPORTED、NO_REPO、REMOTE_NOT_APPROVED、仓库脏、PROPOSAL_STALE、INVALID_ARGUMENT、DELETION_DEFERRED、提供商失败或应用无效。")},
+			{Code: 1, Meaning: loc("UNSUPPORTED, NO_REPO, REMOTE_NOT_APPROVED, dirty repository, PROPOSAL_STALE, INVALID_ARGUMENT, DELETION_DEFERRED, EVENT_PROTECTED, provider failure or invalid apply.", "UNSUPPORTED、NO_REPO、REMOTE_NOT_APPROVED、仓库脏、PROPOSAL_STALE、INVALID_ARGUMENT、DELETION_DEFERRED、EVENT_PROTECTED、提供商失败或应用无效。")},
 			{Code: 2, Meaning: loc("No mode, multiple modes, a mode-specific flag used outside its mode, missing --patch-hash, non-positive --limit or --max-bytes, unknown provider or unknown argument.", "没有提供模式、同时提供多个模式、模式专用选项用在了其他模式、缺少 `--patch-hash`、`--limit` 或 `--max-bytes` 非正数、未知提供商或存在未知选项。")},
 		},
 		Examples: []helpExample{
@@ -1054,7 +1068,7 @@ var helpCommandData = []helpCommand{
 			loc("`newMemories[].fact` must not contain a `[source:` or `[added:` annotation: the source line is always assembled by memctl from `sessionIndices` and compared byte for byte with `files[]`.", "`newMemories[].fact` 不得包含 `[source:` 或 `[added:` 尾注：`source` 行总是由 memctl 按 `sessionIndices` 拼装，并与 `files[]` 逐字比对。"),
 			loc("A target file whose parent directory is not in the repository baseline is refused with NOT_FOUND while it is still a proposal: memctl never creates directory structure while holding the lock.", "目标文件的父目录不在仓库基线中时直接返回 `NOT_FOUND`，不推迟到 `apply`：memctl 不在持锁期间创建目录结构。"),
 			loc("A newly created topic file must be linked from MEMORY.md in the same files[]. A new dangling link or an unreachable file is refused with UNSUPPORTED; a MEMORY.md above 100 lines only adds a warning.", "新建主题文件必须在同一份 `files[]` 中补上 `MEMORY.md` 索引链接；新出现的断链或不可达文件返回 `UNSUPPORTED`，`MEMORY.md` 超过 100 行只追加警告。"),
-			loc("With `operations[]`, memctl assembles every `[source: ...; added: ...]` suffix from `sessionIndices`, appends a missing `- [[target]]` index line for a new topic file under MEMORY.md `## Index` itself, and resolves `replace_entry` / `delete_entry` against exactly one baseline entry (NOT_FOUND when none, INVALID_ARGUMENT when the raw line is ambiguous). Replacing or deleting an expired entry inside its 30-day hidden period is DELETION_DEFERRED.", "使用 `operations[]` 时，memctl 按 `sessionIndices` 拼装全部 `[source: ...; added: ...]` 尾注，为新主题文件在 `MEMORY.md` 的 `## Index` 末尾自动补齐缺失的 `- [[target]]` 索引行，并要求 `replace_entry` / `delete_entry` 在基线中恰好匹配一个条目（找不到返回 `NOT_FOUND`，原文行有歧义返回 `INVALID_ARGUMENT`）。替换或删除仍处于 30 天隐藏期的到期条目返回 `DELETION_DEFERRED`。"),
+			loc("With `operations[]`, memctl assembles every `[source: ...; added: ...]` suffix from `sessionIndices`, appends a missing `- [[target]]` index line for a new topic file under MEMORY.md `## Index` itself, and resolves `replace_entry` / `delete_entry` against exactly one baseline entry (NOT_FOUND when none, INVALID_ARGUMENT when the raw line is ambiguous). Replacing or deleting an expired entry inside its 30-day hidden period is DELETION_DEFERRED. `kind` and `status` are optional (`state`, `event`, `procedural`; `verified`, `hypothesis`), and `replace_entry` keeps the target's values when they are omitted. A proposal that deletes or rewrites a `kind: event` entry, through either channel, is EVENT_PROTECTED; moving it unchanged to another file in `files[]` is allowed. `delete_entry` removes the entry's indented detail lines with it, and `replace_entry` keeps them.", "使用 `operations[]` 时，memctl 按 `sessionIndices` 拼装全部 `[source: ...; added: ...]` 尾注，为新主题文件在 `MEMORY.md` 的 `## Index` 末尾自动补齐缺失的 `- [[target]]` 索引行，并要求 `replace_entry` / `delete_entry` 在基线中恰好匹配一个条目（找不到返回 `NOT_FOUND`，原文行有歧义返回 `INVALID_ARGUMENT`）。替换或删除仍处于 30 天隐藏期的到期条目返回 `DELETION_DEFERRED`。`kind` 与 `status` 可选（`state`、`event`、`procedural`；`verified`、`hypothesis`），`replace_entry` 省略时沿用目标条目的取值。任一通道删除或改写 `kind: event` 条目均返回 `EVENT_PROTECTED`；在 `files[]` 中将其原样迁移到其他文件不受限制。`delete_entry` 连同条目的缩进详情子行一并删除，`replace_entry` 保留详情子行。"),
 			loc("The remote GitHub Actions path is maintenance-frozen: existing workflows keep working, but new Dreaming capabilities (tool outcome evidence, related entry checks, structured operations) are local only.", "远端 GitHub Actions 路径处于维护冻结状态：已有工作流继续可用，但工具结果证据、关联旧条目核验与结构化操作等新能力只提供给本地路径。"),
 			loc("None of the local modes writes the main repository. Only `--apply`, from the CLI or the Web UI, commits a reviewed proposal.", "本地各模式都不写主仓库。只有 CLI 或 Web UI 触发的 `--apply` 才会提交已审阅提案。"),
 			loc("There is no combined generate-and-apply switch. Apply always names a persisted proposal and hash.", "没有「重新生成并自动应用」的组合开关；应用时必须指定已保存的提案 ID 和哈希。"),

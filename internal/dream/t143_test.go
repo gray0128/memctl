@@ -96,14 +96,8 @@ func TestPrepareRecallsRelatedExistingEntriesCoversT143(t *testing.T) {
 		t.Fatal("an expired entry was recalled")
 	}
 	// The id is the baseline entry id, so replace_entry can target it.
-	var revision string
-	for _, file := range bundle.Files {
-		if file.Path == "notes/db-service.md" {
-			revision = file.Revision
-		}
-	}
 	if wrong.FilePath != "notes/db-service.md" || wrong.LineNumber != 3 ||
-		wrong.ID != vault.EntryID("notes/db-service.md", revision, 3) || wrong.AddedDate != "2026-10-01" ||
+		wrong.ID != vault.EntryID("notes/db-service.md", wrong.FactText, wrong.AddedDate, 0) || wrong.AddedDate != "2026-10-01" ||
 		!strings.HasPrefix(wrong.RawLine, "- 连接池超时参数是 pool_timeout") {
 		t.Fatalf("recalled entry = %+v", wrong)
 	}

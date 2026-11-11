@@ -8,7 +8,7 @@ parent: memctl-contracts
 
 # 10. 记忆更新与过期：调研结论与生命周期规则
 
-> 状态：调研完成（2026-10-19）；§7 的三个未决问题已于 2026-10-19 由用户确认，`until` 解析、读取期隐藏与三个入口的统一过滤已实现（`T094`）。删除任务仍未实现。本文档只定义记忆的更新、过期与删除规则；文件格式、写入事务与接口仍以 [02](./02-domain-models-and-contracts.md) 与 [03](./03-workflows-and-dataflows.md) 为准。
+> 状态：调研与实现已完成（`T094`、`T138`、`T144`）。`until` 解析、读取期隐藏（含 `DetailLines` 隐藏与占位符写回还原）、30 天删除闸门（`DELETION_DEFERRED`）、可选 `kind: state|event|procedural`（含 `kind: event` 代码级防删改守卫 `EVENT_PROTECTED`）与 `status: verified|hypothesis`（含 `UNCONFIRMED_HYPOTHESIS` 提醒）均已落地。本文档只定义记忆的更新、过期与删除规则；文件格式、写入事务与接口仍以 [02](./02-domain-models-and-contracts.md) 与 [03](./03-workflows-and-dataflows.md) 为准。
 
 ## 1. 结论
 
@@ -53,11 +53,12 @@ parent: memctl-contracts
 
 | 类型 | 典型内容 | 写入方式 | 过期处理 |
 | --- | --- | --- | --- |
-| 状态型 | 用户偏好、环境配置、当前角色、项目现状、命名约定 | 就地改写同一条目，或删除 | 直接改写或删除，不保留旧值 |
-| 事件型 | 决策及其理由、发布、事故、迁移、为什么这样选 | 追加带日期的条目，只增不改 | 不按时间过期，长期保留 |
-| 有时效型 | 试用期、临时约束、截止日期、季节性偏好 | 写入时带 `until: YYYY-MM-DD` | 到期后从注入与检索中隐藏，隐藏 30 天后再删除 |
+| 状态型（`kind: state` 或省略） | 用户偏好、环境配置、当前角色、项目现状、命名约定 | 就地改写同一条目，或删除 | 直接改写或删除，不保留旧值 |
+| 操作步骤型（`kind: procedural`） | 多步排障配方、构建/验证步骤、带缩进子块（`DetailLines`）的操作指令 | 就地改写或追加带 2 空格缩进子块的条目 | 随流程演进就地改写或删除 |
+| 事件型（`kind: event`） | 决策及其理由、发布、事故、迁移、为什么这样选 | 追加带日期的条目，显式标记 `kind: event`，只增不改 | 不按时间过期，长期保留；代码级由 `EVENT_PROTECTED` 守卫拦截静默删改 |
+| 有时效型 | 试用期、临时约束、截止日期、季节性偏好 | 写入时带 `until: YYYY-MM-DD` | 到期后从注入与检索中隐藏（连带隐藏其 `DetailLines`），隐藏 30 天后再删除 |
 
-分类依据是「事实失效后是否仍需要知道它曾存在」：需要则归为事件型，不需要则归为状态型。
+分类依据是「事实失效后是否仍需要知道它曾存在」：需要则归为事件型（推荐显式追加 `kind: event`），不需要则归为状态型或操作步骤型。此外，对当前会话首次观察到、尚未跨会话复现或二次确认的规律，写入时可附加可选 `status: hypothesis`（未声明时默认 `verified`）；未到期的 `status: hypothesis` 条目在 `doctor` 中产生 `UNCONFIRMED_HYPOTHESIS`（`warning`）提醒，并在 `dream --prepare` 时优先置顶召回至 `relatedExistingEntries` 供后续会话验证后升级为 `status: verified` 或证伪删除。
 
 ### 3.2 更新规则
 
@@ -81,26 +82,28 @@ parent: memctl-contracts
 
 - **到期判定**：`until` 是 `YYYY-MM-DD` 本地日期，该日整天仍然可见；从次日本地零点起判为到期。`until` 缺失或不是合法日期时按永不过期处理，不产生诊断错误。
 - **过滤位置**：在读取层统一过滤，三个入口看到同一结果。注入（`start`/`context` 与当前项目仪表盘预加载 `CURRENT PROJECT MEMORY`）、`read`/`memory_read`、`entries`/`memory_entries`/`GET /api/v1/entries` 与 Web UI 快照共用同一判定；当仓库排他锁被后台同步占用而无锁回退读取 `refs/heads/<branch>` 提交树快照时，同样经 `projectRead` 与 `vault.EntryExpired` 执行同一到期隐藏投影。
-- **`read` 的返回形态**：完整文件读取保留行数与元数据，只把已到期条目的正文替换为固定占位符 `[已过期：…]`，并保留其 `until`/`source`/`added` 原文；响应附带 `hiddenExpired` 计数。这样读者知道「这里有一条被隐藏的条目」，写入基线仍是磁盘原文，不会因隐藏而删除数据。
+- **`read` 的返回形态**：完整文件读取保留顶层条目行与元数据，把已到期条目的顶层正文替换为固定占位符 `[已过期：…]`、保留其 `until`/`source`/`added` 原文，并同时隐藏紧随其后的缩进子块 `DetailLines`；响应附带 `hiddenExpired` 计数。这样读者知道「这里有一条被隐藏的条目」，写入基线仍是磁盘原文，不会因隐藏而删除数据。
 - **结构化读取**：条目列表、快照与 MCP `memory_entries` 直接剔除已到期条目，不返回占位符；快照的 `hiddenExpired` 给出被剔除的总数，用于区分「没有条目」与「被过期隐藏」。
-- **写入不变**：隐藏只作用于读取结果。写事务、基线校验、Git 提交与 `doctor` 都按磁盘原文工作；当调用方基于 `read`/`memory_read` 的投影文本整文件写回时，`App.Apply`（`reconcileExpiredWrites`）将与磁盘到期条目投影逐字节匹配的占位符行按磁盘顺序自动还原为原文行，无法匹配的占位符（捏造、重复、修改元数据或新建文件含占位符）返回 `INVALID_ARGUMENT`。
-- **删除入口**：隐藏期满 30 天后，删除仍须经 UI 单条删除、整文件受管写入或 Dreaming 提案（固定 Diff 确认），不在读取或注入路径上自动删除。各写入路径共用同一 `expiredRemovals` 闸门：单条删除由 `App.DeleteEntry` 校验，整文件写入（`write`/`memory_write`/`PUT /api/v1/files`）与提案应用（`ApplyDream`）在保存前逐文件比对原文，凡删去或改写隐藏期内的到期条目（含整文件删除）即返回 `DELETION_DEFERRED`（`ApplyDream` 触发时提案保持 `ready`）。
+- **写入不变**：隐藏只作用于读取结果。写事务、基线校验、Git 提交与 `doctor` 都按磁盘原文工作；当调用方基于 `read`/`memory_read` 的投影文本整文件写回时，`App.Apply`（`reconcileExpiredWrites`）将与磁盘到期条目投影逐字节匹配的占位符行按磁盘顺序自动还原为顶层原文行及其 `DetailLines` 子块，无法匹配的占位符（捏造、重复、修改元数据或新建文件含占位符）返回 `INVALID_ARGUMENT`。
+- **删除入口与 `kind: event` 守卫**：隐藏期满 30 天后，删除仍须经 UI 单条删除、整文件受管写入或 Dreaming 提案（固定 Diff 确认），不在读取或注入路径上自动删除。各写入路径共用同一 `expiredRemovals` 闸门：单条删除由 `App.DeleteEntry` 校验，整文件写入（`write`/`memory_write`/`PUT /api/v1/files`）与提案应用（`ApplyDream`）在保存前逐文件比对原文，凡删去或改写隐藏期内的到期条目（含整文件删除）即返回 `DELETION_DEFERRED`（`ApplyDream` 触发时提案保持 `ready`）。同时，显式带 `kind: event` 的历史事件条目受代码级 `EventRemovals` 守卫保护：在 `App.Apply`、`App.DeleteEntry`、`App.PatchEntry`、`dream.ProposeLocal`（`files[]` 与 `operations[]`）及 `App.ApplyDream` 中，任何删除 `kind: event` 条目或篡改其归一化事实正文、`added` 日期、`kind: event` 标记的操作均返回 `EVENT_PROTECTED`（HTTP `409`）；同一事务或提案内跨文件原样迁移（事实正文、`added` 日期与 `kind: event` 均不变）予以放行；确需人工删除时，仅允许通过 CLI `memctl write --force-delete-event` 或 `DELETE /api/v1/entries/{id}?filePath=...&forceDeleteEvent=true` 显式覆盖。
 
 ## 4. 当前实现边界
 
-本文档的部分规则尚未由实现覆盖，登记在此以便后续任务引用，不表示已具备该能力。
+下表汇总本文档各项规则的实现状态。
 
 | 能力 | 现状 | 影响 |
 | --- | --- | --- |
-| 写入时的类型判定 | 内嵌默认指引已注入状态型改写、事件型追加与禁止 changelog 三条规则；`skills/memctl` 的约定文件同步该规则 | 每次会话都会告知 Agent，但执行结果仍依赖模型判断 |
-| 批量整理入口 | 内嵌默认指引的「Organizing memory」一节要求整理、去重、重构与跨会话提炼先执行 `dream --prepare` → `--propose`，只生成待审阅提案，禁止批量 `memctl write` 与自行 `--apply` | 每次会话都会告知 Agent，服务端仍以提案基线与 `patchHash` 校验兜底 |
-| 条目级删除 | 已有 `DELETE /api/v1/entries/{id}` 与 UI 删除入口 | 可直接用于状态型条目的替换与清理 |
-| 删除动作进入 Dreaming 提案 | 提案 Diff 已包含 `delete` 变更类型 | 删除可在固定 Diff 中由用户确认 |
+| 写入时的类型与状态元数据 | 内嵌默认指引注入三要素写法、`--status hypothesis`、`--kind event`、状态型改写、事件型追加与禁止 changelog 规则；`add`、MCP `memory_append` 与 `dream --propose` `operations[]` 支持可选 `kind: state\|event\|procedural` 与 `status: verified\|hypothesis` | 已实现（`T095`、`T144`）；未显式标注时默认按 `kind: state`、`status: verified` 处理 |
+| `kind: event` 代码级防删改守卫 | `Apply`、`DeleteEntry`、`PatchEntry`、`ProposeLocal` 与 `ApplyDream` 统一拦截对 `kind: event` 条目的删除与事实/`added` 篡改并返回 `EVENT_PROTECTED`（放行同事务跨文件原样迁移；仅 CLI `write --force-delete-event` 与 `DeleteEntry` `forceDeleteEvent=true` 允许显式强制删除） | 已实现（`T144`）；防止 Agent 在整文件重写或 Dreaming 整理中误删历史决策 |
+| `status: hypothesis` 待复核提示 | `doctor` 与 `dream --prepare` 对未到期 `status: hypothesis` 条目输出 `UNCONFIRMED_HYPOTHESIS`（`warning`），`prepare` 将其置顶召回至 `relatedExistingEntries` 并注入复核任务 | 已实现（`T144`） |
+| 批量整理入口 | 内嵌默认指引的「Organizing memory」一节要求整理、去重、重构与跨会话提炼先执行 `dream --prepare` → `--propose`，只生成待审阅提案，禁止批量 `memctl write` 与自行 `--apply` | 已实现（`T096`、`T143`）；服务端以提案基线、`patchHash` 与守卫校验 |
+| 条目级块操作 | `DELETE /api/v1/entries/{id}`、跨文件 `PATCH /api/v1/entries/{id}` 与 `dream` `delete_entry` 连带 `DetailLines` 整块删除或迁移；原位 `PATCH` 与 `replace_entry` 保留 `DetailLines` | 已实现（`T144`） |
+| 删除动作进入 Dreaming 提案 | 提案 Diff 已包含 `delete` 变更类型与 `delete_entry` 操作 | 删除可在固定 Diff 中由用户确认 |
 | 条目级到期元数据 | 解析器读取合法 `until` 为 `UntilDate`，非法值按永不过期处理 | 已实现（`T094`） |
-| 读取期隐藏 | 注入、`read`/`memory_read`、条目查询与快照统一过滤，`read` 用占位符保留行 | 已实现（`T094`）；隐藏期后的删除未实现 |
-| 删除入口 | 删除一个已到期条目时，隐藏期未满返回 `DELETION_DEFERRED` 并给出可删除日期；满 30 天后按原删除流程执行 | 已实现（`T094`）；读取路径不会自动删除 |
+| 读取期隐藏与写回还原 | 注入、`read`/`memory_read`、条目查询与快照统一过滤，`read` 用占位符替换顶层行并隐藏 `DetailLines`，整文件写回自动还原顶层行与 `DetailLines` | 已实现（`T094`、`T138`、`T144`） |
+| 删除入口 | 删除一个已到期条目时，隐藏期未满返回 `DELETION_DEFERRED` 并给出可删除日期；满 30 天后按原删除流程执行 | 已实现（`T094`、`T138`）；读取路径不会自动删除 |
 | 批量清理发起者 | Dreaming worker 的静态候选区分隐藏期内外，删除进入固定 Diff 由用户确认；应用提案时同样校验 `DELETION_DEFERRED` | 已实现（`T094`）；本地不自动删除 |
-| 到期条目诊断 | `doctor` 以 `EXPIRED_ENTRY`（info）报告已隐藏的条目及其行号 | 已实现（`T094`）；不自动修复，不删除 |
+| 到期与膨胀诊断 | `doctor` 以 `EXPIRED_ENTRY`（`info`）报告已隐藏条目，以 `TOPIC_BLOAT`、`NEAR_DUPLICATE`、`UNCONFIRMED_HYPOTHESIS`（`warning`）报告单主题膨胀、跨条目近似重复与待复核假设 | 已实现（`T094`、`T144`）；不自动修复，不删除 |
 | 时间线查询 | `git log -S` 与审计 Diff 接口可回答条目变更历史 | 不需要在正文维护 changelog |
 
 ## 5. 禁止项
@@ -109,19 +112,20 @@ parent: memctl-contracts
 2. 禁止把已失效的状态型条目保留为「历史参考」；需要保留的情况必须归入事件型并写明日期。
 3. 禁止用自动去重替代事实判断：字符串相同不等于事实相同，字符串不同也不等于事实冲突。
 4. 禁止在没有用户确认的情况下批量删除条目；单条删除同样要出现在可复核的变更记录中。
-5. 禁止为过期机制引入新的必填元数据：`source`、`added` 与新增的 `until` 都保持可选，缺失时按永不过期处理。
+5. 禁止为生命周期机制引入新的必填元数据：`source`、`added`、`until`、`kind` 与 `status` 全部保持可选，缺失时分别按永不过期、`kind: state` 与 `status: verified` 处理。
 
 ## 6. 验收要点
 
-后续实现这些规则时，按下表补充验收场景，编号沿用 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的命名习惯。
+按下表覆盖生命周期规则的验收场景，编号沿用 [验收与交付](./05-validation-and-delivery.md#2-核心测试矩阵) 的命名习惯。
 
 | 场景 | 预期结果 |
 | --- | --- |
-| 默认指引注入三类规则 | 会话上下文的 `INSTRUCTIONS` 段含状态型改写、事件型追加与禁止 changelog 的规定；`R01` 断言该段标题与关键句 |
+| 默认指引注入三类规则与三要素写法 | 会话上下文的 `INSTRUCTIONS` 段含三要素写法、`--status hypothesis`、`--kind event`、状态型改写、事件型追加与禁止 changelog 的规定；`R01` 断言该段标题与关键句 |
 | 默认指引注入整理入口规则 | `INSTRUCTIONS` 段含「Organizing memory」标题，以及 `dream --prepare` → `--propose`、只生成待审阅提案与不自行应用的关键句；`R01` 断言 |
 | 状态型条目改写 | 文件中只有一条当前事实，旧值只出现在 Git 历史 |
-| 事件型条目追加 | 旧条目原样保留，新条目带日期，顺序稳定 |
-| 带 `until` 的条目到期 | 注入内容、`read` 与条目查询都不再包含该条目的正文；`read` 保留占位符与元数据并报告 `hiddenExpired`；文件内容与 Git 历史不变 |
+| 事件型条目追加与 `kind: event` 守卫 | 旧条目原样保留，新条目带日期；未经显式强制参数删改 `kind: event` 条目返回 `EVENT_PROTECTED`，跨文件原样迁移放行 |
+| `status: hypothesis` 待复核提醒 | 未到期 `status: hypothesis` 条目在 `doctor` 输出 `UNCONFIRMED_HYPOTHESIS`（`warning`），在 `dream --prepare` 置顶召回至 `relatedExistingEntries` 并注入复核任务 |
+| 带 `until` 的条目到期 | 注入内容、`read` 与条目查询都不再包含该条目的正文与 `DetailLines`；`read` 保留顶层占位符与元数据并报告 `hiddenExpired`，整文件写回自动还原顶层行与 `DetailLines`；文件内容与 Git 历史不变 |
 | `until` 当天 | 该日整天仍可见，次日本地零点起隐藏 |
 | 到期条目被显式删除 | 删除进入受管事务，链接与索引同一提交内更新 |
 | 隐藏期内删除到期条目 | 返回 `DELETION_DEFERRED`，消息给出可删除日期，文件不变 |

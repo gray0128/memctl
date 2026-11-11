@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -68,6 +69,20 @@ var prepareTasks = []string{
 	"Distil: extract durable, high-value new memories from the session digests and submit each as an append_entry operation that cites its sessionIndices; memctl assembles the [source: ...; added: ...] metadata.",
 	"Verify: compare the sessions' troubleshooting path, final conclusions and toolOutcomes against relatedExistingEntries; when an entry states a wrong fact or an outdated state, correct it with replace_entry (citing the sessionIndices that prove it) or remove it with delete_entry, targeting it by targetEntryId or targetRawLine.",
 	"Prefer operations[] over files[]: operations[] cannot be combined with files[] or newMemories[] in one proposal, and files[] remains for whole-file restructuring only.",
+}
+
+// hypothesisTask is appended to Rules.Tasks when the baseline holds unexpired
+// `status: hypothesis` entries (docs/18 section 4.4.2). %d is their count.
+const hypothesisTask = "Confirm hypotheses (UNCONFIRMED_HYPOTHESIS): %d unexpired entries carry status: hypothesis and are listed first in relatedExistingEntries; check each against the sessions' evidence, rewrite a confirmed one with replace_entry and status: verified citing the proving sessionIndices (an omitted status keeps hypothesis), remove a disproved one with delete_entry, and leave it unchanged when the sessions say nothing about it."
+
+// prepareRuleTasks returns the documented task list, plus the hypothesis
+// review task when the baseline has unconfirmed hypotheses.
+func prepareRuleTasks(base *baseline, now time.Time) []string {
+	tasks := append([]string(nil), prepareTasks...)
+	if count := len(hypothesisEntries(base, now)); count > 0 {
+		tasks = append(tasks, fmt.Sprintf(hypothesisTask, count))
+	}
+	return tasks
 }
 
 // BundleFinding is one static diagnosis candidate of the fixed baseline. It is
@@ -236,7 +251,7 @@ func (s *Service) PrepareLocal(ctx context.Context, req PrepareRequest) (DreamPr
 			EntryPointHintLines:        entryPointHintLines,
 			DeletionGraceDays:          deletionGraceDays,
 			ImplicitPreferenceSessions: implicitPreferenceMinSessions,
-			Tasks:                      append([]string(nil), prepareTasks...),
+			Tasks:                      prepareRuleTasks(base, s.timeNow()),
 		},
 		Findings:               bundleFindings(base, s.timeNow()),
 		Files:                  bundleFiles(base),
@@ -561,7 +576,8 @@ func bundleFindings(base *baseline, now time.Time) []BundleFinding {
 // static analysis produces.
 func findingSeverity(code string) string {
 	switch code {
-	case "ENTRY_BLOAT", "ORPHAN_FILE", "AMBIGUOUS_LINK", "DUPLICATE_ENTRY":
+	case "ENTRY_BLOAT", "ORPHAN_FILE", "AMBIGUOUS_LINK", "DUPLICATE_ENTRY",
+		doctor.CodeUnconfirmedHypothesis, doctor.CodeTopicBloat, doctor.CodeNearDuplicate:
 		return "warning"
 	case "INVALID_LINK", "MISSING_LINK":
 		return "error"

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gray0128/memctl/internal/doctor"
 	"github.com/gray0128/memctl/internal/git"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
@@ -491,7 +492,9 @@ func linkProblemKey(diagnostic vault.LinkDiagnostic) string {
 }
 
 // staticFindings computes the deterministic candidates: bloat, orphans,
-// dangling links, missing metadata, expired `until` values and duplicates.
+// dangling links, missing metadata, expired `until` values, duplicates, and
+// the review hints of docs/18 section 4.4 (unconfirmed hypotheses, topic bloat
+// and near duplicates).
 func staticFindings(files *fileSet, now time.Time) []staticFinding {
 	var findings []staticFinding
 	paths := files.sortedPaths()
@@ -586,6 +589,7 @@ func staticFindings(files *fileSet, now time.Time) []staticFinding {
 		})
 		_ = key
 	}
+	findings = append(findings, reviewFindings(parsed, paths, now)...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].Code != findings[j].Code {
 			return findings[i].Code < findings[j].Code
@@ -600,6 +604,61 @@ func staticFindings(files *fileSet, now time.Time) []staticFinding {
 
 // EntryBloatLines is the documented MEMORY.md line threshold.
 const EntryBloatLines = 100
+
+// reviewFindings adds the docs/18 section 4.4 review candidates with the
+// doctor's own predicates, so `doctor` and Dreaming report the same
+// UNCONFIRMED_HYPOTHESIS, TOPIC_BLOAT and NEAR_DUPLICATE set.
+func reviewFindings(parsed map[string]*vault.ParsedFile, paths []string, now time.Time) []staticFinding {
+	var findings []staticFinding
+	files := make([]vault.ParsedFile, 0, len(paths))
+	for _, path := range paths {
+		file := parsed[path]
+		files = append(files, *file)
+		if doctor.TopicBloat(path, len(file.Lines), len(file.Raw())) {
+			findings = append(findings, staticFinding{
+				Code: doctor.CodeTopicBloat,
+				Path: path,
+				Message: fmt.Sprintf("the topic file has %d lines and %d bytes, above the %d line or %d byte hint; condense or split it",
+					len(file.Lines), len(file.Raw()), doctor.MaxTopicLines, doctor.MaxTopicBytes),
+			})
+		}
+		kind := vault.ClassifyKind(path)
+		if kind != vault.KindEntryPoint && kind != vault.KindMarkdown {
+			continue
+		}
+		for _, entry := range file.Entries {
+			if doctor.UnconfirmedHypothesis(entry, now) {
+				findings = append(findings, staticFinding{
+					Code:    doctor.CodeUnconfirmedHypothesis,
+					Path:    path,
+					Line:    entry.LineNumber,
+					Message: "the entry is marked status: hypothesis; verify it against session evidence, then mark it verified or remove it",
+				})
+			}
+		}
+	}
+	pairs, total := doctor.NearDuplicates(files, now)
+	for _, pair := range pairs {
+		findings = append(findings, staticFinding{
+			Code: doctor.CodeNearDuplicate,
+			Path: pair.Left.FilePath,
+			Line: pair.Left.LineNumber,
+			Message: fmt.Sprintf("the entry is a near duplicate of %s:%d (token Jaccard %.2f); merge them, keeping the newer fact",
+				pair.Right.FilePath, pair.Right.LineNumber, pair.Similarity),
+			Subjects: []string{
+				fmt.Sprintf("%s:%d", pair.Left.FilePath, pair.Left.LineNumber),
+				fmt.Sprintf("%s:%d", pair.Right.FilePath, pair.Right.LineNumber),
+			},
+		})
+	}
+	if total > len(pairs) {
+		findings = append(findings, staticFinding{
+			Code:    doctor.CodeNearDuplicate,
+			Message: fmt.Sprintf("%d more near-duplicate pairs are not listed (limit %d)", total-len(pairs), doctor.MaxNearDuplicatePairs),
+		})
+	}
+	return findings
+}
 
 // planBatches splits the managed files into bounded batches. A small repository
 // is one batch; otherwise files are grouped by their order in MEMORY.md and the

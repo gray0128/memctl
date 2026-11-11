@@ -20,17 +20,19 @@ parent: memctl-architecture
 | `fileRevision` | `sha256:` 加文件原始字节和 Git 文件模式的完整 SHA-256；输入采用长度前缀编码 | 检查单文件读取基线 |
 | `absent` | 目标路径不存在的固定字面量 | 新建文件的前置条件 |
 | `revision` | 仓库 HEAD、受管路径清单及各文件修订的确定性摘要；无 HEAD 时使用明确空值 | 多文件请求、提案和快照的基线 |
-| `entryId` | 文件路径、`fileRevision` 和行号的完整 SHA-256，采用长度前缀编码 | 只定位特定文件修订中的条目 |
+| `entryId` | 文件相对路径、归一化 `factText`（`NormalizeFactText`：去首尾空白、折叠连续空白）与 `addedDate`（及同文件同日重复条目的第 2 条起的 0 基序号 `occurrence`）的完整 SHA-256，采用长度前缀编码 | 定位条目；同文件其他行增删不改变该条目的 `entryId` |
 | `conflictId` | 随机生成的不可复用快照 ID | 绑定一次冲突阶段 |
 | `proposalId` | 随机生成的提案 ID | 查询和确认已生成的整理结果 |
 
-摘要不是授权凭据。`entryId` 不承诺跨编辑稳定；插入一行后允许重新生成 ID。客户端发送条目变更时同时提供基线，不能只凭旧行号定位当前文件。所有校验在取得仓库锁后针对磁盘当前状态执行，不信任 UI 缓存。
+摘要不是授权凭据。`entryId` 按文件路径、归一化事实正文与 `added` 日期计算，不受同文件其他行增删影响；客户端发送条目变更时仍须同时提供 `fileRevision` 或 `baseRevision` 基线，所有校验在取得仓库锁后针对磁盘当前状态执行，不信任 UI 缓存。
 
 快照从同一次受控读取生成。Git 操作或恢复期间返回最近完整快照并标记 `stale: true`；没有完整快照时返回 `BUSY`，不把 rebase 中间树当成当前记忆。
 
 ### 1.2 格式保真
 
-解析器识别单行 bullet、可选行尾元数据和根相对 `[[path]]`。未知元数据保留原文和顺序；一行多个 `[source: ...]` 分别保留。没有元数据的 bullet 是合法记忆，普通段落、代码围栏、缩进和未知格式不自动改写。
+解析器识别顶层单行 `- ` bullet、紧随其后的缩进补充行（`detailLines`）、可选行尾元数据和根相对 `[[path]]`。顶层 bullet 后紧邻且以至少 2 个空格（`"  "`）或 1 个 Tab（`"\t"`）缩进的连续行（含缩进的 ```` ``` ```` 或 `~~~` 代码围栏及其内部空行）归入该条目的 `detailLines`（上限 `MaxDetailLines = 20` 行且 `MaxDetailBytes = 2048` 字节）；遇到非围栏空行、ATX 标题或非缩进行即结束该条目块，未闭合或超出上限的代码围栏整段回退为普通行（不拆散围栏），超出上限的后续行亦保持为文件普通行（无损往返）。含到期 `until` 的条目在读取层隐藏时连带隐藏其 `detailLines`，整文件写回含隐藏占位符时原样恢复顶层行与 `detailLines`。
+
+行尾元数据组 `[key: value; ...]` 支持用 `\;` 转义字面量分号或用双引号 `"..."` 包裹含分号的值（解析后的 `Value` 还原转义字符，`Raw` 保留原始字节以支持无损写回）；除 `source`、`added`、`until` 外，支持可选标准键 `kind`（`state | event | procedural`）与 `status`（`verified | hypothesis`），未声明时默认按 `kind: state` 与 `status: verified` 处理。未知元数据保留原文和顺序；一行多个 `[source: ...]` 分别保留。没有元数据的 bullet 是合法记忆，普通段落、代码围栏、缩进和未知格式不自动改写。
 
 Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行内代码中的 `[[...]]` 不作为图谱链接。存在同名歧义时报告诊断，不猜测目标。重命名只修改已解析且解析到该目标的链接字节区间。
 
@@ -46,7 +48,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | --- | --- | --- |
 | `VaultSnapshot` | `repoId`, `repoPath`, `revision`, `stale`, `files`, `graph`, `syncState`, `health`, `hiddenExpired` | `entryPoint` 为根文件路径；`hiddenExpired` 为因 `until` 到期而排除的条目总数；未初始化时使用错误响应 |
 | `MemoryFile` | `relPath`, `fileRevision`, `kind`, `sizeBytes`, `updatedAt`, `editable` | `wikiKey`, `title`, `lineCount`, `indexedInRoot`, `entries`, `outgoingLinks`, `backlinks` |
-| `MemoryEntry` | `id`, `filePath`, `fileRevision`, `lineNumber`, `rawLine`, `factText`, `sources`, `metadata` | `detailLines`, `heading`, `addedDate`, `inlineLinks`；`metadata` 是保序键值数组，不用 map 丢弃重复键 |
+| `MemoryEntry` | `id`, `filePath`, `fileRevision`, `lineNumber`, `rawLine`, `factText`, `sources`, `metadata` | `detailLines`, `heading`, `addedDate`, `untilDate`, `kind`, `status`, `inlineLinks`；`detailLines` 为紧随顶层 bullet 的缩进子块行数组（最多 20 行且不超过 `2 KiB`）；`kind` 取 `state \| event \| procedural`、`status` 取 `verified \| hypothesis`（仅在合法枚举值时输出）；`metadata` 是保序键值数组，不用 map 丢弃重复键 |
 | `RelatedFile` | `path`, `relation` | `summary`；一跳图谱关联邻居，`relation` 取 `outgoing \| backlink \| both`，`summary` 取自 `MEMORY.md` `## Index` 的单行简述（排除自环与 `MEMORY.md` 冗余邻居） |
 | `TranscriptHit` | `agent`, `sessionId`, `turnIndex`, `snippet`, `score` | `project`, `cwdBase`, `updatedAt`；当 `includeTranscripts` 启用且 `q` 非空时，从本地 `cache/corpus/` 最近 14 天内的 `SessionDigest` 中检索返回（最多 10 条，`snippet` 上限 `240 B` 且经 `corpus.Redact` 脱敏） |
 | `SourceRef` | `raw`, `scheme` | `device`, `agent`, `sessionId` 仅在合法 `agent://` 来源可解析时提供 |
@@ -88,7 +90,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 | `AdapterStatus` | `agent`, `hostVersion?`, `pluginVersion?`, `configPaths`, `status`, `capabilities`, `reason?` |
 | `AdapterInstallPlan` | `agent`, `hostVersion?`, `pluginVersion?`, `status`, `applicable`, `reason?`, `artifacts`；每项为 `{path, format, action, currentRevision?, plannedRevision?, note?, patch?}`，`action` 为 `create \| update \| skip \| manual` |
 
-诊断级别为 `error | warning | info`。首版 `DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`、`EXPIRED_ENTRY`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀与可疑指令模式报告 `warning`；缺少推荐元数据与已到期的有时效条目报告 `info`。`EXPIRED_ENTRY` 只提示该条目已被读取层隐藏，删除仍需人工确认，不标记 `autoFixable`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
+诊断级别为 `error | warning | info`。`DiagnosticIssue.code` 为 `ENTRY_MISSING`、`FILE_UNREADABLE`、`INVALID_LINK`、`MISSING_LINK`、`AMBIGUOUS_LINK`、`ORPHAN_FILE`、`ENTRY_BLOAT`、`TOPIC_BLOAT`、`NEAR_DUPLICATE`、`UNCONFIRMED_HYPOTHESIS`、`MISSING_RECOMMENDED_METADATA`、`SUSPICIOUS_INSTRUCTION`、`TRANSACTION_PENDING`、`CONFLICT_PENDING`、`GIT_OPERATION_ACTIVE`、`GIT_UNMERGED_INDEX`、`GIT_INDEX_LOCKED`、`EXPIRED_ENTRY`。死链、不可访问路径、读失败、未完成事务与待解决冲突报告 `error`；同名歧义、与入口断开的孤立文件、入口膨胀（`ENTRY_BLOAT`）、专题文件膨胀（`TOPIC_BLOAT`：非 `MEMORY.md` 的受管 Markdown 文件超过 `150` 行或 `16 KiB`）、跨条目近似重复（`NEAR_DUPLICATE`：排除 `MEMORY.md` 的 `## Index` 导航行、已到期条目、少于 `5` 个不同分词的短条目以及双端均为 `kind: event` 的历史事件后，按 `FactText` 词项集合 Jaccard 相似度 `>= 0.75` 检出，最多报告 `50` 对）、待复核假设（`UNCONFIRMED_HYPOTHESIS`：未到期条目带 `status: hypothesis`）与可疑指令模式报告 `warning`；缺少推荐元数据与已到期的有时效条目报告 `info`。`EXPIRED_ENTRY` 只提示该条目已被读取层隐藏，删除仍需人工确认，不标记 `autoFixable`。可疑指令模式只是需审阅的线索，不把合法 SQL、脚本示例认定为恶意行为。首版只有 `ENTRY_MISSING` 标记 `autoFixable: true`：重建缺失的入口文件不引入新事实。其余诊断需要人工判断，`doctor --fix` 与 `POST /api/v1/doctor:fix` 对没有确定性修复的 `issueCodes` 返回 `UNSUPPORTED`，不猜测修复；空 `issueCodes` 选择当前存在的全部确定性修复。
 
 `DreamProposal.status` 为 `generating | ready | applying | applied | stale | failed`；`DreamProposal.runner` 为 `deepseek | minimax | openai | anthropic` 之一时表示此次整理在 GitHub Actions 中用该提供商执行，为 `local-agent` 时表示提案由本地当前 Agent 会话生成、没有远端模型调用。提案在当前进程结束或系统重启后仍可查询；生成阶段中断标记失败，不伪造可继续的执行状态。已经应用的提案再次应用返回原 `appliedCommit`，不能重复提交。
 
@@ -107,18 +109,18 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | 接口 | 输入 → 输出 | 关键行为 |
 | --- | --- | --- |
 | `app.ReadFile` | 路径 → 文件、原文、修订 | 有界读取完整版本 |
-| `app.Apply` | `MutationRequest` → `MutationResult` | 锁内检查、规划、应用、提交、登记同步 |
-| `app.AppendEntry` | `AppendEntryRequest` → `AppendEntryResult` | 持仓库排他锁读取当前磁盘基线，服务端拼装 `[source: ...; added: ...]`（及可选 `until`），插入匹配 `heading` 小节末尾（或新建小节），当目标非 `MEMORY.md` 时同事务幂等维护 `MEMORY.md` 的 `## Index` 链接 |
+| `app.Apply` | `MutationRequest` → `MutationResult` | 锁内检查、规划、应用、提交、登记同步；执行 30 天到期删除闸门与 `kind: event` 防删改守卫（未显式设置 `ForceDeleteEvent` 时返回 `EVENT_PROTECTED`） |
+| `app.AppendEntry` | `AppendEntryRequest` → `AppendEntryResult` | 持仓库排他锁读取当前磁盘基线，服务端拼装 `[source: ...; added: ...]`（及可选 `until`、`kind`、`status`），插入匹配 `heading` 小节末尾（或新建小节），当目标非 `MEMORY.md` 时同事务幂等维护 `MEMORY.md` 的 `## Index` 链接 |
 | `app.Capture` | 显式确认 → `MutationResult` | 接收外部串行编辑，暂存范围来自预检清单 |
 | `syncer.Run` | 已持锁仓库上下文、deadline → `SyncSummary` | 上下文由 app 传入；不嵌套持锁，不反向依赖 app |
 | `app.Resolve` | 冲突 ID、阶段结果 → 状态或下一冲突 | 绑定指定重放阶段 |
 | `app.Revert` | 提交 hash、仓库基线 → `MutationResult` | 验证父提交数，失败保留恢复信息 |
 | `dream.Preview` | 模型提供商（`runner`）、固定基线 → 提案 ID | 触发远端 GitHub Actions 整理（维护冻结，保留兼容）并拉取校验结果树；确认前不修改主仓库 |
-| `dream.PrepareLocal` | 项目过滤键、字节预算 → `DreamPrepareBundle` | 本地固定基线并返回记忆全文、静态诊断、未消费 `SessionDigest[]`、最多 20 条关联已有条目 `relatedExistingEntries` 与双向任务指引 `rules.tasks`；不校验远端或工作流前置条件 |
-| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 支持结构化 `operations[]`（`append_entry`、`replace_entry`、`delete_entry`，由服务端按 `sessionIndices` 拼装权威 `source`、无损组装目标文件并同事务幂等补齐 `MEMORY.md` 的 `## Index` 链接）或整文件 `files[]` + `newMemories[]`（互斥）；统一执行差集守卫、父目录校验、30 天删除闸门与链接校验后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
+| `dream.PrepareLocal` | 项目过滤键、字节预算 → `DreamPrepareBundle` | 本地固定基线并返回记忆全文、静态诊断（含 `UNCONFIRMED_HYPOTHESIS`、`TOPIC_BLOAT`、`NEAR_DUPLICATE`）、未消费 `SessionDigest[]`、最多 20 条关联已有条目 `relatedExistingEntries`（未到期 `status: hypothesis` 条目优先置顶召回）与任务指引 `rules.tasks`（含待确认假设时追加第 4 项复核指引）；不校验远端或工作流前置条件 |
+| `dream.ProposeLocal` | `DreamProposeInput`、基线快照 → 本地提案 | 支持结构化 `operations[]`（`append_entry`、`replace_entry`、`delete_entry`，支持可选 `kind`/`status`，由服务端按 `sessionIndices` 拼装权威 `source`、无损组装目标文件并同事务幂等补齐 `MEMORY.md` 的 `## Index` 链接）或整文件 `files[]` + `newMemories[]`（互斥）；统一执行差集守卫、父目录校验、30 天删除闸门、`kind: event` 防删改守卫（`EVENT_PROTECTED`）与链接校验后生成 `runner: "local-agent"` 的 `DreamProposal`；确认前不修改主仓库 |
 | `dream.Store.List` | 分页上限 → `DreamProposal[]` | 按 `createdAt` 倒序列举已持久化提案；不返回内部应用输入 `planned` 与 `corpusDigests` |
 | `adapters.Plan` / `adapters.Apply` | 探测环境、agent → 安装计划 / 安装结果 | 每配置路径独立锁与基线校验；无法安全合并时给人工补丁，不写文件 |
-| `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案后执行受管事务 |
+| `app.ApplyDream` | 提案 ID、patchHash → `MutationResult` | 校验持久化提案（含 30 天删除闸门与 `kind: event` 防删改守卫）后执行受管事务 |
 | `lock.Acquire` | context、资源键 → release 或错误 | 仓库操作使用同一锁；非重入 |
 | `git.Inspect` | 仓库 → Git 状态或错误 | 检查索引、rebase、merge、revert、cherry-pick、sequencer 和 Git 锁 |
 | `git.CommitPaths` | 字面路径清单、提交元数据 → hash 或错误 | 不扩大暂存范围 |
@@ -148,8 +150,8 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | `POST /api/v1/files:move` | `{fromPath, toPath, baseRevision}` | `MutationResult`；同一事务内移动文件并只重写已解析到源文件的链接；仅大小写不同的重命名经事务内中间路径完成，拒绝覆盖已有目标 |
 | `GET /api/v1/entries` | `q, agent, device, file, project, includeTranscripts, from, to, limit, offset` | `{revision, items, total, relatedFiles?, transcriptHits?}`；默认 50、最多 200 条，变更后重新分页；`q` 非空时按四字段权重（`FilePath = 2.0`、`Heading = 1.8`、`FactText = 1.5`、`DetailLines = 1.0`）执行内存分词 BM25 加短语与 `addedDate` 新鲜度排序（AND 全词项命中优先，不足补充 `>= 50%` OR 覆盖），`q` 为空时按 `filePath` 与 `lineNumber` 排序；`project` 匹配 `notes/<project>.md`、`notes/<project>-*.md`、`MEMORY.md` `## Index` 的 `[project: <project>]` 关联文件或条目级 `[project: <project>]`；`includeTranscripts=true\|1` 且 `q` 非空时扫描最近 14 天内的 `SessionDigest` 返回 `transcriptHits`（非法布尔值返回 `400 INVALID_ARGUMENT`） |
 | `POST /api/v1/entries` | `{filePath, heading?, factText, sources?, expectedRevision}` | `{entry, result: MutationResult}` |
-| `PATCH /api/v1/entries/{id}` | 版本头、`{filePath, factText, moveToFilePath?, baseRevision?}` | `{entry, result}`；移动时要求仓库基线，目标不存在时创建该文件（图谱拆分），源文件只移除该条目并保留其余内容与元数据 |
-| `DELETE /api/v1/entries/{id}` | 版本头、`?filePath=` | `MutationResult` |
+| `PATCH /api/v1/entries/{id}` | 版本头、`{filePath, factText, moveToFilePath?, baseRevision?}` | `{entry, result}`；原位修改时只替换顶层 bullet 行并保留 `detailLines`；跨文件移动时要求仓库基线，连带 `detailLines` 整块迁往目标文件（目标不存在时创建该文件），源文件只移除该条目块并保留其余内容与元数据；修改 `kind: event` 条目的归一化事实正文返回 `409 EVENT_PROTECTED`（原样跨文件移动允许） |
+| `DELETE /api/v1/entries/{id}` | 版本头、`?filePath=&forceDeleteEvent=` | `MutationResult`；连带 `detailLines` 整块删除；目标为 `kind: event` 且未显式携带 `forceDeleteEvent=true` 时返回 `409 EVENT_PROTECTED` |
 | `POST /api/v1/sync` | 无 | 202、`SyncSummary`；完整双向同步，通过 snapshot 查询后续状态 |
 | `GET /api/v1/conflict` | 无 | `ConflictState`，无冲突时 204 |
 | `POST /api/v1/conflict:resolve` | `{conflictId, baseRevision, resolvedFiles}` | 状态及可能出现的新冲突；不保证一轮完成 |
@@ -182,7 +184,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | 401 | `AUTH_REQUIRED` | 重新打开当前 UI 会话 |
 | 403 | `ORIGIN_DENIED`, `READ_ONLY`, `REMOTE_NOT_APPROVED` | 检查访问来源、只读模式或远端授权 |
 | 404 | `NOT_FOUND`, `NO_REPO` | 刷新资源或初始化仓库 |
-| 409 | `EXTERNAL_CHANGES`, `OPERATION_ACTIVE`, `CONFLICT_STALE`, `CONTENT_CONFLICT`, `PROPOSAL_STALE`, `RECOVERY_REQUIRED`, `DELETION_DEFERRED` | 保留用户草稿，按具体状态恢复；`DELETION_DEFERRED` 表示到期条目仍在 30 天隐藏期内，消息给出可删除日期 |
+| 409 | `EXTERNAL_CHANGES`, `OPERATION_ACTIVE`, `CONFLICT_STALE`, `CONTENT_CONFLICT`, `PROPOSAL_STALE`, `RECOVERY_REQUIRED`, `DELETION_DEFERRED`, `EVENT_PROTECTED` | 保留用户草稿，按具体状态恢复；`DELETION_DEFERRED` 表示到期条目仍在 30 天隐藏期内，消息给出可删除日期；`EVENT_PROTECTED` 表示 `kind: event` 历史事件条目禁止静默删除或篡改事实正文与 `added` 日期（确需人工清理时须显式使用 `--force-delete-event` 或 `forceDeleteEvent=true`） |
 | 412 | `REVISION_MISMATCH` | 重新读取并显示差异，不盲目重发 |
 | 413 | `LIMIT_EXCEEDED` | 缩小输入，不能截断替代 |
 | 422 | `UNSUPPORTED` | 改用支持的路径或人工处理 |
