@@ -22,6 +22,24 @@ func TestAppendTrailers(t *testing.T) {
 	if got = AppendTrailers("x\n", ""); got != "x\n" {
 		t.Fatalf("a blank trailer changed the message: %q", got)
 	}
+	withOrigin := AppendTrailers(message, Source{
+		Agent:         "dsh",
+		SessionID:     "sid-1",
+		SessionOrigin: "host-flag",
+		Device:        "laptop",
+	}.Trailers()...)
+	wantOrigin := "memctl write\n\nMemctl-Transaction: tx-1\n\nAgent: dsh\nSession: sid-1\nSession-Origin: host-flag\nDevice: laptop\n"
+	if withOrigin != wantOrigin {
+		t.Fatalf("AppendTrailers with SessionOrigin = %q, want %q", withOrigin, wantOrigin)
+	}
+	withoutSession := AppendTrailers(message, Source{
+		Agent:         "dsh",
+		SessionOrigin: "env",
+		Device:        "laptop",
+	}.Trailers()...)
+	if strings.Contains(withoutSession, "Session-Origin:") {
+		t.Fatalf("Session-Origin rendered without SessionID: %q", withoutSession)
+	}
 }
 
 // TestParseLogReadsAppendedTrailers closes the loop between the writer and the

@@ -55,11 +55,13 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer, version st
 		service.EnableBackgroundSync()
 	}
 
+	resolvedSID, sidOrigin := hookio.ResolveSIDWithOrigin(sid, os.Getenv, hookio.Input{})
 	mcp.SetServerVersion(version)
 	server := mcp.NewServer(service, mcp.Session{
-		Agent:     hookio.ResolveAgent(agent, os.Getenv),
-		SessionID: hookio.ResolveSID(sid, os.Getenv, hookio.Input{}),
-		Device:    hookio.ResolveDevice(os.Getenv),
+		Agent:         hookio.ResolveAgent(agent, os.Getenv),
+		SessionID:     resolvedSID,
+		SessionOrigin: sidOrigin,
+		Device:        hookio.ResolveDevice(os.Getenv),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

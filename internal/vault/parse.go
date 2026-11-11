@@ -215,24 +215,52 @@ func isIndentedCode(original, stripped string) bool {
 	return len(original)-len(stripped) > 3
 }
 
-// headingText returns the text of an ATX heading line.
-func headingText(text string) (string, bool) {
+// headingLevelAndText returns the ATX heading level (1..6) and trimmed title.
+func headingLevelAndText(text string) (int, string, bool) {
 	stripped := strings.TrimLeft(text, " ")
 	if isIndentedCode(text, stripped) {
-		return "", false
+		return 0, "", false
 	}
 	count := 0
 	for count < len(stripped) && stripped[count] == '#' {
 		count++
 	}
 	if count == 0 || count > 6 {
-		return "", false
+		return 0, "", false
 	}
 	rest := stripped[count:]
 	if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
-		return "", false
+		return 0, "", false
 	}
-	return strings.TrimSpace(rest), true
+	return count, strings.TrimSpace(rest), true
+}
+
+// headingText returns the text of an ATX heading line.
+func headingText(text string) (string, bool) {
+	_, title, ok := headingLevelAndText(text)
+	return title, ok
+}
+
+// ParseHeadingSpec normalizes a caller-supplied heading specification such as
+// "Decisions" or "## Decisions". It returns the trimmed heading title, the
+// ATX hash prefix to use when creating a new heading (using defaultLevel 1..6
+// when raw does not start with an ATX prefix), and the explicit ATX level when
+// raw carried one (or 0 when raw was a plain title).
+func ParseHeadingSpec(raw string, defaultLevel int) (title string, hashes string, explicitLevel int) {
+	if defaultLevel < 1 || defaultLevel > 6 {
+		defaultLevel = 2
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", "", 0
+	}
+	if level, parsedTitle, ok := headingLevelAndText(trimmed); ok {
+		if parsedTitle == "" {
+			return "", "", 0
+		}
+		return parsedTitle, strings.Repeat("#", level), level
+	}
+	return trimmed, strings.Repeat("#", defaultLevel), 0
 }
 
 // bulletBody returns the text after the `- ` marker of a top-level entry.
@@ -341,6 +369,159 @@ func (p ParsedFile) WithAppendedLine(line string) (string, int) {
 	return content, strings.Count(content, "\n")
 }
 
+// WithAppendedLineInSection inserts line at the end of the Markdown section
+// matching heading (before the next heading of the same or higher level) and
+// returns the updated file content and the 1-based line number of the inserted
+// line. When heading is blank, it appends at the end of the file like
+// WithAppendedLine. When no matching heading exists in the file, a new heading
+// section is appended at the end of the file.
+func (p ParsedFile) WithAppendedLineInSection(heading, line string) (string, int) {
+	targetTitle, hashes, explicitLevel := ParseHeadingSpec(heading, 2)
+	if targetTitle == "" {
+		return p.WithAppendedLine(line)
+	}
+
+	type headingSpan struct {
+		idx   int
+		level int
+		title string
+	}
+	var headings []headingSpan
+	inFence := false
+	fenceChar := byte(0)
+	fenceLen := 0
+	for i, l := range p.Lines {
+		if inFence {
+			if closesFence(l.Text, fenceChar, fenceLen) {
+				inFence = false
+				fenceChar, fenceLen = 0, 0
+			}
+			continue
+		}
+		if char, length, ok := opensFence(l.Text); ok {
+			inFence = true
+			fenceChar, fenceLen = char, length
+			continue
+		}
+		if level, title, ok := headingLevelAndText(l.Text); ok {
+			headings = append(headings, headingSpan{idx: i, level: level, title: title})
+		}
+	}
+
+	match := -1
+	if explicitLevel > 0 {
+		for i, h := range headings {
+			if h.level == explicitLevel && h.title == targetTitle {
+				match = i
+				break
+			}
+		}
+	}
+	if match < 0 {
+		for i, h := range headings {
+			if h.title == targetTitle {
+				match = i
+				break
+			}
+		}
+	}
+	if match < 0 && explicitLevel > 0 {
+		for i, h := range headings {
+			if h.level == explicitLevel && strings.EqualFold(h.title, targetTitle) {
+				match = i
+				break
+			}
+		}
+	}
+	if match < 0 {
+		for i, h := range headings {
+			if strings.EqualFold(h.title, targetTitle) {
+				match = i
+				break
+			}
+		}
+	}
+
+	writeRange := func(b *strings.Builder, start, end int) {
+		for i := start; i < end; i++ {
+			b.WriteString(p.Lines[i].Text)
+			if p.Lines[i].Ending != "" {
+				b.WriteString(p.Lines[i].Ending)
+			} else {
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	if match >= 0 {
+		matchedIdx := headings[match].idx
+		matchedLevel := headings[match].level
+		boundaryLevel := matchedLevel
+		if boundaryLevel == 1 {
+			boundaryLevel = 2
+		}
+		endIdx := len(p.Lines)
+		for _, h := range headings[match+1:] {
+			if h.level <= boundaryLevel {
+				endIdx = h.idx
+				break
+			}
+		}
+
+		lastNonBlank := matchedIdx
+		for i := endIdx - 1; i > matchedIdx; i-- {
+			if strings.TrimSpace(p.Lines[i].Text) != "" {
+				lastNonBlank = i
+				break
+			}
+		}
+
+		var prefix strings.Builder
+		if lastNonBlank > matchedIdx {
+			writeRange(&prefix, 0, lastNonBlank+1)
+		} else {
+			writeRange(&prefix, 0, matchedIdx+1)
+			if matchedIdx+1 < endIdx {
+				prefix.WriteString("\n")
+			}
+		}
+		prefix.WriteString(line)
+		prefix.WriteString("\n")
+		insertedLine := strings.Count(prefix.String(), "\n")
+
+		if endIdx < len(p.Lines) {
+			prefix.WriteString("\n")
+			for i := endIdx; i < len(p.Lines); i++ {
+				prefix.WriteString(p.Lines[i].Text)
+				prefix.WriteString(p.Lines[i].Ending)
+			}
+		}
+		return prefix.String(), insertedLine
+	}
+
+	lastNonBlank := -1
+	for i := len(p.Lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(p.Lines[i].Text) != "" {
+			lastNonBlank = i
+			break
+		}
+	}
+
+	var b strings.Builder
+	if lastNonBlank >= 0 {
+		writeRange(&b, 0, lastNonBlank+1)
+		b.WriteString("\n")
+	}
+	b.WriteString(hashes)
+	b.WriteString(" ")
+	b.WriteString(targetTitle)
+	b.WriteString("\n\n")
+	b.WriteString(line)
+	b.WriteString("\n")
+	content := b.String()
+	return content, strings.Count(content, "\n")
+}
+
 // WithoutLine returns the content with one physical line removed, including its
 // terminator. It reports false when the line is not part of the file.
 func (p ParsedFile) WithoutLine(lineNumber int) (string, bool) {
@@ -425,6 +606,8 @@ func parseSource(raw string) SourceRef {
 	parts := strings.Split(rest, "/")
 	if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
 		ref.Device, ref.Agent, ref.SessionID = parts[0], parts[1], parts[2]
+	} else if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		ref.Device, ref.Agent = parts[0], parts[1]
 	}
 	return ref
 }

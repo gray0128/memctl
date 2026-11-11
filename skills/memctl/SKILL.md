@@ -28,11 +28,29 @@ description: 读写共享的 Agent 记忆仓库：用 memctl 查看 MEMORY.md �
 
 不保存密钥、令牌、密码、一次性任务状态、原始日志，以及用户要求不要保留的内容。无法判断是否敏感时先询问用户。
 
-写入前读取 `MEMORY.md` 与相关链接文件，确认同一事实没有别处记录。旧条目失效时按类型处理：状态型（偏好、环境、当前角色、项目现状）就地改写或删除；事件型（决策理由、发布、事故、迁移）追加带日期的新条目，旧条目保留。一个事实只保留一处，其他位置用 `[[path]]` 链接；正文不写变更记录。`MEMORY.md` 只放索引与跨项目偏好；项目决策、事件与主题事实写入 `notes/<topic>.md`，并在索引中增加一行 `[[path]]`。链接目标不限于 `MEMORY.md`：主题文件已记录的事实在别的主题文件里只写 `[[path]]`，不复制条目正文。
+写入前读取 `MEMORY.md` 与相关链接文件，确认同一事实没有别处记录。旧条目失效时按类型处理：状态型（偏好、环境、当前角色、项目现状）就地改写或删除；事件型（决策理由、发布、事故、迁移）追加带日期的新条目，旧条目保留。一个事实只保留一处，其他位置用 `[[path]]` 链接；正文不写变更记录。`MEMORY.md` 只放索引与跨项目偏好；项目决策、事件与主题事实写入 `notes/<topic>.md`，并在索引中增加一行 `[[path]]`。链接目标不限于 `MEMORY.md`：主题文件已记录的事实在别的主题文件里只写 `[[path]]`，不复制条目正文。日常新增单条记忆或追加事件型条目时，优先使用 `memctl add`（或 MCP `memory_append`）；仅在就地改写、删除状态型条目或多段重构时才使用整文件 `memctl write`（或 MCP `memory_write`）。
 
-完成标准：明确本次只读、写入新事实，还是改写或删除旧条目，以及该条目属于状态型还是事件型。
+完成标准：明确本次只读、追加新事实，还是改写或删除旧条目，以及该条目属于状态型还是事件型。
 
 ## 3. 受管写入
+
+### 3.1 日常单条追加（优先使用 `memctl add`）
+
+新增单条记忆或新建 `notes/<topic>.md` 主题文件时，优先调用 `memctl add`，无需预先传入 `fileRevision` 基线。`memctl` 在持有仓库排他锁期间直接读取最新磁盘原文，将条目插入匹配的 `heading` 小节末尾（小节不存在则在文件末尾新建），由服务端拼装 `[source: agent://<device>/<agent>/<sid>; added: YYYY-MM-DD]`（含可选 `; until: YYYY-MM-DD`），并在 `path` 非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾幂等追加 `- [[notes/<topic>]] — <indexSummary>`：
+
+```bash
+memctl add notes/<topic>.md \
+  --fact "<单行事实正文，不含前导 - 与尾部元数据>" \
+  --heading "## Decisions" \
+  --index-summary "<根索引简述>" \
+  --agent <agent> --sid <sid>
+```
+
+`fact` 必须为非空单行正文，不得包含换行、手写 `[source:` / `[added:` 元数据或到期占位符。默认输出 `transaction:`、`commit:`、`revision:`、`sync:`、`file:`、`line:` 和 `indexUpdated:` 七行；加 `--json` 输出 `{transaction, commit, revision, sync, indexUpdated, entry}`。
+
+### 3.2 整文件改写与重构（`memctl write`）
+
+仅在就地改写或删除已有状态型条目、跨多段重排或合并内容时使用整文件覆盖：
 
 1. 已存在的文件先读取取基线：`memctl read <path> --json`；新建文件跳过读取，直接用 `--base absent`。
 2. 生成完整文件文本，保留未修改条目的原文、换行和文件末尾状态。
@@ -44,13 +62,16 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 
 `--stdin` 接收文件原文，不接收 Hook JSON。命令输出 `transaction:`、`commit:`、`revision:` 和 `sync:` 四行。
 
-4. 退出码为 `0` 且出现 `commit:` 才表示已提交。`sync:` 描述后台同步的尽力结果，失败不回滚本地提交。
+4. `add` 或 `write` 退出码为 `0` 且出现 `commit:` 才表示已提交。`sync:` 描述后台同步的尽力结果，失败不回滚本地提交。
 
 | 错误码 | 处置 |
 | --- | --- |
-| `REVISION_MISMATCH` | 重新读取并合并最新内容，重试一次；仍失败则报告用户 |
+| `INVALID_ARGUMENT` | 修正 `fact` 单行格式、去掉手写 `[source:]`/`[added:]` 元数据或修正 `until` 日期后重试 |
+| `REVISION_MISMATCH` | （仅 `write`）重新读取并合并最新内容，重试一次；仍失败则报告用户 |
+| `DELETION_DEFERRED` | （仅 `write`）恢复被删改的未满 30 天隐藏期到期条目后重试 |
 | `BUSY` | 等待数秒重试一次；仍忙则报告，不删除锁文件 |
 | `NO_REPO` | 请用户运行 `memctl init`，不自行创建仓库 |
+| `NOT_FOUND` | 目标文件的父目录不存在，先确认目录结构，不重试 |
 | `INVALID_PATH` | 改用仓库相对路径，不重试 |
 | `LIMIT_EXCEEDED` | 拆分文件或缩短内容 |
 
@@ -67,15 +88,15 @@ printf '%s' "$NEW_TEXT" | memctl write <path> --base <fileRevision> --stdin --ag
 
 ## 5. 沙箱宿主改用 MCP
 
-限制工作区写入的宿主中，bash 里的 `memctl write` 可能在打开仓库锁时失败：
+限制工作区写入的宿主中，bash 里的 `memctl add` 或 `memctl write` 可能在打开仓库锁时失败：
 
 ```text
 IO_FAILED: cannot open repository lock
 ```
 
-这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_write` 工具时改用它；查事实位置用 `memory_entries`，读基线用 `memory_read` 取 `fileRevision`，再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
+这表示记忆仓库在沙箱可写范围之外，不表示仓库损坏。宿主提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write` 工具时改用它：查事实位置用 `memory_entries`；日常新增单条记忆优先调用 `memory_append`（传入 `path`、`fact` 及可选 `heading`、`until`、`indexSummary`、`sid`，无需预先调用 `memory_read` 取 `fileRevision` 基线，服务端在锁内追加并同事务幂等维护 `MEMORY.md` 的 `## Index` 索引）；仅在改写、删除或重排已有条目时，先用 `memory_read` 取 `fileRevision` 基线，再带 `base` 调用 `memory_write`。在 stdio MCP 场景下，把上下文注入的来源标签最后一段作为 `sid` 传给 `memory_append` 或 `memory_write`，以便提交记录正确的会话身份。没有 MCP 工具时向用户说明限制，请其安装或改在沙箱外写入。
 
-Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能改走 MCP，直接在终端执行 `memctl`；会话身份由 Delta 注入的 `DELTA_CURRENT_THREAD_ID` 提供，`write` 不必再手动传 `--sid`。
+Delta 不做沙箱，也不接受本地 stdio MCP server：不需要、也不能改走 MCP，直接在终端执行 `memctl`；会话身份由 Delta 注入的 `DELTA_CURRENT_THREAD_ID` 提供，`add` 与 `write` 不必再手动传 `--sid`。
 
 需要核对通道是否可用、或查看某宿主的注册命令时，读 `memctl install --status` 的 `mcp:` 块；本机 Web UI 的「客户端接入」视图展示同一结果。注册由宿主自己的 `mcp add` 完成，不要替用户执行。
 

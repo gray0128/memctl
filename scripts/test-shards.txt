@@ -152,3 +152,4 @@ TestProjectRootCollapsesDeltaCheckoutsCoversX10 1
 TestPrepareKeepsForeignDirectoryOutOfThePoolCoversX12 4
 TestPrepareCollectsTheDeltaThreadCoversX13 1
 TestPrepareSurvivesAFailingDeltaCoversX14 3
+TestT140AddAndMemoryAppend 1

@@ -70,6 +70,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, version strin
 	case "read":
 		return runRead(rest, stdout, stderr)
 
+	case "add":
+		return runAdd(rest, stdout, stderr)
+
 	case "write":
 		return runWrite(rest, stdin, stdout, stderr)
 
@@ -314,6 +317,7 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.BackgroundSync {
 		service.EnableBackgroundSync()
 	}
+	resolvedSID, sidOrigin := hookio.ResolveSIDWithOrigin(sid, os.Getenv, hookio.Input{})
 	result, err := service.Apply(context.Background(), app.MutationRequest{
 		Changes: []app.FileChange{{
 			Path:             relPath,
@@ -321,15 +325,135 @@ func runWrite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Action:           app.ActionPut,
 			RawContent:       string(content),
 		}},
-		Agent:     hookio.ResolveAgent(agent, os.Getenv),
-		SessionID: hookio.ResolveSID(sid, os.Getenv, hookio.Input{}),
-		Device:    hookio.ResolveDevice(os.Getenv),
+		Agent:         hookio.ResolveAgent(agent, os.Getenv),
+		SessionID:     resolvedSID,
+		SessionOrigin: sidOrigin,
+		Device:        hookio.ResolveDevice(os.Getenv),
 	})
 	if err != nil {
 		return fail(stderr, "write", err)
 	}
 	fmt.Fprintf(stdout, "transaction: %s\ncommit: %s\nrevision: %s\nsync: %s\n",
 		result.TransactionID, result.Commit, result.Revision, result.SyncState)
+	return ExitOK
+}
+
+// runAdd implements `add <path> --fact TEXT [--heading TEXT] [--until YYYY-MM-DD]
+// [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]`.
+func runAdd(args []string, stdout, stderr io.Writer) int {
+	var relPath string
+	var fact string
+	factSet := false
+	var heading string
+	var until string
+	var indexSummary string
+	var agent string
+	var sid string
+	jsonMode := false
+
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--json":
+			jsonMode = true
+		case arg == "--fact" || arg == "--heading" || arg == "--until" || arg == "--index-summary" || arg == "--agent" || arg == "--sid":
+			if index+1 >= len(args) {
+				return usageError(stderr, "add", arg+" requires a value")
+			}
+			index++
+			switch arg {
+			case "--fact":
+				fact, factSet = args[index], true
+			case "--heading":
+				heading = args[index]
+			case "--until":
+				until = args[index]
+			case "--index-summary":
+				indexSummary = args[index]
+			case "--agent":
+				agent = args[index]
+			case "--sid":
+				sid = args[index]
+			}
+		case strings.HasPrefix(arg, "--fact="):
+			fact, factSet = strings.TrimPrefix(arg, "--fact="), true
+		case strings.HasPrefix(arg, "--heading="):
+			heading = strings.TrimPrefix(arg, "--heading=")
+		case strings.HasPrefix(arg, "--until="):
+			until = strings.TrimPrefix(arg, "--until=")
+		case strings.HasPrefix(arg, "--index-summary="):
+			indexSummary = strings.TrimPrefix(arg, "--index-summary=")
+		case strings.HasPrefix(arg, "--agent="):
+			agent = strings.TrimPrefix(arg, "--agent=")
+		case strings.HasPrefix(arg, "--sid="):
+			sid = strings.TrimPrefix(arg, "--sid=")
+		case strings.HasPrefix(arg, "-"):
+			return usageError(stderr, "add", fmt.Sprintf("unknown flag %q", arg))
+		case relPath == "":
+			relPath = arg
+		default:
+			return usageError(stderr, "add", fmt.Sprintf("unexpected argument %q", arg))
+		}
+	}
+
+	if relPath == "" {
+		return usageError(stderr, "add", "missing required <path> argument")
+	}
+	if !factSet || strings.TrimSpace(fact) == "" {
+		return usageError(stderr, "add", "missing required --fact text")
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail(stderr, "add", err)
+	}
+	service := app.New(cfg)
+	if cfg.BackgroundSync {
+		service.EnableBackgroundSync()
+	}
+	resolvedSID, sidOrigin := hookio.ResolveSIDWithOrigin(sid, os.Getenv, hookio.Input{})
+	result, err := service.AppendEntry(context.Background(), app.AppendEntryRequest{
+		FilePath:      relPath,
+		Heading:       heading,
+		FactText:      fact,
+		Until:         until,
+		IndexSummary:  indexSummary,
+		Agent:         hookio.ResolveAgent(agent, os.Getenv),
+		SessionID:     resolvedSID,
+		SessionOrigin: sidOrigin,
+		Device:        hookio.ResolveDevice(os.Getenv),
+	})
+	if err != nil {
+		return fail(stderr, "add", err)
+	}
+
+	if jsonMode {
+		payload := struct {
+			Transaction  string             `json:"transaction"`
+			Commit       string             `json:"commit"`
+			Revision     string             `json:"revision"`
+			Sync         string             `json:"sync"`
+			IndexUpdated bool               `json:"indexUpdated"`
+			Entry        app.MemoryEntryDTO `json:"entry"`
+		}{
+			Transaction:  result.Result.TransactionID,
+			Commit:       result.Result.Commit,
+			Revision:     result.Result.Revision,
+			Sync:         result.Result.SyncState,
+			IndexUpdated: result.IndexUpdated,
+			Entry:        result.Entry,
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(payload); err != nil {
+			return fail(stderr, "add", memerr.Wrap(memerr.IOFailed, err, "cannot write JSON output"))
+		}
+		return ExitOK
+	}
+
+	fmt.Fprintf(stdout, "transaction: %s\ncommit: %s\nrevision: %s\nsync: %s\nfile: %s\nline: %d\nindexUpdated: %t\n",
+		result.Result.TransactionID, result.Result.Commit, result.Result.Revision, result.Result.SyncState,
+		result.Entry.FilePath, result.Entry.LineNumber, result.IndexUpdated)
 	return ExitOK
 }
 

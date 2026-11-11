@@ -38,7 +38,12 @@ type callToolResult struct {
 // decoded responses plus stderr.
 func runMCPSession(t *testing.T, bin, dir string, env []string, lines ...string) ([]mcpResponse, string) {
 	t.Helper()
-	cmd := exec.Command(bin, "mcp", "--agent", "test-agent", "--sid", "test-session")
+	return runMCPSessionWithArgs(t, bin, dir, env, []string{"mcp", "--agent", "test-agent", "--sid", "test-session"}, lines...)
+}
+
+func runMCPSessionWithArgs(t *testing.T, bin, dir string, env, mcpArgs []string, lines ...string) ([]mcpResponse, string) {
+	t.Helper()
+	cmd := exec.Command(bin, mcpArgs...)
 	cmd.Dir = dir
 	cmd.Env = env
 	cmd.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
@@ -114,9 +119,9 @@ func TestM01MCPHandshake(t *testing.T) {
 	if err := json.Unmarshal(responses[1].Result, &list); err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	// Stage H added the two local Dreaming tools. Apply is never exposed over
-	// MCP: it must stay a user-initiated CLI or Web UI action.
-	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write"}
+	// Stage H added the two local Dreaming tools; Stage I added memory_append.
+	// Apply is never exposed over MCP: it must stay a user-initiated CLI or Web UI action.
+	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write", "memory_append"}
 	if len(list.Tools) != len(want) {
 		t.Fatalf("unexpected tool list %+v", list.Tools)
 	}
@@ -158,8 +163,8 @@ func TestM15MCPToolAnnotations(t *testing.T) {
 	if err := json.Unmarshal(responses[1].Result, &list); err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(list.Tools) != 5 {
-		t.Fatalf("want 5 tools, got %d", len(list.Tools))
+	if len(list.Tools) != 6 {
+		t.Fatalf("want 6 tools, got %d", len(list.Tools))
 	}
 
 	annotated := []string{}
@@ -474,5 +479,121 @@ func TestM13MCPEntriesFindsFactThenReads(t *testing.T) {
 	}
 	if cliPage.Total != page.Total {
 		t.Fatalf("CLI total = %d, MCP total = %d", cliPage.Total, page.Total)
+	}
+}
+
+// TestT140AddAndMemoryAppend covers CLI `memctl add` and MCP `memory_append`:
+// in-lock baseline-free append, existing-file heading section insertion,
+// same-transaction idempotent MEMORY.md ## Index maintenance, and
+// Session-Origin commit trailers (host-flag, env, model).
+func TestT140AddAndMemoryAppend(t *testing.T) {
+	bin := buildMemctlBinary(t)
+	root := t.TempDir()
+	home, repo, env := a5LocalRepo(t, bin, root, "home")
+
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
+		t.Fatalf("create notes: %v", err)
+	}
+
+	// 1. CLI `memctl add` creates notes/arch.md with --heading "Decisions",
+	// updates MEMORY.md ## Index in the same transaction, and records
+	// Session-Origin: host-flag.
+	cliAdd := runMemctl(t, bin, home, env,
+		"add", "notes/arch.md",
+		"--heading", "Decisions",
+		"--fact", "Use exclusive lock for append",
+		"--index-summary", "Architecture decisions",
+		"--agent", "claude-code",
+		"--sid", "sid-cli-flag",
+		"--json",
+	)
+	if cliAdd.code != 0 {
+		t.Fatalf("memctl add --json failed: code=%d stderr=%s", cliAdd.code, cliAdd.stderr)
+	}
+	var addOut struct {
+		Transaction  string `json:"transaction"`
+		Commit       string `json:"commit"`
+		IndexUpdated bool   `json:"indexUpdated"`
+		Entry        struct {
+			FilePath   string `json:"filePath"`
+			LineNumber int    `json:"lineNumber"`
+			Heading    string `json:"heading"`
+			RawLine    string `json:"rawLine"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal([]byte(cliAdd.stdout), &addOut); err != nil {
+		t.Fatalf("decode cli add json: %v\n%s", err, cliAdd.stdout)
+	}
+	if !addOut.IndexUpdated || addOut.Entry.Heading != "Decisions" {
+		t.Fatalf("unexpected cli add result: %+v", addOut)
+	}
+	log1 := gitOutput(t, env, repo, "log", "-1", "--format=%B")
+	for _, want := range []string{"memctl add", "Session: sid-cli-flag", "Session-Origin: host-flag"} {
+		if !strings.Contains(log1, want) {
+			t.Fatalf("commit log %q missing %q", log1, want)
+		}
+	}
+
+	// 2. MCP `memory_append` (server started without --sid or AGENT_MEMORY_SID)
+	// uses arguments.sid and records Session-Origin: model, creating a second
+	// section "Open Questions" without duplicating [[notes/arch]] in MEMORY.md.
+	responses, stderr := runMCPSessionWithArgs(t, bin, home, env,
+		[]string{"mcp", "--agent", "test-agent"},
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_append","arguments":{"path":"notes/arch.md","heading":"Open Questions","fact":"Evaluate shard count","sid":"sid-mcp-model"}}}`,
+	)
+	if stderr != "" {
+		t.Fatalf("unexpected mcp stderr: %s", stderr)
+	}
+	appendRes1 := decodeCallResult(t, responses[0])
+	if appendRes1.IsError {
+		t.Fatalf("memory_append failed: %s", appendRes1.Content[0].Text)
+	}
+	var mcpOut1 struct {
+		IndexUpdated bool `json:"indexUpdated"`
+	}
+	if err := json.Unmarshal([]byte(appendRes1.Content[0].Text), &mcpOut1); err != nil {
+		t.Fatalf("decode mcp append: %v", err)
+	}
+	if mcpOut1.IndexUpdated {
+		t.Fatal("expected indexUpdated=false on already-indexed notes/arch.md")
+	}
+	log2 := gitOutput(t, env, repo, "log", "-1", "--format=%B")
+	for _, want := range []string{"memctl add", "Session: sid-mcp-model", "Session-Origin: model"} {
+		if !strings.Contains(log2, want) {
+			t.Fatalf("commit log %q missing %q", log2, want)
+		}
+	}
+
+	// 3. CLI `memctl add` with AGENT_MEMORY_SID in env records Session-Origin: env
+	// and inserts into the middle section "## Decisions" before "## Open Questions".
+	envWithSID := append(append([]string(nil), env...), "AGENT_MEMORY_SID=sid-from-env")
+	cliMid := runMemctl(t, bin, home, envWithSID,
+		"add", "notes/arch.md",
+		"--heading", "## Decisions",
+		"--fact", "Keep WAL enabled",
+	)
+	if cliMid.code != 0 {
+		t.Fatalf("memctl add middle section failed: code=%d stderr=%s", cliMid.code, cliMid.stderr)
+	}
+	log3 := gitOutput(t, env, repo, "log", "-1", "--format=%B")
+	for _, want := range []string{"Session: sid-from-env", "Session-Origin: env"} {
+		if !strings.Contains(log3, want) {
+			t.Fatalf("commit log %q missing %q", log3, want)
+		}
+	}
+
+	archBytes, err := os.ReadFile(filepath.Join(repo, "notes", "arch.md"))
+	if err != nil {
+		t.Fatalf("read notes/arch.md: %v", err)
+	}
+	archText := string(archBytes)
+	if strings.Index(archText, "Keep WAL enabled") > strings.Index(archText, "## Open Questions") {
+		t.Fatalf("Keep WAL enabled was not inserted before ## Open Questions:\n%s", archText)
+	}
+
+	// 4. `memctl doctor` reports 0 issues (no ORPHAN_FILE).
+	doc := runMemctl(t, bin, home, env, "doctor", "--json")
+	if doc.code != 0 {
+		t.Fatalf("doctor failed: code=%d stderr=%s stdout=%s", doc.code, doc.stderr, doc.stdout)
 	}
 }

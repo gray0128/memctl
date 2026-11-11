@@ -87,3 +87,41 @@ func TestParsedFileLineEdits(t *testing.T) {
 		t.Fatalf("append to an unterminated file = %q line=%d", appended, line)
 	}
 }
+
+// TestWithAppendedLineInSection covers middle-section, end-section, and
+// newly-created-section insertions, plus normalized heading matching.
+func TestWithAppendedLineInSection(t *testing.T) {
+	initial := "# Project\n\n## Decisions\n\n- use SQLite\n\n## Open Questions\n\n- shard key\n"
+	parsed := ParseFile("notes/arch.md", "rev", []byte(initial))
+
+	// 1. Insert into a middle section using plain heading name.
+	mid, line := parsed.WithAppendedLineInSection("Decisions", "- keep WAL")
+	wantMid := "# Project\n\n## Decisions\n\n- use SQLite\n- keep WAL\n\n## Open Questions\n\n- shard key\n"
+	if mid != wantMid || line != 6 {
+		t.Fatalf("middle section insert:\ngot (line %d):\n%q\nwant (line 6):\n%q", line, mid, wantMid)
+	}
+
+	// 2. Insert into the same middle section using explicit "## Decisions".
+	parsedMid := ParseFile("notes/arch.md", "rev2", []byte(mid))
+	mid2, line2 := parsedMid.WithAppendedLineInSection("## Decisions", "- single writer lock")
+	wantMid2 := "# Project\n\n## Decisions\n\n- use SQLite\n- keep WAL\n- single writer lock\n\n## Open Questions\n\n- shard key\n"
+	if mid2 != wantMid2 || line2 != 7 {
+		t.Fatalf("middle section explicit heading insert:\ngot (line %d):\n%q\nwant (line 7):\n%q", line2, mid2, wantMid2)
+	}
+
+	// 3. Insert into the final section at EOF.
+	parsedEnd := ParseFile("notes/arch.md", "rev3", []byte(mid2))
+	endContent, endLine := parsedEnd.WithAppendedLineInSection("Open Questions", "- backup schedule")
+	wantEnd := "# Project\n\n## Decisions\n\n- use SQLite\n- keep WAL\n- single writer lock\n\n## Open Questions\n\n- shard key\n- backup schedule\n"
+	if endContent != wantEnd || endLine != 12 {
+		t.Fatalf("end section insert:\ngot (line %d):\n%q\nwant (line 12):\n%q", endLine, endContent, wantEnd)
+	}
+
+	// 4. Insert with a heading that does not exist yet creates a new section at EOF.
+	parsedNewSec := ParseFile("notes/arch.md", "rev4", []byte(endContent))
+	newSecContent, newSecLine := parsedNewSec.WithAppendedLineInSection("References", "- RFC 9110")
+	wantNewSec := wantEnd + "\n## References\n\n- RFC 9110\n"
+	if newSecContent != wantNewSec || newSecLine != 16 {
+		t.Fatalf("new section insert:\ngot (line %d):\n%q\nwant (line 16):\n%q", newSecLine, newSecContent, wantNewSec)
+	}
+}

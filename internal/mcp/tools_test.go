@@ -20,6 +20,9 @@ type fakeService struct {
 	applyErrs     []error
 	reads         []string
 	writes        []app.MutationRequest
+	appendResult  app.AppendEntryResult
+	appendErrs    []error
+	appends       []app.AppendEntryRequest
 	entryPage     app.EntryPage
 	entryErr      error
 	entryQueries  []app.EntryQuery
@@ -61,23 +64,34 @@ func (f *fakeService) Apply(_ context.Context, req app.MutationRequest) (app.Mut
 	return f.applyResult, nil
 }
 
+func (f *fakeService) AppendEntry(_ context.Context, req app.AppendEntryRequest) (app.AppendEntryResult, error) {
+	f.appends = append(f.appends, req)
+	if len(f.appendErrs) > 0 {
+		err := f.appendErrs[0]
+		f.appendErrs = f.appendErrs[1:]
+		return app.AppendEntryResult{}, err
+	}
+	return f.appendResult, nil
+}
+
 func newTestServer(service Service) *Server {
 	return NewServer(service, Session{Agent: "dsh", SessionID: "session-1", Device: "device-1"})
 }
 
 // TestM02ToolsList covers M02: exactly the documented memory tools, with
-// schemas. Stage H adds the two local Dreaming tools and no apply tool.
+// schemas. Stage H adds the two local Dreaming tools and no apply tool; Stage I
+// adds memory_append as an unannotated write tool.
 func TestM02ToolsList(t *testing.T) {
 	server := newTestServer(&fakeService{})
 	tools := server.Tools()
-	if len(tools) != 5 {
-		t.Fatalf("want 5 tools, got %d", len(tools))
+	if len(tools) != 6 {
+		t.Fatalf("want 6 tools, got %d", len(tools))
 	}
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
 	}
-	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write"}
+	want := []string{"memory_read", "memory_entries", "memory_dream_prepare", "memory_dream_propose", "memory_write", "memory_append"}
 	for index, name := range want {
 		if names[index] != name {
 			t.Fatalf("tool %d = %q, want %q (all: %v)", index, names[index], name, names)
@@ -153,7 +167,7 @@ func TestM02ToolsList(t *testing.T) {
 		}
 	}
 
-	if got := ToolNames(); len(got) != 5 {
+	if got := ToolNames(); len(got) != 6 {
 		t.Fatalf("ToolNames() = %v", got)
 	}
 }
@@ -272,8 +286,8 @@ func TestM05SessionArgument(t *testing.T) {
 		if rpcErr != nil || result.IsError {
 			t.Fatalf("unexpected failure: %v %+v", rpcErr, result)
 		}
-		if service.writes[0].SessionID != "session-4c79" {
-			t.Fatalf("session = %q, want the trimmed call value", service.writes[0].SessionID)
+		if service.writes[0].SessionID != "session-4c79" || service.writes[0].SessionOrigin != "model" {
+			t.Fatalf("session = (%q, %q), want (session-4c79, model)", service.writes[0].SessionID, service.writes[0].SessionOrigin)
 		}
 	})
 
@@ -284,8 +298,8 @@ func TestM05SessionArgument(t *testing.T) {
 			json.RawMessage(`{"path":"MEMORY.md","base":"sha256:abc","content":"x","sid":"other"}`)); rpcErr != nil {
 			t.Fatalf("unexpected protocol error: %v", rpcErr)
 		}
-		if service.writes[0].SessionID != "session-1" {
-			t.Fatalf("session = %q, want the configured session", service.writes[0].SessionID)
+		if service.writes[0].SessionID != "session-1" || service.writes[0].SessionOrigin != "host-flag" {
+			t.Fatalf("session = (%q, %q), want (session-1, host-flag)", service.writes[0].SessionID, service.writes[0].SessionOrigin)
 		}
 	})
 
@@ -504,5 +518,81 @@ func TestMemoryReadReportsHiddenExpired(t *testing.T) {
 	}
 	if !strings.Contains(payload.RawContent, vault.ExpiredFactPlaceholder) {
 		t.Fatalf("placeholder missing:\n%s", payload.RawContent)
+	}
+}
+
+// TestMemoryAppend covers the memory_append MCP tool: argument forwarding,
+// BUSY retry, Session-Origin resolution (host-flag, env, model), and JSON
+// response shape.
+func TestMemoryAppend(t *testing.T) {
+	busy := memerr.New(memerr.Busy, "lock is held")
+	service := &fakeService{
+		appendErrs: []error{busy},
+		appendResult: app.AppendEntryResult{
+			Entry: app.MemoryEntryDTO{
+				ID:           "sha256:entry-1",
+				FilePath:     "notes/arch.md",
+				FileRevision: "sha256:file-1",
+				LineNumber:   3,
+				FactText:     "use exclusive lock",
+				Heading:      "Decisions",
+			},
+			Result: app.MutationResult{
+				TransactionID: "tx-append-1",
+				Commit:        "deadbeef",
+				Revision:      "sha256:repo-1",
+				SyncState:     "local-only",
+			},
+			IndexUpdated: true,
+		},
+	}
+	server := NewServer(service, Session{Agent: "dsh", Device: "laptop"})
+
+	result, rpcErr := server.CallTool(context.Background(), "memory_append", json.RawMessage(
+		`{"path":"notes/arch.md","fact":"use exclusive lock","heading":"Decisions","until":"2026-12-31","indexSummary":"architecture decisions","sid":"sid-model-1"}`))
+	if rpcErr != nil {
+		t.Fatalf("unexpected protocol error: %v", rpcErr)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %+v", result)
+	}
+	if len(service.appends) != 2 {
+		t.Fatalf("expected 2 attempts after one BUSY error, got %d", len(service.appends))
+	}
+	gotReq := service.appends[1]
+	wantReq := app.AppendEntryRequest{
+		FilePath:      "notes/arch.md",
+		Heading:       "Decisions",
+		FactText:      "use exclusive lock",
+		Until:         "2026-12-31",
+		IndexSummary:  "architecture decisions",
+		Agent:         "dsh",
+		SessionID:     "sid-model-1",
+		SessionOrigin: "model",
+		Device:        "laptop",
+	}
+	if gotReq != wantReq {
+		t.Fatalf("AppendEntryRequest = %+v, want %+v", gotReq, wantReq)
+	}
+
+	var payload struct {
+		Transaction  string             `json:"transaction"`
+		Commit       string             `json:"commit"`
+		Revision     string             `json:"revision"`
+		Sync         string             `json:"sync"`
+		IndexUpdated bool               `json:"indexUpdated"`
+		Entry        app.MemoryEntryDTO `json:"entry"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("decode memory_append result: %v", err)
+	}
+	if payload.Transaction != "tx-append-1" || payload.Commit != "deadbeef" || !payload.IndexUpdated || payload.Entry.LineNumber != 3 {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+
+	// Required arguments check.
+	missingFact, rpcErr := server.CallTool(context.Background(), "memory_append", json.RawMessage(`{"path":"MEMORY.md","fact":"   "}`))
+	if rpcErr != nil || !missingFact.IsError || !strings.HasPrefix(missingFact.Content[0].Text, "INVALID_ARGUMENT: ") {
+		t.Fatalf("missing fact should fail with INVALID_ARGUMENT, got rpcErr=%v result=%+v", rpcErr, missingFact)
 	}
 }

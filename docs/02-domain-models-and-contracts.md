@@ -78,7 +78,7 @@ Markdown 链接省略 `.md`，其他资产保留扩展名；代码围栏和行�
 
 | 对象 | 字段与语义 |
 | --- | --- |
-| `AuditCommit` | `hash`, `parents`, `timestamp`, `subject`, `files`, `agent?`, `sessionId?`, `device?`, `alerts`；来源只取自提交说明末尾的 `Agent:`、`Session:`、`Device:` trailer，缺失时显示「未记录来源」，不根据作者或提交内容推断 |
+| `AuditCommit` | `hash`, `parents`, `timestamp`, `subject`, `files`, `agent?`, `sessionId?`, `device?`, `alerts`；来源只取自提交说明末尾的 `Agent:`、`Session:`、`Device:` trailer（当存在非空 `Session:` 且已知会话来源渠道时，提交说明还附带 `Session-Origin: host-flag\|env\|model` trailer），缺失时显示「未记录来源」，不根据作者或提交内容推断 |
 | `FileDiff` | `path`, `additions`, `deletions`, `patch`, `binary` |
 | `DiagnosticIssue` | `code`, `severity`, `filePath?`, `lineNumber?`, `message`, `suggestion`, `autoFixable` |
 | `DoctorReport` | `revision`, `checkedAt`, `issues`, `counts`；首版不提供没有计算规则的 0–100 分 |
@@ -106,6 +106,7 @@ pi 同时支持原生插件 `memctl-pi` 和旧 `pi-yaml-hooks` + `agent-memory-*
 | --- | --- | --- |
 | `app.ReadFile` | 路径 → 文件、原文、修订 | 有界读取完整版本 |
 | `app.Apply` | `MutationRequest` → `MutationResult` | 锁内检查、规划、应用、提交、登记同步 |
+| `app.AppendEntry` | `AppendEntryRequest` → `AppendEntryResult` | 持仓库排他锁读取当前磁盘基线，服务端拼装 `[source: ...; added: ...]`（及可选 `until`），插入匹配 `heading` 小节末尾（或新建小节），当目标非 `MEMORY.md` 时同事务幂等维护 `MEMORY.md` 的 `## Index` 链接 |
 | `app.Capture` | 显式确认 → `MutationResult` | 接收外部串行编辑，暂存范围来自预检清单 |
 | `syncer.Run` | 已持锁仓库上下文、deadline → `SyncSummary` | 上下文由 app 传入；不嵌套持锁，不反向依赖 app |
 | `app.Resolve` | 冲突 ID、阶段结果 → 状态或下一冲突 | 绑定指定重放阶段 |

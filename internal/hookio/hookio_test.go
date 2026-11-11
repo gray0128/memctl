@@ -174,6 +174,16 @@ func TestResolveSIDPriority(t *testing.T) {
 	if got := ResolveSID("", func(string) string { return "" }, Input{}); got != "" {
 		t.Fatalf("empty identity resolved to %q, want empty", got)
 	}
+
+	if sid, origin := ResolveSIDWithOrigin("flag", getenv, Input{SID: "payload"}); sid != "flag" || origin != SessionOriginHostFlag {
+		t.Fatalf("ResolveSIDWithOrigin(flag) = (%q, %q), want (flag, %q)", sid, origin, SessionOriginHostFlag)
+	}
+	if sid, origin := ResolveSIDWithOrigin("", getenv, Input{SID: "payload"}); sid != "env-session" || origin != SessionOriginEnv {
+		t.Fatalf("ResolveSIDWithOrigin(env) = (%q, %q), want (env-session, %q)", sid, origin, SessionOriginEnv)
+	}
+	if sid, origin := ResolveSIDWithOrigin("", func(string) string { return "" }, Input{}); sid != "" || origin != "" {
+		t.Fatalf("ResolveSIDWithOrigin(empty) = (%q, %q), want empty", sid, origin)
+	}
 }
 
 func TestResolveAgentAndDevice(t *testing.T) {

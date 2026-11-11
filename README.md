@@ -11,10 +11,13 @@
 从 [GitHub Releases](https://github.com/gray0128/memctl/releases) 下载对应平台的候选二进制（`memctl-darwin-arm64`、`memctl-darwin-amd64`、`memctl-linux-amd64`、`memctl-windows-amd64.exe`），或在本地执行 `make build` 生成 `bin/memctl`、执行 `make install` 安装到 `~/.agent-memory/bin/memctl`。
 
 ```bash
-./bin/memctl init                      # 无 URL 时只创建本地仓库与首笔提交
+./bin/memctl init                      # 无 URL 时只创建本地仓库（含空 notes/ 目录）与首笔提交
 ./bin/memctl read MEMORY.md --json     # 返回 {filePath, fileRevision, rawContent}
 
-# 受管写入以 read --json 返回的 fileRevision 为基线；旧基线返回 REVISION_MISMATCH
+# 日常单条追加：在锁内追加到目标小节末尾，服务端拼装 [source; added] 并同事务幂等维护 MEMORY.md 索引
+./bin/memctl add notes/topic.md --fact "new decision" --heading "## Decisions" --index-summary "topic decisions"
+
+# 整文件受管写入：以 read --json 返回的 fileRevision 为基线；旧基线返回 REVISION_MISMATCH
 printf '# Memory\n\n## Index\n- new entry\n' \
   | ./bin/memctl write MEMORY.md --base <fileRevision> --stdin
 
@@ -70,14 +73,14 @@ omp plugin list
 pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 ```
 
-工具为 `memory_entries`（按关键词检索已存条目）、`memory_read` 与 `memory_write`，写入仍经过受管事务与基线校验。宿主侧还有以下前置条件：Codex 需要 `default_tools_approval_mode = "approve"`，否则审批策略为 `never` 时每次调用都会被拒绝；pi 需要 `--exposure direct`；Grok 的 `workspace` 沙箱会阻断 MCP 子进程，需要把记忆仓库加入 `read_write`，而该授权同时放开 shell；Antigravity 在 `--sandbox` 下可用，但记忆仓库不在工作区时需在 MCP 条目里用 `env` 指定 `AGENT_MEMORY_DIR`；DSH 没有 `mcp add` 子命令，需要在 profile 的 `cordis.patch.yml` 里用 `insert:` 追加一条 `@deepseek-ai/dsh-mcp-client` 条目（该包随应用分发，profile 不需要安装）。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#52-各宿主的注册命令)。
+工具为 `memory_entries`（按关键词检索已存条目）、`memory_read`、`memory_append`、`memory_write`、`memory_dream_prepare` 与 `memory_dream_propose`，写入仍经过受管事务（`memory_append` 在锁内按小节追加并同事务幂等维护 `MEMORY.md` 索引；`memory_write` 校验修订基线整文件覆盖）。宿主侧还有以下前置条件：Codex 需要 `default_tools_approval_mode = "approve"`，否则审批策略为 `never` 时每次调用都会被拒绝；pi 需要 `--exposure direct`；Grok 的 `workspace` 沙箱会阻断 MCP 子进程，需要把记忆仓库加入 `read_write`，而该授权同时放开 shell；Antigravity 在 `--sandbox` 下可用，但记忆仓库不在工作区时需在 MCP 条目里用 `env` 指定 `AGENT_MEMORY_DIR`；DSH 没有 `mcp add` 子命令，需要在 profile 的 `cordis.patch.yml` 里用 `insert:` 追加一条 `@deepseek-ai/dsh-mcp-client` 条目（该包随应用分发，profile 不需要安装）。详见 [MCP 记忆工具](./docs/09-mcp-memory-tools.md#52-各宿主的注册命令)。
 
 ## 能做什么
 
 | 能力 | 命令 | 说明 |
 | --- | --- | --- |
 | 仓库初始化 | `init`、`init <url> --confirm-private` | 无 URL 只建本地仓库与首笔提交；带 URL 需确认私有性与所有权，空远端完成首推，已有历史则克隆并建立 upstream |
-| 读取与受管写入 | `read`、`write` | 读写文件原文；写入校验修订基线并原子提交，不静默覆盖其他更新 |
+| 读取与受管写入 | `read`、`add`、`write` | 读写文件原文或追加单条记忆；`add` 在锁内按小节追加并同事务幂等维护 `MEMORY.md` 索引，`write` 校验修订基线并整文件原子提交，不静默覆盖其他更新 |
 | 条目检索 | `entries` | 按关键词、文件、来源与时间范围只读检索已解析条目；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
 | 串行编辑与恢复 | `sync --capture`、`recover --status`、`recover --rollback` | 显式接收串行外部编辑；查看或回滚本工具未完成的事务，不接管外部 Git 操作 |
 | 同步与冲突 | `sync --wait`、`resolve` | 前台同步与多阶段冲突解决；断网不撤销已保存的本地内容 |
@@ -85,7 +88,7 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 | 诊断与修复 | `doctor`、`doctor --fix` | 只读诊断死链、孤立文件、入口膨胀与运行状态；修复只重建缺失的入口文件 |
 | Web UI | `ui` | 概览、知识图谱、条目、冲突解决、审计、诊断、整理、客户端接入 8 个视图；只读模式在服务端拒绝写请求 |
 | Agent 接入 | `install [agent...]` | 探测宿主与插件版本，预览或应用配置合并；没有生命周期 Hook 的宿主（Delta）只探测并列出人工步骤，不写文件；不自动安装第三方插件，不改全局 Git 配置 |
-| MCP 记忆工具 | `mcp` | 在标准输入输出上提供 `memory_read`、`memory_entries` 与 `memory_write`；由宿主启动，不受 Agent 的 bash 沙箱限制，写入仍经受管事务与基线校验；不写宿主配置 |
+| MCP 记忆工具 | `mcp` | 在标准输入输出上提供 `memory_read`、`memory_entries`、`memory_append`、`memory_write`、`memory_dream_prepare` 与 `memory_dream_propose` 6 个工具；由宿主启动，不受 Agent 的 bash 沙箱限制，写入仍经受管事务与基线校验；不写宿主配置 |
 | DSH 插件 | `dsh plugin-path`、`dsh plugin-dir` | 输出内嵌 `memctl-dsh` 的绝对 tarball 或目录路径；npm 包为 `memctl-dsh@0.5.3`；只写状态目录，不修改 DSH profile |
 | pi 插件 | `pi plugin-dir` | 输出内嵌 `memctl-pi` 的绝对本地包目录，供 `pi install` 使用；只写状态目录，不修改 pi settings |
 | 自更新 | `update`、`update --check` | 查询 GitHub Releases 最新版本，按平台校验 SHA-256 后原子替换当前二进制；`--check` 只报告 |
@@ -95,7 +98,7 @@ pi mcp add memctl --exposure direct -- ~/.agent-memory/bin/memctl mcp --agent pi
 
 - CLI 与 UI 的写入共用仓库锁和版本基线；HTTP 写路由要求 `X-Memctl-Token` 与 Host/Origin 校验，`--readonly` 下返回 `READ_ONLY`。
 - Hook 子命令在 `--stdin` 下以退出码 `0` 结束，避免阻断宿主；缺少稳定 SID 时 `tag` 返回 `1`；未知命令或参数返回用法错误 `2`。
-- 受管 `write` 与自动 `sync`/`end` 会尽力派生非交互后台同步，设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭。
+- 受管 `add`/`write` 与自动 `sync`/`end` 会尽力派生非交互后台同步，设置 `AGENT_MEMORY_BACKGROUND=0` 可关闭。
 - `install` 不访问记忆仓库，不要求 Git 或 Node.js。
 
 ## 帮助

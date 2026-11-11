@@ -54,6 +54,9 @@ type MutationRequest struct {
 	Changes      []FileChange
 	Agent        string
 	SessionID    string
+	// SessionOrigin records how SessionID was resolved ("host-flag", "env", or
+	// "model") when SessionID is non-empty.
+	SessionOrigin string
 	// Device is the normalized device label recorded in the commit source
 	// trailer so the read-only audit view can resolve it.
 	Device string
@@ -195,7 +198,7 @@ func (a *App) commit(ctx context.Context, session *writeSession, operation strin
 		Kind:         state.KindMutation,
 		OriginalHead: head,
 		StartedAt:    state.StartedAt(),
-		Message:      commitMessage(operation, req.Agent, req.SessionID, req.Device, txID),
+		Message:      commitMessage(operation, req.Agent, req.SessionID, req.SessionOrigin, req.Device, txID),
 		ProposalID:   req.DreamProposalID,
 	}
 	for _, plan := range plans {
@@ -361,7 +364,7 @@ func (a *App) Capture(ctx context.Context, agent, sessionID, device string) (Mut
 	if err != nil {
 		return MutationResult{}, err
 	}
-	commit, err := git.Commit(ctx, session.repoPath, commitMessage("capture", agent, sessionID, device, txID))
+	commit, err := git.Commit(ctx, session.repoPath, commitMessage("capture", agent, sessionID, "", device, txID))
 	if err != nil {
 		_ = git.ResetPaths(ctx, session.repoPath, paths)
 		return MutationResult{}, err
@@ -850,9 +853,14 @@ func (a *App) persistLocalCommit(session *writeSession, result MutationResult) {
 // commitMessage renders one managed commit: the operation title, the
 // transaction trailer recovery relies on, then the provenance trailers the
 // audit view reads. See docs/03-workflows-and-dataflows.md section 2 step 5.
-func commitMessage(operation, agent, sessionID, device, txID string) string {
+func commitMessage(operation, agent, sessionID, sessionOrigin, device, txID string) string {
 	body := "memctl " + operation + "\n\n" + transactionTrailer + txID
-	return git.AppendTrailers(body, (git.Source{Agent: agent, SessionID: sessionID, Device: device}).Trailers()...)
+	return git.AppendTrailers(body, (git.Source{
+		Agent:         agent,
+		SessionID:     sessionID,
+		SessionOrigin: sessionOrigin,
+		Device:        device,
+	}).Trailers()...)
 }
 
 func fsMode(gitMode string) fs.FileMode {

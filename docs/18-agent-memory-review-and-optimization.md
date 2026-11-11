@@ -362,16 +362,16 @@ P0 阶段不改变外部命令形态，专门修复 §2 已复现的数据丢失
 
 ### 4.2 P1：最小安全写原语、分支提交树无锁快照读与预算化项目仪表盘注入
 
-#### 4.2.1 面向 Agent 的条目追加与索引同事务维护原语（消除 `MEMORY.md` 并发假冲突）
+#### 4.2.1 面向 Agent 的条目追加与索引同事务维护原语（消除 `MEMORY.md` 并发假冲突；`I-2a` / `T140` 已完成）
 
 参照 Anthropic 原文 Figure 14「分片独立写入达成 100% 事实保留」的实证结论，把服务端已有的结构化拼装能力开放给 CLI 与 MCP，使日常增量写入不再使用整文件 `memory_write`：
 
 1. **新增 MCP 工具 `memory_append` 与 CLI 命令 `memctl add`**：
-   - **输入参数**：`path`（如 `notes/memctl-decisions.md`）、`fact`（记忆正文，不含尾部元数据）、可选 `heading`（目标小节标题，如 `## Decisions`）、可选 `until`（`YYYY-MM-DD`）、可选 `indexSummary`（当创建新主题文件或需同步登记根索引时，传入在 `MEMORY.md` `## Index` 中显示的简述）、可选 `sid`。
-   - **服务端确定性拼装与溯源**：由 Go 代码读取当前会话身份（`device`、`agent`、`sid`）与当日日期，自动拼装权威的 `[source: agent://<device>/<agent>/<sid>; added: YYYY-MM-DD]` 尾部元数据。在 commit trailer 中新增 `Session-Origin: host-flag|env|model` 标识溯源可信度等级。
-   - **锁内自动合并与同事务索引维护**：因为「向目标文件小节末尾追加条目」和「向 `MEMORY.md` 的 `## Index` 幂等插入 `- [[notes/<topic>]] — <indexSummary>`」满足交换律，[`App.Apply`](../internal/app/mutation.go) 在持有仓库排他锁期间直接基于最新磁盘原文执行追加，并在**同一个多文件 Git 事务**中同时写入 `notes/<topic>.md` 与 `MEMORY.md`。调用方无需预先读取整份 `MEMORY.md` 的 `fileRevision`，彻底消灭多子代理并发新建主题时的 `REVISION_MISMATCH` 冲突与 `ORPHAN_FILE` 孤儿文件。
-   - **修正 `heading` 插入语义**：修复 [`internal/app/entries.go`](../internal/app/entries.go)（第 222 - 243 行）在目标文件已存在时忽略 `heading` 直接追加到文件末尾的问题，改为精确插入到匹配的 Markdown 标题段落末尾（若标题不存在则在文件末尾新建该标题段落）。
-   - **保留 `memory_write` 作为重构通道**：在工具描述中明确引导 Agent 日常新增或单条更新优先调用 `memory_append`，仅在合并或多段重写时才调用 `memory_write`。
+   - **输入参数**：`path`（如 `notes/memctl-decisions.md`）、`fact`（非空单行记忆正文，不含前导 `- ` 与尾部元数据，拒绝含换行、手写 `[source:` / `[added:` 元数据或到期占位符）、可选 `heading`（目标小节标题，如 `Decisions` 或 `## Decisions`）、可选 `until`（`YYYY-MM-DD`）、可选 `indexSummary`（当创建新主题文件或需同步登记根索引时，传入在 `MEMORY.md` `## Index` 中显示的简述）、可选 `sid`（以及 CLI 的 `--agent`、`--json`）。
+   - **服务端确定性拼装与溯源**：由 Go 代码（[`App.AppendEntry`](../internal/app/entries.go)）读取当前会话身份（`device`、`agent`、`sid`）与当日日期，自动拼装权威的 `[source: agent://<device>/<agent>/<sid>; added: YYYY-MM-DD]`（无 `sid` 时为 `agent://<device>/<agent>`；有 `until` 时追加 `; until: YYYY-MM-DD`）尾部元数据。当存在有效 `sid` 时，在 Git commit trailer 中新增 `Session-Origin: host-flag|env|model`（[`internal/git/source.go`](../internal/git/source.go)、[`internal/hookio/hookio.go`](../internal/hookio/hookio.go)）标识溯源可信度等级。
+   - **锁内自动合并与同事务索引维护**：因为「向目标文件小节末尾追加条目」和「向 `MEMORY.md` 的 `## Index` 幂等插入 `- [[notes/<topic>]] — <indexSummary>`」满足交换律，[`App.AppendEntry`](../internal/app/entries.go) 在持有仓库排他锁期间直接读取最新磁盘原文执行追加，并在**同一个多文件 Git 事务**中按需同时写入 `notes/<topic>.md` 与 `MEMORY.md`（返回 `{transaction, commit, revision, sync, indexUpdated, entry}`）。调用方无需预先读取整份 `MEMORY.md` 的 `fileRevision`，彻底消灭多子代理并发新建或追加主题时的 `REVISION_MISMATCH` 冲突与 `ORPHAN_FILE` 孤儿文件。
+   - **修正 `heading` 插入语义**：在 [`internal/vault/parse.go`](../internal/vault/parse.go) 新增 `ParsedFile.WithAppendedLineInSection`，并在 [`internal/app/entries.go`](../internal/app/entries.go) 的 `CreateEntry` 与 `AppendEntry` 中复用，修复目标文件已存在时忽略 `heading` 直接追加到文件末尾的问题，改为精确插入到匹配的 Markdown 标题段落末尾（下一个同级或更高级标题之前，若标题不存在则在文件末尾新建该标题段落）。
+   - **保留 `memory_write` 作为重构通道**：在工具描述、CLI 帮助（[`internal/cli/help_data.go`](../internal/cli/help_data.go)）与 [`skills/memctl/SKILL.md`](../skills/memctl/SKILL.md) 中明确引导 Agent 日常新增单条记忆优先调用 `memory_append` / `memctl add`，仅在合并、删除或多段重写时才调用 `memory_write` / `memctl write`。`memory_append` 遵循 `M15` 契约不声明 `annotations`（6 个 MCP 工具中仅 `memory_read` 与 `memory_entries` 声明 `readOnlyHint: true`）。
 
 #### 4.2.2 基于分支引用提交树对象的无锁快照读取（缓解 `BUSY` 读阻塞）
 

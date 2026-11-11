@@ -8,6 +8,7 @@ import (
 
 	"github.com/gray0128/memctl/internal/app"
 	"github.com/gray0128/memctl/internal/dream"
+	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -19,6 +20,7 @@ const DefaultEntryPoint = vault.EntryPointName
 type Service interface {
 	ReadFile(ctx context.Context, relPath string) (vault.FileRead, error)
 	Apply(ctx context.Context, req app.MutationRequest) (app.MutationResult, error)
+	AppendEntry(ctx context.Context, req app.AppendEntryRequest) (app.AppendEntryResult, error)
 	// ListEntries backs memory_entries. It is the same read-only query the Web
 	// UI uses, so the tool cannot widen the repository boundary.
 	ListEntries(ctx context.Context, query app.EntryQuery) (app.EntryPage, error)
@@ -36,9 +38,10 @@ const writeAttempts = 2
 
 // Session carries the identity recorded on every write.
 type Session struct {
-	Agent     string
-	SessionID string
-	Device    string
+	Agent         string
+	SessionID     string
+	SessionOrigin string
+	Device        string
 }
 
 // Server holds the tool definitions and the application service.
@@ -237,7 +240,7 @@ func (s *Server) Tools() []Tool {
 		},
 		{
 			Name:        "memory_write",
-			Description: "Write one file to the shared memory repository through the managed transaction. The base revision must come from memory_read; use absent to create a new file. A stale base is rejected instead of overwriting another update.",
+			Description: "Write one full file to the shared memory repository through the managed transaction. Prefer memory_append for daily single-entry additions so you do not need to read or supply a fileRevision baseline; use memory_write only when rewriting, reordering or deleting existing lines. The base revision must come from memory_read; use absent to create a new file. A stale base is rejected instead of overwriting another update.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -259,6 +262,41 @@ func (s *Server) Tools() []Tool {
 					},
 				},
 				"required":             []string{"path", "base", "content"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "memory_append",
+			Description: "Append one single-line memory entry to a Markdown file in the shared memory repository under the exclusive write lock, without requiring a prior memory_read or fileRevision baseline. memctl assembles the trailing [source: ...; added: ...] metadata on the server and, when path is not MEMORY.md, idempotently adds a [[link]] under ## Index in MEMORY.md in the same transaction.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Repository-relative Markdown path, for example MEMORY.md or notes/topic.md. The parent directory must already exist.",
+					},
+					"fact": map[string]any{
+						"type":        "string",
+						"description": "Single-line fact text, without a leading bullet or trailing [source: ...; added: ...] metadata.",
+					},
+					"heading": map[string]any{
+						"type":        "string",
+						"description": "Optional Markdown section heading (for example Decisions or ## Decisions). Inserts at the end of the matching section or creates a new section at the end of the file.",
+					},
+					"until": map[string]any{
+						"type":        "string",
+						"description": "Optional expiration date (YYYY-MM-DD) for a time-limited entry.",
+					},
+					"indexSummary": map[string]any{
+						"type":        "string",
+						"description": "Optional one-line summary appended as '— <indexSummary>' when adding a new [[link]] to MEMORY.md ## Index.",
+					},
+					"sid": map[string]any{
+						"type":        "string",
+						"description": "Session id of the calling agent session, copied from the source tag the host injected. Recorded as the commit session only when the server started without --sid; a stdio MCP server cannot observe the session otherwise.",
+					},
+				},
+				"required":             []string{"path", "fact"},
 				"additionalProperties": false,
 			},
 		},
@@ -290,6 +328,16 @@ type writeArgs struct {
 	SID     string `json:"sid"`
 }
 
+// appendArgs is the memory_append argument object.
+type appendArgs struct {
+	Path         string `json:"path"`
+	Fact         string `json:"fact"`
+	Heading      string `json:"heading"`
+	Until        string `json:"until"`
+	IndexSummary string `json:"indexSummary"`
+	SID          string `json:"sid"`
+}
+
 // maxSessionArgumentBytes bounds a per-call session id. Every documented host
 // session id is far shorter; the bound only keeps a caller from writing an
 // arbitrarily large trailer into the commit message.
@@ -301,23 +349,34 @@ const maxSessionArgumentBytes = 200
 // from the injected source tag. The value is rejected rather than sanitized: a
 // silent rewrite would record an identity the caller did not supply.
 func (s *Server) sessionFor(candidate string) (string, error) {
+	sid, _, err := s.sessionForWithOrigin(candidate)
+	return sid, err
+}
+
+// sessionForWithOrigin resolves both the session id and its Session-Origin
+// trailer label ("host-flag", "env", or "model").
+func (s *Server) sessionForWithOrigin(candidate string) (string, string, error) {
 	if s.session.SessionID != "" {
-		return s.session.SessionID, nil
+		origin := s.session.SessionOrigin
+		if origin == "" {
+			origin = hookio.SessionOriginHostFlag
+		}
+		return s.session.SessionID, origin, nil
 	}
 	sid := strings.TrimSpace(candidate)
 	if sid == "" {
-		return "", nil
+		return "", "", nil
 	}
 	if len(sid) > maxSessionArgumentBytes {
-		return "", memerr.New(memerr.InvalidArgument,
+		return "", "", memerr.New(memerr.InvalidArgument,
 			"sid exceeds %d bytes", maxSessionArgumentBytes)
 	}
 	for _, r := range sid {
 		if r < 0x20 || r == 0x7f {
-			return "", memerr.New(memerr.InvalidArgument, "sid contains a control character")
+			return "", "", memerr.New(memerr.InvalidArgument, "sid contains a control character")
 		}
 	}
-	return sid, nil
+	return sid, hookio.SessionOriginModel, nil
 }
 
 // CallTool dispatches one tool call. A contract failure becomes an
@@ -331,6 +390,8 @@ func (s *Server) CallTool(ctx context.Context, name string, params json.RawMessa
 		return s.memoryEntries(ctx, params)
 	case "memory_write":
 		return s.memoryWrite(ctx, params)
+	case "memory_append":
+		return s.memoryAppend(ctx, params)
 	case "memory_dream_prepare":
 		return s.dreamPrepare(ctx, params)
 	case "memory_dream_propose":
@@ -423,7 +484,7 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 	if args.Base == "" {
 		return textResult("INVALID_ARGUMENT: base is required (a fileRevision from memory_read, or absent)", true), nil
 	}
-	sessionID, err := s.sessionFor(args.SID)
+	sessionID, sessionOrigin, err := s.sessionForWithOrigin(args.SID)
 	if err != nil {
 		return textResult(errorText(err), true), nil
 	}
@@ -437,9 +498,10 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 				Action:           app.ActionPut,
 				RawContent:       args.Content,
 			}},
-			Agent:     s.session.Agent,
-			SessionID: sessionID,
-			Device:    s.session.Device,
+			Agent:         s.session.Agent,
+			SessionID:     sessionID,
+			SessionOrigin: sessionOrigin,
+			Device:        s.session.Device,
 		})
 		if err == nil || !isBusy(err) || attempt == writeAttempts {
 			break
@@ -459,6 +521,68 @@ func (s *Server) memoryWrite(ctx context.Context, params json.RawMessage) (CallT
 		Commit:      result.Commit,
 		Revision:    result.Revision,
 		Sync:        result.SyncState,
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
+	return textResult(string(encoded), false), nil
+}
+
+// memoryAppend appends one single-line entry inside the repository write lock
+// without requiring a caller-supplied baseline revision, and idempotently
+// maintains MEMORY.md ## Index in the same transaction.
+func (s *Server) memoryAppend(ctx context.Context, params json.RawMessage) (CallToolResult, *JSONRPCError) {
+	var args appendArgs
+	if err := json.Unmarshal(params, &args); err != nil {
+		return CallToolResult{}, &JSONRPCError{Code: codeInvalidParams, Message: "invalid arguments: " + err.Error()}
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return textResult("INVALID_ARGUMENT: path is required", true), nil
+	}
+	if strings.TrimSpace(args.Fact) == "" {
+		return textResult("INVALID_ARGUMENT: fact is required", true), nil
+	}
+	sessionID, sessionOrigin, err := s.sessionForWithOrigin(args.SID)
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
+
+	var result app.AppendEntryResult
+	for attempt := 1; attempt <= writeAttempts; attempt++ {
+		result, err = s.service.AppendEntry(ctx, app.AppendEntryRequest{
+			FilePath:      args.Path,
+			Heading:       args.Heading,
+			FactText:      args.Fact,
+			Until:         args.Until,
+			IndexSummary:  args.IndexSummary,
+			Agent:         s.session.Agent,
+			SessionID:     sessionID,
+			SessionOrigin: sessionOrigin,
+			Device:        s.session.Device,
+		})
+		if err == nil || !isBusy(err) || attempt == writeAttempts {
+			break
+		}
+	}
+	if err != nil {
+		return textResult(errorText(err), true), nil
+	}
+
+	payload := struct {
+		Transaction  string             `json:"transaction"`
+		Commit       string             `json:"commit"`
+		Revision     string             `json:"revision"`
+		Sync         string             `json:"sync"`
+		IndexUpdated bool               `json:"indexUpdated"`
+		Entry        app.MemoryEntryDTO `json:"entry"`
+	}{
+		Transaction:  result.Result.TransactionID,
+		Commit:       result.Result.Commit,
+		Revision:     result.Result.Revision,
+		Sync:         result.Result.SyncState,
+		IndexUpdated: result.IndexUpdated,
+		Entry:        result.Entry,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -559,7 +683,7 @@ func isBusy(err error) bool {
 // for tests and for the install-time capability check.
 func ToolNames() []string {
 	names := []string{
-		"memory_dream_prepare", "memory_dream_propose",
+		"memory_append", "memory_dream_prepare", "memory_dream_propose",
 		"memory_entries", "memory_read", "memory_write",
 	}
 	sort.Strings(names)

@@ -2,12 +2,16 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gray0128/memctl/internal/doctor"
+	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -348,5 +352,346 @@ func TestEntryTextRejectsNewlines(t *testing.T) {
 
 	if status := runGit(t, repo, "status", "--porcelain"); status != "" {
 		t.Fatalf("a rejected entry left the repository dirty: %q", status)
+	}
+}
+
+// TestCreateEntryExistingFileHeadingSections covers inserting into a middle
+// section, an end-of-file section, and a newly created section when a non-empty
+// heading is supplied for an existing file.
+func TestCreateEntryExistingFileHeadingSections(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx := context.Background()
+	initial := "# Architecture\n\n## Decisions\n\n- use SQLite\n\n## Open Questions\n\n- shard key\n"
+	applyPut(t, service, repo, "arch.md", initial, vault.AbsentRevision)
+
+	readRev := func() string {
+		t.Helper()
+		file, err := service.ReadFile(ctx, "arch.md")
+		if err != nil {
+			t.Fatalf("ReadFile(arch.md): %v", err)
+		}
+		return file.FileRevision
+	}
+
+	// 1. Middle section via plain heading title.
+	mid1, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "arch.md",
+		Heading:          "Decisions",
+		FactText:         "keep WAL",
+		ExpectedRevision: readRev(),
+	})
+	if err != nil {
+		t.Fatalf("CreateEntry middle section: %v", err)
+	}
+	if mid1.Entry.Heading != "Decisions" || mid1.Entry.LineNumber != 6 {
+		t.Fatalf("mid1 entry = %+v, want Heading=Decisions LineNumber=6", mid1.Entry)
+	}
+
+	// 2. Middle section via "## Decisions" prefix normalization.
+	mid2, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "arch.md",
+		Heading:          "## Decisions",
+		FactText:         "single writer lock",
+		ExpectedRevision: readRev(),
+	})
+	if err != nil {
+		t.Fatalf("CreateEntry middle section normalized: %v", err)
+	}
+	if mid2.Entry.Heading != "Decisions" || mid2.Entry.LineNumber != 7 {
+		t.Fatalf("mid2 entry = %+v, want Heading=Decisions LineNumber=7", mid2.Entry)
+	}
+
+	// 3. End-of-file section.
+	endSec, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "arch.md",
+		Heading:          "Open Questions",
+		FactText:         "backup schedule",
+		ExpectedRevision: readRev(),
+	})
+	if err != nil {
+		t.Fatalf("CreateEntry end section: %v", err)
+	}
+	if endSec.Entry.Heading != "Open Questions" || endSec.Entry.LineNumber != 12 {
+		t.Fatalf("endSec entry = %+v, want Heading=Open Questions LineNumber=12", endSec.Entry)
+	}
+
+	// 4. Non-existent heading creates a new section at EOF.
+	newSec, err := service.CreateEntry(ctx, CreateEntryRequest{
+		FilePath:         "arch.md",
+		Heading:          "References",
+		FactText:         "RFC 9110",
+		ExpectedRevision: readRev(),
+	})
+	if err != nil {
+		t.Fatalf("CreateEntry new section: %v", err)
+	}
+	if newSec.Entry.Heading != "References" || newSec.Entry.LineNumber != 16 {
+		t.Fatalf("newSec entry = %+v, want Heading=References LineNumber=16", newSec.Entry)
+	}
+
+	content := readTestFile(t, filepath.Join(repo, "arch.md"))
+	decisionsIdx := strings.Index(content, "## Decisions")
+	keepWALIdx := strings.Index(content, "- keep WAL")
+	openQIdx := strings.Index(content, "## Open Questions")
+	backupIdx := strings.Index(content, "- backup schedule")
+	refsIdx := strings.Index(content, "## References")
+	rfcIdx := strings.Index(content, "- RFC 9110")
+	if !(decisionsIdx < keepWALIdx && keepWALIdx < openQIdx && openQIdx < backupIdx && backupIdx < refsIdx && refsIdx < rfcIdx) {
+		t.Fatalf("unexpected section ordering in arch.md:\n%s", content)
+	}
+}
+
+// TestAppendEntryAndSameTransactionIndex covers baseline-free AppendEntry,
+// server-side source/added/until assembly, Session-Origin commit trailers, and
+// same-transaction idempotent MEMORY.md ## Index maintenance.
+func TestAppendEntryAndSameTransactionIndex(t *testing.T) {
+	service, repo := newTestService(t)
+	service.SetClock(func() time.Time {
+		return time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	})
+	ctx := context.Background()
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. First append to notes/arch.md creates the file and updates MEMORY.md ## Index in one commit.
+	first, err := service.AppendEntry(ctx, AppendEntryRequest{
+		FilePath:      "notes/arch.md",
+		Heading:       "Decisions",
+		FactText:      "use exclusive lock for append",
+		Until:         "2026-12-31",
+		IndexSummary:  "architecture decisions",
+		Agent:         "claude-code",
+		SessionID:     "sess-host",
+		SessionOrigin: hookio.SessionOriginHostFlag,
+		Device:        "macbook",
+	})
+	if err != nil {
+		t.Fatalf("AppendEntry first: %v", err)
+	}
+	if !first.IndexUpdated {
+		t.Fatal("expected IndexUpdated=true when creating unindexed notes/arch.md")
+	}
+	if len(first.Result.ChangedFiles) != 2 {
+		t.Fatalf("ChangedFiles = %v, want [MEMORY.md notes/arch.md]", first.Result.ChangedFiles)
+	}
+	if first.Entry.Heading != "Decisions" || first.Entry.AddedDate != "2026-10-20" {
+		t.Fatalf("unexpected first entry: %+v", first.Entry)
+	}
+	if !strings.Contains(first.Entry.RawLine, "[source: agent://macbook/claude-code/sess-host; added: 2026-10-20; until: 2026-12-31]") {
+		t.Fatalf("unexpected raw line: %q", first.Entry.RawLine)
+	}
+	memContent := readTestFile(t, filepath.Join(repo, "MEMORY.md"))
+	if !strings.Contains(memContent, "- [[notes/arch]] — architecture decisions\n") {
+		t.Fatalf("MEMORY.md missing index link:\n%s", memContent)
+	}
+	log1 := runGit(t, repo, "log", "-1", "--format=%B")
+	for _, want := range []string{"memctl add", "Agent: claude-code", "Session: sess-host", "Session-Origin: host-flag", "Device: macbook"} {
+		if !strings.Contains(log1, want) {
+			t.Fatalf("commit message %q missing %q", log1, want)
+		}
+	}
+
+	// 2. Second append to notes/arch.md is idempotent on MEMORY.md and records Session-Origin: model.
+	second, err := service.AppendEntry(ctx, AppendEntryRequest{
+		FilePath:      "notes/arch.md",
+		Heading:       "Open Questions",
+		FactText:      "evaluate shard count",
+		IndexSummary:  "ignored on already-linked file",
+		Agent:         "claude-code",
+		SessionID:     "sess-model",
+		SessionOrigin: hookio.SessionOriginModel,
+		Device:        "macbook",
+	})
+	if err != nil {
+		t.Fatalf("AppendEntry second: %v", err)
+	}
+	if second.IndexUpdated {
+		t.Fatal("expected IndexUpdated=false when notes/arch.md is already linked in MEMORY.md")
+	}
+	if len(second.Result.ChangedFiles) != 1 || second.Result.ChangedFiles[0] != "notes/arch.md" {
+		t.Fatalf("ChangedFiles = %v, want [notes/arch.md]", second.Result.ChangedFiles)
+	}
+	if got := strings.Count(readTestFile(t, filepath.Join(repo, "MEMORY.md")), "[[notes/arch]]"); got != 1 {
+		t.Fatalf("MEMORY.md link count = %d, want 1", got)
+	}
+	log2 := runGit(t, repo, "log", "-1", "--format=%B")
+	if !strings.Contains(log2, "Session-Origin: model") {
+		t.Fatalf("commit message %q missing Session-Origin: model", log2)
+	}
+
+	// 3. Third append without SessionID uses 2-segment source URI and omits Session-Origin trailer.
+	third, err := service.AppendEntry(ctx, AppendEntryRequest{
+		FilePath: "notes/arch.md",
+		Heading:  "## Decisions",
+		FactText: "insert at end of middle section",
+		Agent:    "codex",
+		Device:   "workstation",
+	})
+	if err != nil {
+		t.Fatalf("AppendEntry third: %v", err)
+	}
+	if !strings.Contains(third.Entry.RawLine, "[source: agent://workstation/codex; added: 2026-10-20]") {
+		t.Fatalf("unexpected raw line without sid: %q", third.Entry.RawLine)
+	}
+	log3 := runGit(t, repo, "log", "-1", "--format=%B")
+	if strings.Contains(log3, "Session-Origin:") || strings.Contains(log3, "Session:") {
+		t.Fatalf("commit without sid should not contain Session trailers: %q", log3)
+	}
+	archContent := readTestFile(t, filepath.Join(repo, "notes/arch.md"))
+	if strings.Index(archContent, "insert at end of middle section") > strings.Index(archContent, "## Open Questions") {
+		t.Fatalf("middle section entry was not placed before ## Open Questions:\n%s", archContent)
+	}
+
+	// 4. Doctor reports zero ORPHAN_FILE.
+	report, err := service.Doctor(ctx)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	for _, issue := range report.Issues {
+		if issue.Code == "ORPHAN_FILE" {
+			t.Fatalf("unexpected ORPHAN_FILE issue: %+v", issue)
+		}
+	}
+
+	// 5. Validation errors.
+	badInputs := []struct {
+		name string
+		req  AppendEntryRequest
+		code memerr.Code
+	}{
+		{
+			name: "empty fact",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: "   "},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "multiline fact",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: "line1\nline2"},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "handwritten source metadata",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: "spoof [source: agent://evil/x/y]"},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "handwritten added metadata",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: "spoof [added: 2020-01-01]"},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "expired placeholder",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: vault.ExpiredFactPlaceholder},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "invalid until date",
+			req:  AppendEntryRequest{FilePath: "MEMORY.md", FactText: "valid fact", Until: "2026-99-99"},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "non-markdown file",
+			req:  AppendEntryRequest{FilePath: "query.sql", FactText: "SELECT 1"},
+			code: memerr.InvalidArgument,
+		},
+		{
+			name: "missing parent directory",
+			req:  AppendEntryRequest{FilePath: "missing/topic.md", FactText: "valid fact"},
+			code: memerr.NotFound,
+		},
+	}
+	for _, tc := range badInputs {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := service.AppendEntry(ctx, tc.req)
+			requireContractCode(t, err, tc.code)
+		})
+	}
+}
+
+// TestAppendEntryConcurrentZeroRevisionMismatch verifies that concurrent callers
+// appending to both the same topic file and distinct topic files never fail with
+// REVISION_MISMATCH and leave no ORPHAN_FILE issues.
+func TestAppendEntryConcurrentZeroRevisionMismatch(t *testing.T) {
+	service, repo := newTestService(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 6
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*2)
+
+	for i := 0; i < workers; i++ {
+		i := i
+		wg.Add(2)
+		// Goroutine A: append to shared topic file.
+		go func() {
+			defer wg.Done()
+			_, err := service.AppendEntry(ctx, AppendEntryRequest{
+				FilePath:      "notes/shared.md",
+				Heading:       "Decisions",
+				FactText:      fmt.Sprintf("shared decision %d", i),
+				IndexSummary:  "shared notes",
+				Agent:         "claude-code",
+				SessionID:     fmt.Sprintf("sid-%d", i),
+				SessionOrigin: hookio.SessionOriginEnv,
+				Device:        "dev",
+			})
+			if err != nil {
+				errs <- fmt.Errorf("shared worker %d: %w", i, err)
+			}
+		}()
+		// Goroutine B: append to per-worker topic file.
+		go func() {
+			defer wg.Done()
+			_, err := service.AppendEntry(ctx, AppendEntryRequest{
+				FilePath:      fmt.Sprintf("notes/topic-%d.md", i),
+				FactText:      fmt.Sprintf("topic fact %d", i),
+				IndexSummary:  fmt.Sprintf("topic %d", i),
+				Agent:         "codex",
+				SessionID:     fmt.Sprintf("sid-%d", i),
+				SessionOrigin: hookio.SessionOriginHostFlag,
+				Device:        "dev",
+			})
+			if err != nil {
+				errs <- fmt.Errorf("topic worker %d: %w", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent AppendEntry failed: %v", err)
+	}
+
+	sharedContent := readTestFile(t, filepath.Join(repo, "notes/shared.md"))
+	for i := 0; i < workers; i++ {
+		want := fmt.Sprintf("shared decision %d", i)
+		if !strings.Contains(sharedContent, want) {
+			t.Fatalf("notes/shared.md missing %q:\n%s", want, sharedContent)
+		}
+	}
+	memContent := readTestFile(t, filepath.Join(repo, "MEMORY.md"))
+	if got := strings.Count(memContent, "[[notes/shared]]"); got != 1 {
+		t.Fatalf("MEMORY.md [[notes/shared]] count = %d, want 1:\n%s", got, memContent)
+	}
+	for i := 0; i < workers; i++ {
+		target := fmt.Sprintf("[[notes/topic-%d]]", i)
+		if got := strings.Count(memContent, target); got != 1 {
+			t.Fatalf("MEMORY.md %s count = %d, want 1:\n%s", target, got, memContent)
+		}
+	}
+
+	report, err := service.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	for _, issue := range report.Issues {
+		if issue.Code == "ORPHAN_FILE" {
+			t.Fatalf("unexpected ORPHAN_FILE after concurrent appends: %+v", issue)
+		}
 	}
 }

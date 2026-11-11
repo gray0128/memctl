@@ -13,20 +13,24 @@ const LocalAgent = "memctl"
 // the view never infers a source that was not recorded. See
 // docs/02-domain-models-and-contracts.md section 2.3.
 type Source struct {
-	Agent     string
-	SessionID string
-	Device    string
+	Agent         string
+	SessionID     string
+	SessionOrigin string
+	Device        string
 }
 
 // Trailers renders the non-empty provenance trailer lines. The order is fixed
 // so commit messages stay comparable across call sites.
 func (s Source) Trailers() []string {
-	trailers := make([]string, 0, 3)
+	trailers := make([]string, 0, 4)
 	if s.Agent != "" {
 		trailers = append(trailers, "Agent: "+s.Agent)
 	}
 	if s.SessionID != "" {
 		trailers = append(trailers, "Session: "+s.SessionID)
+		if s.SessionOrigin != "" {
+			trailers = append(trailers, "Session-Origin: "+s.SessionOrigin)
+		}
 	}
 	if s.Device != "" {
 		trailers = append(trailers, "Device: "+s.Device)

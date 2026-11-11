@@ -170,7 +170,7 @@ var helpRootData = helpRoot{
 	Groups: []helpGroup{
 		{
 			Title: loc("Repository", "仓库"),
-			Names: []string{"init", "read", "entries", "write", "sync", "resolve", "recover", "doctor"},
+			Names: []string{"init", "read", "entries", "add", "write", "sync", "resolve", "recover", "doctor"},
 		},
 		{
 			Title: loc("Host hooks and sessions", "宿主 Hook 与会话"),
@@ -499,15 +499,86 @@ var helpCommandData = []helpCommand{
 			loc("Use this to locate where a fact lives, then `memctl read <path>` for the full file.", "先用它定位事实所在文件，再用 `memctl read <path>` 读取整份文件。"),
 			loc("There is no semantic or vector search; only the stored fact text is matched.", "不提供语义或向量检索，只匹配已存储的条目正文。"),
 		},
-		Related: []string{"read", "write", "mcp"},
+		Related: []string{"read", "add", "write", "mcp"},
+	},
+	{
+		Name: "add",
+		Usage: []string{
+			"memctl add <path> --fact TEXT [--heading TEXT] [--until YYYY-MM-DD] [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]",
+		},
+		Summary: loc("Append one memory entry inside the repository lock.", "在仓库排他锁内追加单条记忆。"),
+		Description: loc(
+			"Appends one single-line memory entry to a Markdown file under the repository exclusive lock without requiring a prior `read --json` or `--base` revision, eliminating `REVISION_MISMATCH` false conflicts across concurrent sessions. memctl assembles the trailing `[source: ...; added: ...]` metadata on the server from `--agent`, `--sid`, the device label and today's date (plus `until` when supplied). When `--heading` is given on an existing file, the entry is inserted at the end of the matching section (or a new section is created at the end of the file). When `<path>` is not `MEMORY.md`, memctl idempotently adds `- [[<linkTarget>]]` (with ` — <indexSummary>` when `--index-summary` is set) under `## Index` in `MEMORY.md` within the same transaction.",
+			"在仓库排他锁内向 Markdown 文件追加单条单行记忆，无需预先执行 `read --json` 或传入 `--base` 修订号，从根源消除多会话并发写入时的 `REVISION_MISMATCH` 假冲突。memctl 在服务端根据 `--agent`、`--sid`、设备名与当日日期自动拼装末尾的 `[source: ...; added: ...]` 元数据（提供 `--until` 时一并写入）。对已存在文件传入 `--heading` 时，精确插入到匹配小节末尾（不存在该小节则在文件末尾新建小节）。当 `<path>` 不是 `MEMORY.md` 时，在同一事务中自动幂等维护 `MEMORY.md` 的 `## Index` 链接（提供 `--index-summary` 时追加 ` — <摘要>`），避免产生孤立文件。",
+		),
+		Arguments: []helpItem{
+			{Name: "<path>", Required: true, Description: loc(
+				"Repository-relative Markdown file path, for example MEMORY.md or notes/topic.md. The parent directory must already exist.",
+				"相对仓库根目录的 Markdown 文件路径，例如 MEMORY.md 或 notes/topic.md。父目录必须已存在。",
+			)},
+		},
+		Flags: []helpItem{
+			{Name: "--fact", Value: "TEXT", Required: true, Description: loc(
+				"Non-empty single-line fact text, without a leading bullet or hand-written [source: ...] / [added: ...] metadata.",
+				"非空单行事实正文，不含前导 `- ` 或手写的 `[source: ...]` / `[added: ...]` 元数据。",
+			)},
+			{Name: "--heading", Value: "TEXT", Description: loc(
+				"Optional Markdown section heading (for example Decisions or ## Decisions). Inserts at the end of the matching section or creates a new section at the end of the file.",
+				"可选的 Markdown 小节标题（例如 Decisions 或 ## Decisions）。插入到匹配小节末尾，若不存在则在文件末尾新建小节。",
+			)},
+			{Name: "--until", Value: "YYYY-MM-DD", Description: loc(
+				"Optional expiration date for a time-limited entry.",
+				"可选的到期日期（YYYY-MM-DD），用于时效性记忆条目。",
+			)},
+			{Name: "--index-summary", Value: "TEXT", Description: loc(
+				"Optional one-line summary appended as ' — <summary>' when adding a new [[link]] to MEMORY.md ## Index.",
+				"可选的单行索引摘要，在向 MEMORY.md 的 ## Index 新增 [[链接]] 时以 ` — <摘要>` 追加。",
+			)},
+			{Name: "--agent", Value: "NAME", Description: loc(
+				"Agent name for provenance. Falls back to AGENT_MEMORY_AGENT, then unknown.",
+				"用于溯源的 Agent 名称。依次回退到 `AGENT_MEMORY_AGENT` 和 `unknown`。",
+			)},
+			{Name: "--sid", Value: "ID", Description: loc(
+				"Session id for provenance. Falls back to AGENT_MEMORY_SID and host session environment variables.",
+				"用于溯源的会话 ID。回退到 `AGENT_MEMORY_SID` 及宿主会话环境变量。",
+			)},
+			{Name: "--json", Description: loc(
+				"Return {transaction, commit, revision, sync, indexUpdated, entry} as JSON.",
+				"以 JSON 返回 {transaction, commit, revision, sync, indexUpdated, entry}。",
+			)},
+		},
+		Output: []localizedText{
+			loc("Text: `transaction:`, `commit:`, `revision:`, `sync:`, `file:`, `line:` and `indexUpdated:` lines.", "文本：输出 `transaction:`、`commit:`、`revision:`、`sync:`、`file:`、`line:` 与 `indexUpdated:` 行。"),
+			loc("JSON: {transaction, commit, revision, sync, indexUpdated, entry}.", "JSON：{transaction, commit, revision, sync, indexUpdated, entry}。"),
+		},
+		ExitCodes: []helpExit{
+			{Code: 0, Meaning: loc("Entry appended and committed locally; background sync was started or skipped by configuration.", "条目已追加并在本地提交；后台同步已启动或因配置跳过。")},
+			{Code: 1, Meaning: loc("INVALID_ARGUMENT, NOT_FOUND, NO_REPO, BUSY, LIMIT_EXCEEDED, IO_FAILED or GIT_FAILED.", "INVALID_ARGUMENT、NOT_FOUND、NO_REPO、BUSY、LIMIT_EXCEEDED、IO_FAILED 或 GIT_FAILED。")},
+			{Code: 2, Meaning: loc("Missing <path> or --fact, unexpected argument, or an unknown flag.", "缺少 `<path>` 或 `--fact`、存在多余参数或未知选项。")},
+		},
+		Examples: []helpExample{
+			{
+				Command: `memctl add notes/arch.md --heading "Decisions" --fact "Use SQLite in WAL mode" --index-summary "Architecture decisions" --agent claude-code --sid "$SESSION_ID"`,
+				Note:    loc("Append a fact to a topic file and idempotently ensure notes/arch is linked under ## Index in MEMORY.md.", "向主题文件追加一条事实，并在同一事务中幂等确保 `MEMORY.md` 的 `## Index` 包含 `[[notes/arch]]` 链接。"),
+			},
+			{
+				Command: `memctl add MEMORY.md --heading "Preferences" --fact "Always run focused unit tests first" --json`,
+				Note:    loc("Append a cross-project preference to a specific section in MEMORY.md and print JSON.", "向 `MEMORY.md` 指定小节追加跨项目偏好并输出 JSON。"),
+			},
+		},
+		Notes: []localizedText{
+			loc("Prefer `memctl add` for daily single-entry additions; use `memctl write` when rewriting, reordering or deleting existing lines.", "日常新增单条记忆优先使用 `memctl add`；仅在需要重写、重排或删除既有内容时使用 `memctl write`。"),
+			loc("Do not include `[source: ...]` or `[added: ...]` in `--fact`: memctl constructs them deterministically.", "不要在 `--fact` 中手写 `[source: ...]` 或 `[added: ...]`，它们由 memctl 确定性拼装。"),
+		},
+		Related: []string{"entries", "read", "write", "mcp"},
 	},
 	{
 		Name:    "write",
 		Usage:   []string{"memctl write <path> --base REV --stdin [--agent NAME] [--sid ID]"},
 		Summary: loc("Write a memory file with a baseline check.", "按修订基线受管写入记忆文件。"),
 		Description: loc(
-			"Managed write. Reads the complete new file text from stdin, verifies that the current file still matches the --base revision, applies the write atomically, creates one local Git commit, and starts a best-effort background sync unless disabled. A stale baseline returns REVISION_MISMATCH and changes nothing. stdin is raw file text, not Hook JSON.",
-			"受管写入。从 stdin 读取完整的新文件文本，校验当前文件是否仍与 `--base` 修订一致，然后原子写入并生成一个本地 Git 提交，最后尽力尝试后台同步（可关闭）。旧基线返回 REVISION_MISMATCH，且不修改任何内容。stdin 是原始文件文本，不是 Hook JSON。",
+			"Managed whole-file write. Prefer `memctl add` for daily single-entry additions so you do not need a prior read or `--base` revision; use `memctl write` when rewriting, reordering or deleting existing lines. Reads the complete new file text from stdin, verifies that the current file still matches the --base revision, applies the write atomically, creates one local Git commit, and starts a best-effort background sync unless disabled. A stale baseline returns REVISION_MISMATCH and changes nothing. stdin is raw file text, not Hook JSON.",
+			"整文件受管写入。日常新增单条记忆优先使用无需基线的 `memctl add`；仅在重写、重排或删除既有内容时使用 `memctl write`。从 stdin 读取完整的新文件文本，校验当前文件是否仍与 `--base` 修订一致，然后原子写入并生成一个本地 Git 提交，最后尽力尝试后台同步（可关闭）。旧基线返回 REVISION_MISMATCH，且不修改任何内容。stdin 是原始文件文本，不是 Hook JSON。",
 		),
 		Arguments: []helpItem{
 			{Name: "<path>", Required: true, Description: loc(
@@ -1163,8 +1234,8 @@ var helpCommandData = []helpCommand{
 		Usage:   []string{"memctl mcp [--agent NAME] [--sid ID]"},
 		Summary: loc("Serve the memory tools over the Model Context Protocol.", "以 Model Context Protocol 提供记忆工具。"),
 		Description: loc(
-			"Serves five tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_entries searches stored entries by keyword, memory_read returns one file with its fileRevision baseline, memory_write applies one managed write, and memory_dream_prepare and memory_dream_propose drive local interactive Dreaming. The two read-only tools declare annotations, so a host that trusts them stops confirming every read. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read` and `write`.",
-			"在标准输入输出上以单行 JSON-RPC 2.0 提供五个工具：memory_entries 按关键词检索已存条目，memory_read 返回一个文件及其 fileRevision 基线，memory_write 执行一次受管写入，memory_dream_prepare 与 memory_dream_propose 驱动本地交互式整理。两个只读工具声明注解，信任注解的宿主不再逐次确认读取。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`write` 相同的应用事务。",
+			"Serves six tools over newline-delimited JSON-RPC 2.0 on stdin and stdout: memory_entries searches stored entries by keyword, memory_read returns one file with its fileRevision baseline, memory_append appends one single-line entry inside the repository lock and idempotently maintains MEMORY.md ## Index without requiring a fileRevision baseline, memory_write applies one whole-file managed write, and memory_dream_prepare and memory_dream_propose drive local interactive Dreaming. The two read-only tools declare annotations, so a host that trusts them stops confirming every read. A host starts this process as an MCP server child, so the tools run with the host's file permissions instead of the agent's bash sandbox. Storage, locking, Git commits and background synchronization still go through the same application transaction as `read`, `add` and `write`.",
+			"在标准输入输出上以单行 JSON-RPC 2.0 提供六个工具：memory_entries 按关键词检索已存条目，memory_read 返回一个文件及其 fileRevision 基线，memory_append 在仓库锁内无基线追加单条记忆并同事务幂等维护 MEMORY.md 的 ## Index，memory_write 执行整文件受管写入，memory_dream_prepare 与 memory_dream_propose 驱动本地交互式整理。两个只读工具声明注解，信任注解的宿主不再逐次确认读取。宿主以 MCP server 子进程方式启动该命令，因此工具使用宿主的文件权限，而不是 Agent 的 bash 沙箱。存储、锁、Git 提交与后台同步仍走与 `read`、`add`、`write` 相同的应用事务。",
 		),
 		Flags: []helpItem{
 			{Name: "--agent", Value: "NAME", Description: loc("Agent name recorded on every write. Falls back to AGENT_MEMORY_AGENT, then unknown.", "每次写入记录的 Agent 名称。依次回退到 AGENT_MEMORY_AGENT 和 unknown。")},
@@ -1180,13 +1251,13 @@ var helpCommandData = []helpCommand{
 		},
 		Examples: []helpExample{
 			{Command: "memctl mcp --agent dsh", Note: loc("Start the MCP server; the host speaks the protocol on stdin and stdout.", "启动 MCP server，由宿主在标准输入输出上使用协议。")},
-			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_entries, memory_read, memory_write, memory_dream_prepare and memory_dream_propose.", "一行请求；工具为 memory_entries、memory_read、memory_write、memory_dream_prepare 与 memory_dream_propose。")},
+			{Command: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, Note: loc("One request line; tools are memory_entries, memory_read, memory_append, memory_write, memory_dream_prepare and memory_dream_propose.", "一行请求；工具为 memory_entries、memory_read、memory_append、memory_write、memory_dream_prepare 与 memory_dream_propose。")},
 		},
 		Notes: []localizedText{
 			loc("Tool failures return isError with the same `CODE: message` text as the CLI, so a model can act on REVISION_MISMATCH or BUSY.", "工具失败返回 isError，文本与 CLI 的 `CODE: message` 一致，使模型可以处理 REVISION_MISMATCH 或 BUSY。"),
 			loc("Register this command in the host's MCP configuration. `install` only probes and plans; it does not run a host's own mcp add command.", "在宿主的 MCP 配置中注册该命令。`install` 只探测并生成计划，不运行宿主自己的 mcp add 命令。"),
 		},
-		Related: []string{"entries", "read", "write", "install"},
+		Related: []string{"entries", "read", "add", "write", "install"},
 	},
 }
 

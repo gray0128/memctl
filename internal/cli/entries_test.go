@@ -148,3 +148,114 @@ func TestEntriesRejectsPageBeyondLimit(t *testing.T) {
 		t.Fatalf("limit 201 error is not targeted: %q", stderr.String())
 	}
 }
+
+// TestAddCLI covers `memctl add` text/JSON output, same-transaction MEMORY.md
+// ## Index maintenance, Session-Origin trailers (host-flag and env), and usage
+// errors.
+func TestAddCLI(t *testing.T) {
+	repo := entriesRepo(t)
+	t.Setenv("GIT_AUTHOR_NAME", "test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	t.Setenv("AGENT_MEMORY_BACKGROUND", "0")
+	t.Setenv("AGENT_MEMORY_DEVICE", "macbook")
+
+	// 1. Add a new topic file with --json and explicit --sid (Session-Origin: host-flag).
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"add", "notes/arch.md",
+		"--heading", "Decisions",
+		"--fact", "Use exclusive lock for append",
+		"--until", "2026-12-31",
+		"--index-summary", "Architecture decisions",
+		"--agent", "claude-code",
+		"--sid", "sid-flag-1",
+		"--json",
+	}, strings.NewReader(""), &stdout, &stderr, "v-test")
+	if code != ExitOK {
+		t.Fatalf("add --json: code=%d stderr=%q", code, stderr.String())
+	}
+	var payload struct {
+		Transaction  string `json:"transaction"`
+		Commit       string `json:"commit"`
+		Revision     string `json:"revision"`
+		Sync         string `json:"sync"`
+		IndexUpdated bool   `json:"indexUpdated"`
+		Entry        struct {
+			FilePath   string `json:"filePath"`
+			LineNumber int    `json:"lineNumber"`
+			Heading    string `json:"heading"`
+			FactText   string `json:"factText"`
+			RawLine    string `json:"rawLine"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("decode add JSON: %v\n%s", err, stdout.String())
+	}
+	if !payload.IndexUpdated || payload.Entry.FilePath != "notes/arch.md" || payload.Entry.Heading != "Decisions" {
+		t.Fatalf("unexpected add JSON payload: %+v", payload)
+	}
+	memBytes, err := os.ReadFile(filepath.Join(repo, "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("read MEMORY.md: %v", err)
+	}
+	if !strings.Contains(string(memBytes), "- [[notes/arch]] — Architecture decisions\n") {
+		t.Fatalf("MEMORY.md missing index link:\n%s", string(memBytes))
+	}
+
+	logCmd := exec.Command("git", "log", "-1", "--format=%B")
+	logCmd.Dir = repo
+	logOut, err := logCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, logOut)
+	}
+	if !strings.Contains(string(logOut), "Session-Origin: host-flag") {
+		t.Fatalf("commit message missing Session-Origin: host-flag:\n%s", string(logOut))
+	}
+
+	// 2. Add a second entry in plain-text mode with env SID (Session-Origin: env).
+	t.Setenv("AGENT_MEMORY_SID", "sid-from-env")
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"add", "notes/arch.md",
+		"--heading=## Decisions",
+		"--fact=Second decision in section",
+		"--agent=codex",
+	}, strings.NewReader(""), &stdout, &stderr, "v-test")
+	if code != ExitOK {
+		t.Fatalf("add text: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"transaction: ", "commit: ", "file: notes/arch.md", "indexUpdated: false"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("add text output %q missing %q", stdout.String(), want)
+		}
+	}
+	logCmd = exec.Command("git", "log", "-1", "--format=%B")
+	logCmd.Dir = repo
+	logOut, err = logCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, logOut)
+	}
+	if !strings.Contains(string(logOut), "Session-Origin: env") {
+		t.Fatalf("commit message missing Session-Origin: env:\n%s", string(logOut))
+	}
+
+	// 3. Usage errors.
+	usageCases := [][]string{
+		{"add"},
+		{"add", "MEMORY.md"},
+		{"add", "MEMORY.md", "--fact", "   "},
+		{"add", "MEMORY.md", "--fact"},
+		{"add", "MEMORY.md", "--fact", "ok", "--unknown"},
+		{"add", "MEMORY.md", "extra", "--fact", "ok"},
+	}
+	for _, args := range usageCases {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(args, strings.NewReader(""), &stdout, &stderr, "v-test"); code != ExitUsageError {
+			t.Fatalf("%v: code=%d, want %d (stderr=%q)", args, code, ExitUsageError, stderr.String())
+		}
+	}
+}

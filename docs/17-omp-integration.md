@@ -233,7 +233,7 @@ OMP:   memctl pi plugin-dir
 | **V-OMP-03** | 单轮回合增量同步 | 会话中产生一轮问答；`agent_settled` 触发后，在后台启动有界 `memctl sync --agent omp`，日志记录正常。 |
 | **V-OMP-04** | 会话退出有界收尾 | 正常退出 `omp`（Ctrl+D 或 `/quit`）；`session_shutdown` 触发 `memctl end`，且在超时时限内平稳退出，不挂死进程。 |
 | **V-OMP-05** | Skill 与规则驱动写入 | 在 OMP 对话中要求记录新事实；模型自动应用 `memctl` Skill，通过 `read` 获取 `fileRevision`，以 `--base` 原子提交 `write`，无直接手改文件行为。 |
-| **V-OMP-06** | MCP 工具连通性（可选） | 配置 `~/.omp/agent/mcp.json` 后启动；OMP 成功列出 `memory_read`、`memory_write`、`memory_entries`、`memory_dream_*` 工具且调用成功。 |
+| **V-OMP-06** | MCP 工具连通性（可选） | 配置 `~/.omp/agent/mcp.json` 后启动；OMP 成功列出 `memory_read`、`memory_append`、`memory_write`、`memory_entries`、`memory_dream_*` 工具且调用成功。 |
 
 ## 6. 实现状态与验证记录（`T134`）
 

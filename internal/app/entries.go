@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"net/url"
 	"path"
 	"strings"
 	"time"
 
+	"github.com/gray0128/memctl/internal/hookio"
 	"github.com/gray0128/memctl/internal/memerr"
 	"github.com/gray0128/memctl/internal/vault"
 )
@@ -57,6 +59,213 @@ type DeleteEntryRequest struct {
 type EntryResult struct {
 	Entry  MemoryEntryDTO
 	Result MutationResult
+}
+
+// AppendEntryRequest is the input of `memctl add` and the `memory_append` MCP
+// tool. The repository baseline is read under the exclusive write lock so
+// callers do not supply a fileRevision precondition.
+type AppendEntryRequest struct {
+	FilePath      string
+	Heading       string
+	FactText      string
+	Until         string
+	IndexSummary  string
+	Agent         string
+	SessionID     string
+	SessionOrigin string
+	Device        string
+}
+
+// AppendEntryResult is the outcome of AppendEntry: the created entry, the
+// committed transaction result, and whether MEMORY.md's ## Index was updated in
+// the same transaction.
+type AppendEntryResult struct {
+	Entry        MemoryEntryDTO
+	Result       MutationResult
+	IndexUpdated bool
+}
+
+// AppendEntry appends one single-line memory entry inside the repository write
+// lock, assembling its trailing `[source: ...; added: ...]` metadata on the
+// server and idempotently linking non-entry-point Markdown files under
+// `## Index` in `MEMORY.md` within the same transaction.
+func (a *App) AppendEntry(ctx context.Context, req AppendEntryRequest) (AppendEntryResult, error) {
+	relPath, err := vault.ValidateRelPath(req.FilePath)
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
+	kind := vault.ClassifyKind(relPath)
+	if kind != vault.KindEntryPoint && kind != vault.KindMarkdown {
+		return AppendEntryResult{}, memerr.New(memerr.InvalidArgument,
+			"path %q is not a Markdown memory file", relPath)
+	}
+	if err := requireSingleLine("fact", req.FactText); err != nil {
+		return AppendEntryResult{}, err
+	}
+	factText := strings.TrimSpace(req.FactText)
+	if factText == "" {
+		return AppendEntryResult{}, memerr.New(memerr.InvalidArgument, "fact must not be empty")
+	}
+	lowerFact := strings.ToLower(factText)
+	if strings.Contains(lowerFact, "[source:") || strings.Contains(lowerFact, "[added:") {
+		return AppendEntryResult{}, memerr.New(memerr.InvalidArgument,
+			"fact must not contain hand-written [source: ...] or [added: ...] metadata; metadata is assembled by memctl")
+	}
+	if strings.Contains(factText, vault.ExpiredFactPlaceholder) {
+		return AppendEntryResult{}, memerr.New(memerr.InvalidArgument,
+			"fact must not contain the expired entry placeholder %q", vault.ExpiredFactPlaceholder)
+	}
+	if err := requireSingleLine("heading", req.Heading); err != nil {
+		return AppendEntryResult{}, err
+	}
+	if err := requireSingleLine("indexSummary", req.IndexSummary); err != nil {
+		return AppendEntryResult{}, err
+	}
+	until := strings.TrimSpace(req.Until)
+	if until != "" {
+		if _, err := time.Parse(vault.DateLayout, until); err != nil {
+			return AppendEntryResult{}, memerr.New(memerr.InvalidArgument,
+				"until %q must be a valid YYYY-MM-DD date", req.Until)
+		}
+	}
+
+	agent := strings.TrimSpace(req.Agent)
+	if agent == "" {
+		agent = hookio.DefaultAgent
+	}
+	device := strings.TrimSpace(req.Device)
+	if device == "" {
+		device = hookio.DefaultDevice
+	}
+	sid := strings.TrimSpace(req.SessionID)
+	var sourceURI string
+	if sid != "" {
+		sourceURI = hookio.Tag(device, agent, sid)
+	} else {
+		sourceURI = "agent://" + url.PathEscape(device) + "/" + url.PathEscape(agent)
+	}
+	added := a.clock().UTC().Format(entryAddedFormat)
+	metaParts := []string{
+		"source: " + sourceURI,
+		"added: " + added,
+	}
+	if until != "" {
+		metaParts = append(metaParts, "until: "+until)
+	}
+	entryLine := "- " + factText + " [" + strings.Join(metaParts, "; ") + "]"
+
+	session, err := a.beginWrite(ctx)
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
+	defer session.Close()
+	ctx = session.ctx
+
+	if err := a.requireWriteBaseline(ctx, session, ""); err != nil {
+		return AppendEntryResult{}, err
+	}
+	if err := session.root.RequireParentDir(relPath); err != nil {
+		return AppendEntryResult{}, err
+	}
+
+	meta, err := session.root.Stat(relPath)
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
+	var changes []FileChange
+	var lineNumber int
+	if meta.Exists {
+		file, err := session.root.ReadFile(relPath)
+		if err != nil {
+			return AppendEntryResult{}, err
+		}
+		parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
+		content, insertedLine := parsed.WithAppendedLineInSection(req.Heading, entryLine)
+		lineNumber = insertedLine
+		changes = append(changes, FileChange{
+			Path:             relPath,
+			ExpectedRevision: file.FileRevision,
+			Action:           ActionPut,
+			RawContent:       content,
+		})
+	} else {
+		heading := req.Heading
+		if strings.TrimSpace(heading) == "" {
+			heading = headingFromPath(relPath)
+		}
+		content := newEntryFileContent(heading, entryLine)
+		lineNumber = strings.Count(content, "\n")
+		changes = append(changes, FileChange{
+			Path:             relPath,
+			ExpectedRevision: vault.AbsentRevision,
+			Action:           ActionPut,
+			RawContent:       content,
+		})
+	}
+
+	indexUpdated := false
+	if relPath != vault.EntryPointName {
+		memFile, err := session.root.ReadFile(vault.EntryPointName)
+		if err != nil {
+			return AppendEntryResult{}, err
+		}
+		memParsed := vault.ParseFile(memFile.RelPath, memFile.FileRevision, []byte(memFile.RawContent))
+		managedPaths, err := session.root.ListManaged()
+		if err != nil {
+			return AppendEntryResult{}, err
+		}
+		managedPaths = append(managedPaths, relPath)
+		linkIdx := vault.NewLinkIndex(managedPaths)
+		alreadyLinked := false
+		for _, rawLink := range memParsed.Links {
+			if res := linkIdx.Resolve(rawLink.RawTarget); res.ResolvedPath == relPath {
+				alreadyLinked = true
+				break
+			}
+		}
+		if !alreadyLinked {
+			linkTarget := vault.LinkTargetFor("", relPath)
+			if res := linkIdx.Resolve(linkTarget); len(res.Candidates) > 1 {
+				linkTarget = relPath
+			}
+			indexLine := "- [[" + linkTarget + "]]"
+			if summary := strings.TrimSpace(req.IndexSummary); summary != "" {
+				indexLine += " — " + summary
+			}
+			newMemContent, _ := memParsed.WithAppendedLineInSection("## Index", indexLine)
+			changes = append(changes, FileChange{
+				Path:             vault.EntryPointName,
+				ExpectedRevision: memFile.FileRevision,
+				Action:           ActionPut,
+				RawContent:       newMemContent,
+			})
+			indexUpdated = true
+		}
+	}
+
+	plans, err := session.plan(MutationRequest{Changes: changes})
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
+	result, err := a.commit(ctx, session, "add", MutationRequest{
+		Agent:         agent,
+		SessionID:     sid,
+		SessionOrigin: req.SessionOrigin,
+		Device:        device,
+	}, plans)
+	if err != nil {
+		return AppendEntryResult{}, err
+	}
+	entry, entryErr := session.entryAt(relPath, lineNumber)
+	result = a.finishWrite(session, result)
+	if entryErr != nil {
+		return AppendEntryResult{Result: result, IndexUpdated: indexUpdated}, entryErr
+	}
+	return AppendEntryResult{
+		Entry:        entry,
+		Result:       result,
+		IndexUpdated: indexUpdated,
+	}, nil
 }
 
 // CreateEntry appends one bullet to an existing file or creates the target file
@@ -234,7 +443,7 @@ func planEntryCreate(session *writeSession, req CreateEntryRequest, factText str
 		return FileChange{}, 0, err
 	}
 	parsed := vault.ParseFile(file.RelPath, file.FileRevision, []byte(file.RawContent))
-	content, lineNumber := parsed.WithAppendedLine(line)
+	content, lineNumber := parsed.WithAppendedLineInSection(req.Heading, line)
 	return FileChange{
 		Path:             relPath,
 		ExpectedRevision: req.ExpectedRevision,
@@ -445,9 +654,10 @@ func buildEntryLine(factText string, sources []string, added string) string {
 // newEntryFileContent builds the content of a file created for a new entry.
 func newEntryFileContent(heading, entryLine string) string {
 	var b strings.Builder
-	if heading = strings.TrimSpace(heading); heading != "" {
-		b.WriteString("# ")
-		b.WriteString(heading)
+	if title, hashes, _ := vault.ParseHeadingSpec(heading, 1); title != "" {
+		b.WriteString(hashes)
+		b.WriteString(" ")
+		b.WriteString(title)
 		b.WriteString("\n\n")
 	}
 	b.WriteString(entryLine)

@@ -24,6 +24,14 @@ const (
 	DefaultDevice = "unknown"
 )
 
+// SessionOrigin values recorded in the Session-Origin commit trailer when a
+// session id is present.
+const (
+	SessionOriginHostFlag = "host-flag"
+	SessionOriginEnv      = "env"
+	SessionOriginModel    = "model"
+)
+
 // Hook event names used by the JSON envelope.
 const (
 	EventSessionStart     = "SessionStart"
@@ -151,8 +159,19 @@ func firstStringField(fields map[string]json.RawMessage, keys []string) (string,
 // is the only session identity available there; it sits with the other host
 // variables, ahead of the payload. See docs/13-delta-integration.md section 4.
 func ResolveSID(explicit string, getenv func(string) string, in Input) string {
+	sid, _ := ResolveSIDWithOrigin(explicit, getenv, in)
+	return sid
+}
+
+// ResolveSIDWithOrigin resolves the session id using the same priority order as
+// ResolveSID and also returns the Session-Origin trailer value ("host-flag" for
+// explicit CLI/server flags, "env" for environment variables or hook payload,
+// or "" when no session id is present).
+func ResolveSIDWithOrigin(explicit string, getenv func(string) string, in Input) (string, string) {
+	if explicit != "" {
+		return explicit, SessionOriginHostFlag
+	}
 	for _, candidate := range []string{
-		explicit,
 		getenv("AGENT_MEMORY_SID"),
 		getenv("DSH_HOOK_SESSION_ID"),
 		getenv("DSH_SESSION_ID"),
@@ -161,10 +180,10 @@ func ResolveSID(explicit string, getenv func(string) string, in Input) string {
 		in.SID,
 	} {
 		if candidate != "" {
-			return candidate
+			return candidate, SessionOriginEnv
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // ResolveAgent returns --agent, then AGENT_MEMORY_AGENT, then the documented

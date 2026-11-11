@@ -32,7 +32,7 @@ depends-on: [memctl-contracts]
 
 ## 2. 受管写入事务
 
-Agent 通过 CLI `read`/`write` 或 MCP 的 `memory_read`/`memory_write` 取得文件和修订并提交完整新文本；UI 条目操作则先由 vault 生成局部变更计划。这些入口最终进入同一事务。
+Agent 日常追加单条记忆时通过 CLI `add` 或 MCP `memory_append` 在仓库排他锁内直接基于最新磁盘原文插入指定小节末尾，并同事务幂等维护 `MEMORY.md` 的 `## Index` 链接（无需预先传入 `fileRevision`）；整文件改写或重构则通过 CLI `read`/`write` 或 MCP `memory_read`/`memory_write` 取得文件和修订并提交完整新文本；UI 条目操作先由 vault 生成局部变更计划。这些入口最终进入同一受管事务。
 
 ```mermaid
 sequenceDiagram
@@ -65,7 +65,7 @@ sequenceDiagram
 2. 检查工作树、索引和输入基线，生成完整影响清单；多文件计划同时验证新增目标不存在和原有文件未变化。
 3. 在 Git 目录的恢复存储记录 `transactionId`、原始 HEAD、受影响路径、原模式、原内容和计划内容摘要；记录落盘后才修改文件。新增文件的前镜像为不存在。
 4. 在目标文件所在文件系统创建临时文件，写入并同步，再原子替换；保留未修改模式。跨文件 rename 和链接修订不是一个 OS 原子操作，依靠事务记录恢复。
-5. 使用字面路径清单暂存，检查 staged diff 与计划一致，再提交。提交消息末尾附带 `Memctl-Transaction` 标识和 `Agent:`、`Session:`、`Device:` 来源 trailer，不夹带用户 prompt。
+5. 使用字面路径清单暂存，检查 staged diff 与计划一致，再提交。提交消息末尾附带 `Memctl-Transaction` 标识和 `Agent:`、`Session:`（存在有效会话标识且已知来源渠道时紧跟 `Session-Origin: host-flag|env|model`）、`Device:` 来源 trailer，不夹带用户 prompt。
 6. 记录提交完成，更新运行状态及索引，释放锁，通知客户端。远端任务不计入本地事务成功条件。
 
 普通事务要求干净基线，因此不会把用户原本的 staged 内容当作事务输入。`sync --capture` 是单独的显式导入：预检所有变化、确认无未合并项、冻结路径清单，再提交该清单；它不承诺其他程序仍在直接写入时的安全性。

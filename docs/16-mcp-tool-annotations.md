@@ -2,7 +2,7 @@
 
 > 图位置：本文是行为方案，按决定不进入 spec 图（未加 frontmatter）。注解字段的权威契约已并入 [09. MCP 记忆工具 §4.4](./09-mcp-memory-tools.md#44-工具集)，验收场景为 09 的 `M15` 与 [05 核心测试矩阵](./05-validation-and-delivery.md#2-核心测试矩阵) 的 `M01–M15` 行；本文保留调研证据、宿主对照与取舍理由。
 >
-> 状态：已实现（2026-11-05，`M15`）。`tools/list` 为 `memory_read` 与 `memory_entries` 返回 `annotations`，其余三个工具不返回该字段；不改工具语义、写入模型与既有协议处理。
+> 状态：已实现（2026-11-05，`M15`；`T140` 同步扩展至 6 个工具）。`tools/list` 为 `memory_read` 与 `memory_entries` 返回 `annotations`，其余四个工具（`memory_write`、`memory_append`、`memory_dream_prepare`、`memory_dream_propose`）不返回该字段；不改工具语义、写入模型与既有协议处理。
 
 ## 1. 结论
 
@@ -108,10 +108,11 @@ type Tool struct {
 | `memory_read` | `readOnlyHint: true`、`destructiveHint: false` | 只读 `vault`，不产生提交；读取时获取仓库锁，但不改仓库内容 |
 | `memory_entries` | `readOnlyHint: true`、`destructiveHint: false` | 只读条目查询，不建立索引，不写文件 |
 | `memory_write` | 不声明 | 写记忆仓库并提交 |
-| `memory_dream_prepare` | 不声明 | 会刷新会话摘要缓存并写 `cache/dream/prepare.json` 快照 |
+| `memory_append` | 不声明 | 在排他锁内追加记忆条目、幂等更新 `MEMORY.md` 索引并提交 |
+| `memory_dream_prepare` | 不声明 | 会刷新会话摘要缓存并写 `cache/dream/prepare-<bundleId>.json` 与 `cache/dream/prepare.json` 快照 |
 | `memory_dream_propose` | 不声明 | 持久化待审阅提案 |
 
-只给两个只读工具加注解，其余工具保持无注解，JSON 里不出现 `annotations` 字段。这样宿主对写与提案的确认行为与现在完全一致。
+只给两个只读工具加注解，其余四个工具保持无注解，JSON 里不出现 `annotations` 字段。这样宿主对写与提案的确认行为与现在完全一致。
 
 ### 3.3 只读的判定标准
 
@@ -175,11 +176,11 @@ type Tool struct {
 
 ## 6. 验收
 
-新增稳定场景 `M15`：`tools/list` 中 `memory_read` 与 `memory_entries` 返回 `annotations: {readOnlyHint: true, destructiveHint: false}`；`memory_write`、`memory_dream_prepare`、`memory_dream_propose` 的响应 JSON 里没有 `annotations` 键；`M02` 的工具名与参数模式不变。
+新增稳定场景 `M15`：`tools/list` 中 `memory_read` 与 `memory_entries` 返回 `annotations: {readOnlyHint: true, destructiveHint: false}`；`memory_write`、`memory_append`、`memory_dream_prepare`、`memory_dream_propose` 的响应 JSON 里没有 `annotations` 键；`M02` 的工具名与参数模式不变。
 
 | 检查 | 判定方式 | 2026-11-05 执行结果 |
 | --- | --- | --- |
-| 单元 | `TestM02ToolsList` 覆盖五个工具的注解取值，并断言后三个工具的序列化结果不含 `annotations` 键 | 通过；两个方向的反向验证（去掉 hint、给写工具加注解）均按预期失败 |
+| 单元 | `TestM02ToolsList` 覆盖六个工具（2026-11-05 初次验收时为五个，`T140` 补入 `memory_append`）的注解取值，并断言非只读工具的序列化结果不含 `annotations` 键 | 通过；两个方向的反向验证（去掉 hint、给写工具加注解）均按预期失败 |
 | 协议 | 用 §2.1 的命令对真实二进制取 `tools/list`，逐项比对 `hasAnnotations` 与 `annotations` | 通过；`TestM15MCPToolAnnotations` 用真实二进制断言，并且反向验证（把 hint 清空）按预期失败 |
 | 宿主 | 撤销某项目的 `memory_read` 授权后新开会话：读操作不弹窗，`memory_write` 仍弹窗；记录宿主版本、项目路径与截图 | 本轮未执行：需要 ThinkRail 交互会话，列为遗留项 |
 | 回归 | `make test` 全绿；`make install` 后重复协议检查 | 见 [开发状态](./STATUS.md) 的 `T132` 记录；本轮未执行 `make install`，协议检查改用临时构建的二进制 |

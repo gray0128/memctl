@@ -30,6 +30,7 @@ memctl <subcommand> [flags] [-- command...]
 | `wrap` | `--agent NAME -- <cmd...>` | 运行前同步，向子进程传入会话环境，结束后尽力同步，透传退出码和信号语义 |
 | `read <path>` | `--json` | 默认输出完整原文；JSON 输出 `{filePath, fileRevision, rawContent}`，供受管编辑 |
 | `entries` | `--q TEXT --file PATH --agent NAME --device NAME --from DATE --to DATE --limit N --offset N --json` | 只读检索已解析条目：`--q` 对条目正文做大小写不敏感子串匹配，其余参数收窄范围；输出 `{revision, items, total}` 或逐行 `path:line\tfact`；与 `GET /api/v1/entries` 和 MCP `memory_entries` 共用同一实现 |
+| `add <path>` | `--fact TEXT [--heading TEXT] [--until YYYY-MM-DD] [--index-summary TEXT] [--agent NAME] [--sid ID] [--json]` | 在仓库排他锁内向 `<path>` 匹配的 `heading` 小节末尾追加单行记忆（小节不存在则在文件末尾新建），由服务端拼装 `[source: ...; added: YYYY-MM-DD]`（含可选 `; until: YYYY-MM-DD`）；当 `<path>` 非 `MEMORY.md` 且根索引尚未包含指向该文件的 `[[...]]` 链接时，同事务在 `MEMORY.md` 的 `## Index` 末尾幂等追加 `- [[<linkTarget>]] — <indexSummary>`；无需预先传入 `fileRevision`；默认输出 `transaction:`/`commit:`/`revision:`/`sync:`/`file:`/`line:`/`indexUpdated:` 七行，`--json` 输出 `{transaction, commit, revision, sync, indexUpdated, entry}` |
 | `write <path>` | `--base REV --stdin --agent NAME --sid ID` | stdin 为文件原文，不是 Hook JSON；基线为修订或 `absent`，原子受管写入并本地提交 |
 | `resolve` | `--json`、`--apply FILE --conflict ID` 或 `--abort --conflict ID` | 默认查看快照；应用 JSON 文件中的 `baseRevision/resolvedFiles`，或中止当前解决过程 |
 | `recover` | `--status` 或 `--rollback` | 查看或恢复本工具未完成事务；不接管外部 Git 操作 |
@@ -41,12 +42,12 @@ memctl <subcommand> [flags] [-- command...]
 | `install [agent...]` | `--all --dry-run --status` | 探测、预览或应用版本匹配的接入配置，备份并幂等合并；没有 CLI 的桌面宿主（WorkBuddy）按状态目录探测，状态行显示 `host=app` |
 | `dsh` | `plugin-path` 或 `plugin-dir` | 把内嵌的 `memctl-dsh` 写成状态目录下的绝对 tarball 或目录路径，供 DSH「插件 → 添加插件」安装；只写状态目录，不修改 DSH profile |
 | `pi` | `plugin-dir` | 把内嵌的 `memctl-pi` 写成状态目录下的绝对本地包目录，供 `pi install <目录>` 或 `omp plugin install <目录>` 安装；只写状态目录，不修改 pi/OMP 设置；不提供 tarball 形式 |
-| `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read`、`memory_entries` 与 `memory_write`；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
+| `mcp` | `--agent NAME --sid ID` | 在标准输入输出上以单行 JSON-RPC 提供 `memory_read`、`memory_entries`、`memory_dream_prepare`、`memory_dream_propose`、`memory_write` 与 `memory_append` 6 个工具；工具使用宿主的文件权限，绕过 Agent 的 bash 沙箱；不写配置，不修改记忆仓库之外的路径 |
 | `update` | `--check` | 查询 GitHub Releases 最新版本；按平台下载并校验 SHA-256 后原子替换当前二进制；`--check` 只报告，不写文件 |
 | `help [command]` | `--lang en\|zh --json` | 输出面向 Agent 的概览或单命令帮助；`<command> --help` 等价；`--json` 输出 `schemaVersion` 1 的机器可读目录；不访问记忆库、Git 或 Node.js |
 | `version` | 无 | 不访问记忆库、不初始化图谱 |
 
-同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`--project`、`--max-bytes`、`--agent`、`--sid` 只用于 `--prepare` 或 `--propose`，其中 `--project`、`--agent`、`--sid` 只在 `--prepare` 生效（与 `--propose` 同用时被忽略），`--limit` 只用于 `--list`；`install --status` 不写文件。
+同一单元格中的 flags 是可选能力集合，不表示必须全部传入；`add` 的 `<path>` 和 `--fact`、`write` 的 `--base` 和 `--stdin`、`resolve --apply`/`--abort` 的 `--conflict`、应用提案的 ID 和 hash 为必填，`resolve --apply` 的 JSON 必须携带非空 `baseRevision`。`resolve` 的查看、应用、中止互斥；`dream` 的远端生成（`--runner`）、准备（`--prepare`）、提交提案（`--propose`）、列举（`--list`）、查看（`--show`）、应用（`--apply`）、工作流初始化（`--init-workflow`）与内部执行（`--worker`）八种模式互斥；`--project`、`--max-bytes`、`--agent`、`--sid` 只用于 `--prepare` 或 `--propose`，其中 `--project`、`--agent`、`--sid` 只在 `--prepare` 生效（与 `--propose` 同用时被忽略），`--limit` 只用于 `--list`；`install --status` 不写文件。
 
 `install` 至少需要一个 `agent` 参数或 `--all`，两者都缺省时返回用法错误。`--status` 只探测并输出适配状态，末尾附带 MCP 工具探测与各宿主注册命令，`--dry-run` 输出安装计划，两者都不写文件也不执行中断恢复。`--all` 跳过未探测到宿主可执行文件的 adapter；显式指定的 agent 在宿主未探测到但目标配置已存在时仍生成计划，以便用户在看到警告后自主决定。`install` 不访问记忆仓库、不要求 Git，也不需要 Node.js。
 
@@ -187,7 +188,7 @@ URI 每一段分别转义；会话缓存键对完整元组做摘要，不用有�
 | --- | --- |
 | 自动 Hook 遇到断网、忙碌、未初始化或仓库保护态 | 返回 0 以免阻断宿主；在允许的上下文或 stderr 中报告状态 |
 | 参数错误、Hook JSON 格式错误 | 返回 2；不伪造成功注入 |
-| 显式管理命令、read/write/resolve/recover、`sync --wait` 失败 | 返回 1，并给出稳定原因码 |
+| 显式管理命令、read/add/write/resolve/recover、`sync --wait` 失败 | 返回 1，并给出稳定原因码 |
 | doctor 发现 error 级诊断 | 返回 1；只有 warning/info 时为 0 |
 | wrap | 返回被包装程序状态；包装器无法启动程序时返回自身错误 |
 
